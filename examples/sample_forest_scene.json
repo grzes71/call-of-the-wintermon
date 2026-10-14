@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "scene": {
+    "name": "deep_forest",
+    "width": 160,
+    "height": 96,
+    "tile_source": "tiles/trees.png"
+  },
+  "elements": [
+    {
+      "id": "element-001",
+      "source": "tiles/trees.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 24,
+        "height": 40
+      },
+      "position": {
+        "x": 5,
+        "y": 20
+      },
+      "flip_x": false,
+      "z_index": 0
+    },
+    {
+      "id": "element-002",
+      "source": "tiles/trees.png",
+      "source_rect": {
+        "x": 24,
+        "y": 0,
+        "width": 24,
+        "height": 40
+      },
+      "position": {
+        "x": 60,
+        "y": 15
+      },
+      "flip_x": false,
+      "z_index": 1
+    },
+    {
+      "id": "element-003",
+      "source": "tiles/trees.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 24,
+        "height": 40
+      },
+      "position": {
+        "x": 120,
+        "y": 20
+      },
+      "flip_x": true,
+      "z_index": 2
+    }
+  ]
+}

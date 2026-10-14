@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "scene": {
+    "name": "castle_courtyard",
+    "width": 160,
+    "height": 96
+  },
+  "elements": [
+    {
+      "id": "element-001",
+      "source": "tiles/castles.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 24
+      },
+      "position": {
+        "x": 10,
+        "y": 60
+      },
+      "flip_x": false,
+      "z_index": 0
+    },
+    {
+      "id": "element-002",
+      "source": "tiles/trees.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 24,
+        "height": 40
+      },
+      "position": {
+        "x": 50,
+        "y": 44
+      },
+      "flip_x": false,
+      "z_index": 1
+    },
+    {
+      "id": "element-003",
+      "source": "tiles/castles.png",
+      "source_rect": {
+        "x": 32,
+        "y": 0,
+        "width": 32,
+        "height": 24
+      },
+      "position": {
+        "x": 80,
+        "y": 60
+      },
+      "flip_x": true,
+      "z_index": 2
+    },
+    {
+      "id": "element-004",
+      "source": "tiles/trees.png",
+      "source_rect": {
+        "x": 24,
+        "y": 0,
+        "width": 24,
+        "height": 40
+      },
+      "position": {
+        "x": 120,
+        "y": 44
+      },
+      "flip_x": true,
+      "z_index": 3
+    }
+  ]
+}

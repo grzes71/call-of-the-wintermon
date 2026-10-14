@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "enemies": [
+    {
+      "id": 1,
+      "name": "Azathoth",
+      "blink": false,
+      "rgb_color": [
+        255,
+        0,
+        0
+      ],
+      "atari_color": 66
+    },
+    {
+      "id": 2,
+      "name": "Nyarlathotep",
+      "blink": false,
+      "rgb_color": [
+        0,
+        0,
+        255
+      ],
+      "atari_color": 132
+    },
+    {
+      "id": 3,
+      "name": "Yog-Sothoth",
+      "blink": false,
+      "rgb_color": [
+        0,
+        170,
+        0
+      ],
+      "atari_color": 195
+    },
+    {
+      "id": 4,
+      "name": "Shub-Niggurath",
+      "blink": false,
+      "rgb_color": [
+        255,
+        170,
+        0
+      ],
+      "atari_color": 252
+    },
+    {
+      "id": 5,
+      "name": "Hastog",
+      "blink": false,
+      "rgb_color": [
+        255,
+        255,
+        0
+      ],
+      "atari_color": 254
+    }
+  ]
+}
