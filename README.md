@@ -4,6 +4,18 @@ Projekt gry platformowej na komputery **Atari 8-bit (XL/XE)** w architekturze 65
 
 ![Atari 8-bit screen](/cover.png)
 
+> To miał być dzień jak co dzień.
+> Grabbath ćwiczył właśnie nowy growl
+> na festiwalu na zamku Wintermon.
+> Jednak jego gardłowy śpiew dotarł
+> aż do pradawnych głębin pod górami.
+> Uśpiona od eonów istota usłyszała
+> wezwanie i rozpoczęła marsz ku Światu.
+> Pradawny bóg zażądał tantiem,
+> a potem podpisał kontrakt na trzy albumy.
+> Teraz wokalista musi coś zrobić,
+> zanim kosmiczny horror zniszczy ludzkość.
+
 ---
 
 ## Narzędzia i komponenty projektu
