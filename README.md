@@ -2,6 +2,8 @@
 
 Projekt gry platformowej na komputery **Atari 8-bit (XL/XE)** w architekturze 6502 assembly (MADS) zintegrowanej z pipeline'em narzędziowym w Pythonie.
 
+![Atari 8-bit screen](/cover.png)
+
 ---
 
 ## Narzędzia i komponenty projektu
