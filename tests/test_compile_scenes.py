@@ -98,8 +98,8 @@ def test_parse_02_forest_castle_scene():
 
     assert scene.name == "Be Quick or Be Dead"
     assert len(scene.elements) == 4
-    assert len(scene.platforms) == 16
-    assert len(scene.objects) == 5
+    assert len(scene.platforms) == 14
+    assert len(scene.objects) == 4
 
 
 def test_compile_scenes_full_pipeline(tmp_path):

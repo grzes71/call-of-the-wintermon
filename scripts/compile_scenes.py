@@ -142,6 +142,275 @@ class SceneObjectData:
     blink: bool
 
 
+PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
+
+TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
+    0: (0x94, 0xD6, 0xEA),  # castles
+    1: (0xA2, 0xA6, 0xBA),  # depths
+    2: (0x32, 0x26, 0x1C),  # hell
+    3: (0xC4, 0xC8, 0xDC),  # trees
+}
+
+
+@dataclass
+class SceneDliCompiledData:
+    """Compiled DLI table data for a single scene (285 bytes)."""
+
+    # 45 tables x 6 bytes = 270 bytes
+    hpos_p1: list[int]          # 6 bytes (pasy 0..5)
+    hpos_p2: list[int]          # 6 bytes
+    hpos_p3: list[int]          # 6 bytes
+    hpos_m1: list[int]          # 6 bytes
+    hpos_m2: list[int]          # 6 bytes
+    hpos_m3: list[int]          # 6 bytes
+    bg_colpf0: list[int]        # 6 bytes
+    bg_colpf1: list[int]        # 6 bytes
+    bg_colpf2: list[int]        # 6 bytes
+    pas_c1_sl: list[list[int]]  # 8 lists of 6 bytes
+    pas_c2_sl: list[list[int]]  # 8 lists of 6 bytes
+    pas_c3_sl: list[list[int]]  # 8 lists of 6 bytes
+    zone_hpos_p1: list[int]     # 6 bytes (zones 1..6)
+    zone_col_p1: list[int]      # 6 bytes
+    zone_hpos_p2: list[int]     # 6 bytes
+    zone_col_p2: list[int]      # 6 bytes
+    zone_hpos_p3: list[int]     # 6 bytes
+    zone_col_p3: list[int]      # 6 bytes
+    zone_hpos_m0: list[int]     # 6 bytes
+    zone_hpos_m1: list[int]     # 6 bytes
+    zone_hpos_m2: list[int]     # 6 bytes
+    zone_hpos_m3: list[int]     # 6 bytes
+    zone_secret_col: list[int]  # 6 bytes
+    zone_prior: list[int]       # 6 bytes
+    # Zone 0 initial values (15 bytes)
+    z0_hpos_p1: int
+    z0_col_p1: int
+    z0_hpos_p2: int
+    z0_col_p2: int
+    z0_hpos_p3: int
+    z0_col_p3: int
+    z0_hpos_m0: int
+    z0_hpos_m1: int
+    z0_hpos_m2: int
+    z0_hpos_m3: int
+    z0_secret_col: int
+    z0_prior: int
+    z0_colpf0: int
+    z0_colpf1: int
+    z0_colpf2: int
+
+
+def compile_scene_dli_data(
+    elements: list[SceneElementData],
+    platforms: list[PlatformData],
+    objects: list[SceneObjectData],
+    primary_tileset_id: int,
+) -> SceneDliCompiledData:
+    """Compile platform channels, profiles, palettes, and zones for unified DLI."""
+    # 1. Determine background palettes
+    upper_elements = [e for e in elements if e.dst_y < 44]
+    upper_ts = upper_elements[0].tileset_id if upper_elements else primary_tileset_id
+    upper_palette = TILESET_PALETTES.get(upper_ts, (0xC4, 0xC8, 0xDC))
+
+    lower_elements = [e for e in elements if e.dst_y >= 44]
+    lower_ts = lower_elements[0].tileset_id if lower_elements else upper_ts
+    lower_palette = TILESET_PALETTES.get(lower_ts, upper_palette)
+
+    # Background palette per pas:
+    # Pas 0 (line 8): upper
+    # Pas 1 (line 24): upper
+    # Pas 2 (line 40): lower (swapped in Faza C at line 44)
+    # Pas 3 (line 56): lower
+    # Pas 4 (line 72): lower
+    # Pas 5 (line 88): upper (restored in Faza C at line 92)
+    bg_colpf0 = [upper_palette[0], upper_palette[0], lower_palette[0], lower_palette[0], lower_palette[0], upper_palette[0]]
+    bg_colpf1 = [upper_palette[1], upper_palette[1], lower_palette[1], lower_palette[1], lower_palette[1], upper_palette[1]]
+    bg_colpf2 = [upper_palette[2], upper_palette[2], lower_palette[2], lower_palette[2], lower_palette[2], upper_palette[2]]
+
+    # 2. Compile platforms for the 6 pas
+    hpos_p1 = [0] * 6
+    hpos_p2 = [0] * 6
+    hpos_p3 = [0] * 6
+    hpos_m1 = [0] * 6
+    hpos_m2 = [0] * 6
+    hpos_m3 = [0] * 6
+
+    pas_c1_sl = [[0] * 6 for _ in range(8)]
+    pas_c2_sl = [[0] * 6 for _ in range(8)]
+    pas_c3_sl = [[0] * 6 for _ in range(8)]
+
+    for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
+        pas_platforms = [p for p in platforms if p.y == pas_y]
+        channels: list[list[PlatformData]] = []
+        profile_map: dict[Any, list[PlatformData]] = {}
+        for p in pas_platforms:
+            prof_key = p.color_profile_id if p.color_profile_id is not None else id(p)
+            profile_map.setdefault(prof_key, []).append(p)
+        for prof_plats in profile_map.values():
+            if len(channels) < 3:
+                channels.append(prof_plats)
+
+        for ch_idx, ch_plats in enumerate(channels):
+            ch_colors = ch_plats[0].colors if ch_plats else [0] * 8
+            if ch_idx == 0:
+                for sl in range(8):
+                    pas_c1_sl[sl][pas_idx] = ch_colors[sl]
+                for p in ch_plats:
+                    if p.type_code == 1 or p.width <= 8:
+                        hpos_m1[pas_idx] = min(255, max(0, 48 + p.x))
+                    else:
+                        hpos_p1[pas_idx] = min(255, max(0, 48 + p.x))
+            elif ch_idx == 1:
+                for sl in range(8):
+                    pas_c2_sl[sl][pas_idx] = ch_colors[sl]
+                for p in ch_plats:
+                    if p.type_code == 1 or p.width <= 8:
+                        hpos_m2[pas_idx] = min(255, max(0, 48 + p.x))
+                    else:
+                        hpos_p2[pas_idx] = min(255, max(0, 48 + p.x))
+            elif ch_idx == 2:
+                for sl in range(8):
+                    pas_c3_sl[sl][pas_idx] = ch_colors[sl]
+                for p in ch_plats:
+                    if p.type_code == 1 or p.width <= 8:
+                        hpos_m3[pas_idx] = min(255, max(0, 48 + p.x))
+                    else:
+                        hpos_p3[pas_idx] = min(255, max(0, 48 + p.x))
+
+    # 3. Compile enemies and secrets for 7 zones
+    def get_zone_idx(y: int) -> int:
+        if y < 8:
+            return 0
+        elif y < 24:
+            return 1
+        elif y < 40:
+            return 2
+        elif y < 56:
+            return 3
+        elif y < 72:
+            return 4
+        elif y < 88:
+            return 5
+        else:
+            return 6
+
+    zone_objects: dict[int, list[SceneObjectData]] = {z: [] for z in range(7)}
+    for obj in objects:
+        zid = get_zone_idx(obj.y)
+        zone_objects[zid].append(obj)
+
+    # Zone 0 initial values (applied in VBLANK before Pas 0)
+    z0_objs = zone_objects[0]
+    z0_enemies = [o for o in z0_objs if o.type_code == 0][:3]
+    z0_secrets = [o for o in z0_objs if o.type_code == 1][:1]
+
+    z0_hpos_p1 = min(255, max(0, 48 + z0_enemies[0].x)) if len(z0_enemies) > 0 else 0
+    z0_col_p1  = z0_enemies[0].atari_color if len(z0_enemies) > 0 else 0
+    z0_hpos_p2 = min(255, max(0, 48 + z0_enemies[1].x)) if len(z0_enemies) > 1 else 0
+    z0_col_p2  = z0_enemies[1].atari_color if len(z0_enemies) > 1 else 0
+    z0_hpos_p3 = min(255, max(0, 48 + z0_enemies[2].x)) if len(z0_enemies) > 2 else 0
+    z0_col_p3  = z0_enemies[2].atari_color if len(z0_enemies) > 2 else 0
+
+    if z0_secrets:
+        sec = z0_secrets[0]
+        z0_hpos_m0 = min(255, max(0, 48 + sec.x))
+        z0_hpos_m1 = min(255, max(0, 48 + sec.x + 2))
+        z0_hpos_m2 = min(255, max(0, 48 + sec.x + 4))
+        z0_hpos_m3 = min(255, max(0, 48 + sec.x + 6))
+        z0_secret_col = sec.atari_color
+        z0_prior = 0x11
+    else:
+        z0_hpos_m0 = 0
+        z0_hpos_m1 = 0
+        z0_hpos_m2 = 0
+        z0_hpos_m3 = 0
+        z0_secret_col = 0
+        z0_prior = 0x01
+
+    # Zones 1..6 (set up in Faza C of pas 0..5, 6 entries)
+    zone_hpos_p1 = [0] * 6
+    zone_col_p1  = [0] * 6
+    zone_hpos_p2 = [0] * 6
+    zone_col_p2  = [0] * 6
+    zone_hpos_p3 = [0] * 6
+    zone_col_p3  = [0] * 6
+
+    zone_hpos_m0 = [0] * 6
+    zone_hpos_m1 = [0] * 6
+    zone_hpos_m2 = [0] * 6
+    zone_hpos_m3 = [0] * 6
+    zone_secret_col = [0] * 6
+    zone_prior = [0x01] * 6
+
+    for z_idx in range(6):
+        target_zone = z_idx + 1  # Zones 1..6
+        objs = zone_objects[target_zone]
+        enemies = [o for o in objs if o.type_code == 0][:3]
+        secrets = [o for o in objs if o.type_code == 1][:1]
+
+        if len(enemies) > 0:
+            zone_hpos_p1[z_idx] = min(255, max(0, 48 + enemies[0].x))
+            zone_col_p1[z_idx]  = enemies[0].atari_color
+        if len(enemies) > 1:
+            zone_hpos_p2[z_idx] = min(255, max(0, 48 + enemies[1].x))
+            zone_col_p2[z_idx]  = enemies[1].atari_color
+        if len(enemies) > 2:
+            zone_hpos_p3[z_idx] = min(255, max(0, 48 + enemies[2].x))
+            zone_col_p3[z_idx]  = enemies[2].atari_color
+
+        if secrets:
+            s = secrets[0]
+            zone_hpos_m0[z_idx] = min(255, max(0, 48 + s.x))
+            zone_hpos_m1[z_idx] = min(255, max(0, 48 + s.x + 2))
+            zone_hpos_m2[z_idx] = min(255, max(0, 48 + s.x + 4))
+            zone_hpos_m3[z_idx] = min(255, max(0, 48 + s.x + 6))
+            zone_secret_col[z_idx] = s.atari_color
+            zone_prior[z_idx] = 0x11
+        else:
+            zone_prior[z_idx] = 0x01
+
+    return SceneDliCompiledData(
+        hpos_p1=hpos_p1,
+        hpos_p2=hpos_p2,
+        hpos_p3=hpos_p3,
+        hpos_m1=hpos_m1,
+        hpos_m2=hpos_m2,
+        hpos_m3=hpos_m3,
+        bg_colpf0=bg_colpf0,
+        bg_colpf1=bg_colpf1,
+        bg_colpf2=bg_colpf2,
+        pas_c1_sl=pas_c1_sl,
+        pas_c2_sl=pas_c2_sl,
+        pas_c3_sl=pas_c3_sl,
+        zone_hpos_p1=zone_hpos_p1,
+        zone_col_p1=zone_col_p1,
+        zone_hpos_p2=zone_hpos_p2,
+        zone_col_p2=zone_col_p2,
+        zone_hpos_p3=zone_hpos_p3,
+        zone_col_p3=zone_col_p3,
+        zone_hpos_m0=zone_hpos_m0,
+        zone_hpos_m1=zone_hpos_m1,
+        zone_hpos_m2=zone_hpos_m2,
+        zone_hpos_m3=zone_hpos_m3,
+        zone_secret_col=zone_secret_col,
+        zone_prior=zone_prior,
+        z0_hpos_p1=z0_hpos_p1,
+        z0_col_p1=z0_col_p1,
+        z0_hpos_p2=z0_hpos_p2,
+        z0_col_p2=z0_col_p2,
+        z0_hpos_p3=z0_hpos_p3,
+        z0_col_p3=z0_col_p3,
+        z0_hpos_m0=z0_hpos_m0,
+        z0_hpos_m1=z0_hpos_m1,
+        z0_hpos_m2=z0_hpos_m2,
+        z0_hpos_m3=z0_hpos_m3,
+        z0_secret_col=z0_secret_col,
+        z0_prior=z0_prior,
+        z0_colpf0=upper_palette[0],
+        z0_colpf1=upper_palette[1],
+        z0_colpf2=upper_palette[2],
+    )
+
+
 @dataclass
 class SceneCompiledData:
     """Full compiled data for a single scene."""
@@ -155,6 +424,7 @@ class SceneCompiledData:
     elements: list[SceneElementData] = field(default_factory=list)
     platforms: list[PlatformData] = field(default_factory=list)
     objects: list[SceneObjectData] = field(default_factory=list)
+    dli_data: SceneDliCompiledData | None = None
 
 
 def sanitize_symbol(name: str) -> str:
@@ -431,6 +701,8 @@ def parse_scene_json(
             )
         )
 
+    dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id)
+
     return SceneCompiledData(
         file_stem=stem,
         symbol_name=symbol,
@@ -441,6 +713,7 @@ def parse_scene_json(
         elements=elements,
         platforms=platforms,
         objects=objects,
+        dli_data=dli_data,
     )
 
 
@@ -752,6 +1025,90 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
     return "\n".join(lines)
 
 
+def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
+    """Generate MADS 6502 assembly defining DLI SoA data tables for all scenes."""
+    lines: list[str] = [
+        "; ==============================================================================",
+        "; SCENES DLI DATA — CALL OF THE WINTERMON (Auto-generated by compile_scenes.py)",
+        "; Target: Atari 800XL / 65XE (MOS 6502, ANTIC Mode D 160x96 2bpp)",
+        "; Format: 285 bytes per scene (45 tables x 6 bytes + 15 bytes Zone 0)",
+        "; Segment: Loaded under RENDER_TABLES segment ($7A00)",
+        "; ==============================================================================",
+        "",
+    ]
+
+    for sc in scenes:
+        sym = sc.symbol_name
+        dli = sc.dli_data
+        lines.append(f"; --- DLI Data for {sc.name} (285 bytes) ---")
+        lines.append(f"scene_{sym}_dli_data")
+        if dli:
+            lines.append("    ; 1..6: Platform HPOSP1..3 and HPOSM1..3 (6 bytes each)")
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p3))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m3))
+
+            lines.append("    ; 7..9: Background Palettes COLPF0..2 (6 bytes each)")
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf0))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf2))
+
+            lines.append("    ; 10..17: Platform Channel 1 Scanlines 0..7 (6 bytes each)")
+            for sl in range(8):
+                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c1_sl[sl]))
+
+            lines.append("    ; 18..25: Platform Channel 2 Scanlines 0..7 (6 bytes each)")
+            for sl in range(8):
+                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c2_sl[sl]))
+
+            lines.append("    ; 26..33: Platform Channel 3 Scanlines 0..7 (6 bytes each)")
+            for sl in range(8):
+                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c3_sl[sl]))
+
+            lines.append("    ; 34..39: Zone Enemies HPOS and Color (P1..P3, 6 bytes each)")
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p3))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p3))
+
+            lines.append("    ; 40..45: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m0))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m3))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_secret_col))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_prior))
+
+            lines.append("    ; Zone 0 Initial Values (15 bytes)")
+            z0_vals = [
+                dli.z0_hpos_p1, dli.z0_col_p1, dli.z0_hpos_p2, dli.z0_col_p2, dli.z0_hpos_p3, dli.z0_col_p3,
+                dli.z0_hpos_m0, dli.z0_hpos_m1, dli.z0_hpos_m2, dli.z0_hpos_m3, dli.z0_secret_col, dli.z0_prior,
+                dli.z0_colpf0, dli.z0_colpf1, dli.z0_colpf2,
+            ]
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in z0_vals))
+        else:
+            lines.append("    :285 .byte 0")
+        lines.append("")
+
+    lines.extend([
+        "; " + "=" * 78,
+        "; MASTER SCENE DLI DATA POINTER TABLES",
+        "; " + "=" * 78,
+        "scene_dli_data_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_dli_data" for sc in scenes),
+        "scene_dli_data_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_dli_data" for sc in scenes),
+        "",
+    ])
+
+    return "\n".join(lines)
+
+
 def compile_scenes(
     manifest_path: Path,
     output_path: Path,
@@ -808,6 +1165,11 @@ def compile_scenes(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(asm_content, encoding="utf-8")
     print(f"Generated ASM scene structures: {output_path} ({len(asm_content)} chars)")
+
+    dli_asm = generate_scenes_dli_asm(compiled_scenes)
+    dli_output_path = output_path.parent / "scenes_dli_data.asm"
+    dli_output_path.write_text(dli_asm, encoding="utf-8")
+    print(f"Generated ASM scene DLI data: {dli_output_path} ({len(dli_asm)} chars)")
     return 0
 
 

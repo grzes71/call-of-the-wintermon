@@ -20,6 +20,7 @@ GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB a
 VRAM_SEG1   = $4000     ; Title VRAM Segment 1
 VRAM_SEG2   = $5000     ; Title VRAM Segment 2
 DLIST_ADDR  = $6000     ; Title Display List
+DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$676F)
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
 AUDIO_ADDR    = $7000     ; Audio Player & Music Buffers
 RENDER_TABLES = $7A00     ; Render Lookup Tables: Flip byte (256 B) + Playfield row offsets (192 B)
@@ -231,7 +232,19 @@ dlist_game
     ; Line 0 with LMS (starts at $3000, 3840 bytes -> ends at $3EFF, never wraps)
     .byte DL_MODE_D | DL_LMS
     .word GAME_VRAM
-    :95 .byte DL_MODE_D
+    :6 .byte DL_MODE_D          ; Lines 1-6
+    .byte DL_MODE_D | DL_DLI    ; Line 7 (DLI 1: setup Pas 1 at line 8)
+    :15 .byte DL_MODE_D         ; Lines 8-22
+    .byte DL_MODE_D | DL_DLI    ; Line 23 (DLI 2: setup Pas 2 at line 24)
+    :15 .byte DL_MODE_D         ; Lines 24-38
+    .byte DL_MODE_D | DL_DLI    ; Line 39 (DLI 3: setup Pas 3 at line 40)
+    :15 .byte DL_MODE_D         ; Lines 40-54
+    .byte DL_MODE_D | DL_DLI    ; Line 55 (DLI 4: setup Pas 4 at line 56)
+    :15 .byte DL_MODE_D         ; Lines 56-70
+    .byte DL_MODE_D | DL_DLI    ; Line 71 (DLI 5: setup Pas 5 at line 72)
+    :15 .byte DL_MODE_D         ; Lines 72-86
+    .byte DL_MODE_D | DL_DLI    ; Line 87 (DLI 6: setup Pas 6 at line 88)
+    :8 .byte DL_MODE_D          ; Lines 88-95
 
     .byte DL_BLANK8
     .byte DL_BLANK8
@@ -295,6 +308,13 @@ dlist_title
     .word dlist_title
 
 ; ==============================================================================
+; UNIFIED DLI ENGINE & DOUBLE BUFFERS SEGMENT ($6200)
+; Strictly between Title DList ($60CA) and PMG ($6800)
+; ==============================================================================
+    org DLI_BUFFERS
+    icl 'engine/dli.asm'
+
+; ==============================================================================
 ; PLAYER-MISSILE GRAPHICS (PMG) MEMORY SEGMENT ($6800)
 ; 2 KB boundary aligned ($6800-$6FFF, 2,048 bytes, PMBASE=$68)
 ; Supports single-line resolution (full 2 KB) and double-line resolution (1 KB)
@@ -322,6 +342,7 @@ pmg_memory
     org RENDER_TABLES
     icl 'engine/render_tables.asm'
     icl 'engine/render.asm'
+    icl 'gen/scenes_dli_data.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader

@@ -2,6 +2,30 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-15] - Shared Display List & Unified DLI Architecture
+
+- **Unified Display List (`dlist_game`) & DLI Triggers**:
+  - Configured shared 96-line ANTIC Mode D ($0D) Display List in [main.asm](main.asm) with Display List Interrupt flag (`DL_DLI = $80`) on lines 7, 23, 39, 55, 71, and 87 (the last scanline before each of the 6 platform pas).
+  - Maintained single shared Display List invariant without scene-specific colors, object IDs, or positions.
+- **Unified 3-Phase DLI Engine & Double Buffering**:
+  - Implemented [engine/dli.asm](engine/dli.asm) containing `dli_init`, `dli_stage_scene`, `dli_vblank_update`, and `dli_handler`.
+  - Allocated double buffers at `$6100` (`DLI_BUFFERS`) with 45 tables (Buf 0 at +0, Buf 1 at +8) for zero-branch, `absolute,Y` indexed register staging.
+  - Zero Page allocation in [zeropage.asm](zeropage.asm) for register preservation and state tracking (`dli_save_a`, `dli_save_x`, `dli_save_y`, `dli_pas_idx`, `dli_active_offset`, `dli_pending_offset`, `dli_swap_requested`).
+  - **Faza A** (pre-WSYNC on scanline before pas): Sets up PMG sizes (`SIZEP1..3 = $03`, `SIZEM = $FC`), positions (`HPOSP1..3`, `HPOSM1..3`), and resets `PRIOR` bit 4 ($04).
+  - **Faza B** (8 scanlines of pas): Unrolled per-scanline color updates for `COLPM1`, `COLPM2`, `COLPM3` in HBLANK, interspersed with `WSYNC`.
+  - **Faza C** (post-pas guard line): Updates background palette `COLPF0..2` (swapping lower palette after pas 40, restoring upper palette after pas 88), restores normal width (`SIZEP1..3 = $00`, `SIZEM = $00`), restores `PRIOR` bit 4 ($14) if secret present, sets enemy P1..P3 / secret M0..M3 positions and colors for the upcoming zone, and increments pas counter.
+  - Strict preservation of Hero Player 0: DLI never accesses `HPOSP0`, `SIZEP0`, or `COLPM0`. `COLBK` kept permanently black ($00).
+- **Scene DLI Data Compiler & Exporter**:
+  - Extended [scripts/compile_scenes.py](scripts/compile_scenes.py) with `compile_scene_dli_data()` and `generate_scenes_dli_asm()`.
+  - Generates [gen/scenes_dli_data.asm](gen/scenes_dli_data.asm) (285 bytes per scene) mapping platforms, platform profiles (8 scanlines per profile), enemies, secrets, and palettes into SoA format.
+- **Engine Lifecycle Integration**:
+  - Initialized DLI system in [scenes/game.asm](scenes/game.asm) (`dli_init`, `dli_stage_scene`, `dli_vblank_update`).
+  - Set hardware registers `SDMCTL = $3E` and `GRACTL = $03` for full PMG DMA and latching.
+- **Build System & Validation**:
+  - Updated [Makefile](Makefile), [scripts/check_memory.py](scripts/check_memory.py), and [scripts/generate_memory_map.py](scripts/generate_memory_map.py) for the `$6100` DLI segment.
+  - Added [tests/test_dli_system.py](tests/test_dli_system.py) with 6 py65 CPU emulation tests verifying DLI structure, memory layout, PMG pre-fills, buffer staging isolation, VBLANK atomic commits, 6-pas execution, and Hero isolation.
+  - Updated existing tests [tests/test_convert_tiles.py](tests/test_convert_tiles.py), [tests/test_compile_scenes.py](tests/test_compile_scenes.py), and [tests/test_memory_map.py](tests/test_memory_map.py).
+
 ## [2026-10-15] - Platform Profile ID Range Constraint (Integer 1-255) & QPainter Import Fix
 
 - **Platform Profile ID Integer Constraint (1-255)**:

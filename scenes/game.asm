@@ -29,6 +29,11 @@ SCENE_TITLE_FADE_STEPS = 8
     lda active_scene_id
     jsr render_scene_background
 
+    ; Initialize DLI engine and stage initial scene DLI data
+    jsr dli_init
+    lda active_scene_id
+    jsr dli_stage_scene
+
     ; 4. Set up Scene Title Card LMS operand in dlist_scene_title
     ldx active_scene_id
     lda scene_name_line_lo,x
@@ -78,6 +83,13 @@ SCENE_TITLE_FADE_STEPS = 8
 @sync_vblank
     cmp RTCLOK+2
     beq @sync_vblank
+
+    ; If in active playing phase, perform DLI VBLANK update
+    lda game_phase
+    cmp #GAME_PHASE_PLAYING
+    bne @skip_dli_vblank
+    jsr dli_vblank_update
+@skip_dli_vblank
 
     ; Dispatch based on game_phase
     lda game_phase
@@ -214,9 +226,15 @@ SCENE_TITLE_FADE_STEPS = 8
     sta SDLSTH
     sta DLISTH
 
-    ; Set scene palette for gameplay (ANTIC Mode D)
-    lda active_scene_id
-    jsr set_scene_palette
+    ; Perform initial DLI VBLANK update for gameplay
+    jsr dli_vblank_update
+
+    ; Enable PMG single-line + players + missiles + normal playfield ($3E)
+    lda #$3E
+    sta SDMCTL
+    sta DMACTL
+    lda #$03
+    sta GRACTL
 
     lda #GAME_PHASE_PLAYING
     sta game_phase
@@ -229,9 +247,11 @@ SCENE_TITLE_FADE_STEPS = 8
 ; PHASE 3: Active Gameplay Loop
 ; ------------------------------------------------------------------------------
 @do_playing
-    lda #$22
+    lda #$3E
     sta SDMCTL
     sta DMACTL
+    lda #$03
+    sta GRACTL
 
     ; Check if button was released first
     lda fire_released

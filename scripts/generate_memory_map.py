@@ -100,6 +100,8 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
         return "Title Screen VRAM", "GRAPHICS", COLORS["GRAPHICS"], "320x192 ANTIC Mode F bitmapped screen (7,696 B)"
     if start == 0x6000:
         return "Title Display List", "DLIST", COLORS["DLIST"], "2-segment Mode F Display List with LMS"
+    if start == 0x6100:
+        return "Unified DLI Engine & Buffers", "CODE", COLORS["CODE"], "Double-buffered DLI tables and 3-phase DLI interrupt handler"
     if start == 0x6800:
         return "Player-Missile & Audio", "PMG", COLORS["PMG"], "2 KB PMG buffer ($6800) + CMC Audio Player & Music ($7000)"
     if start == 0x7000:

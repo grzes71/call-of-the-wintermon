@@ -83,6 +83,8 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Title Screen VRAM (320x192 Mode F)"
         elif start == 0x6000:
             seg_type = "Title Display List"
+        elif start == 0x6100:
+            seg_type = "Unified DLI Double Buffers"
         elif start == 0x6800:
             seg_type = "Player-Missile Graphics (PMG 2 KB) + Audio"
         elif start == 0x7000:

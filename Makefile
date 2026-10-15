@@ -40,9 +40,10 @@ SCENES_MANIFEST  := scenes/scenes.json
 SCENES_DIR       := scenes
 SCENES_SRCS      := $(wildcard $(SCENES_DIR)/*.json)
 SCENES_ASM       := $(GEN_DIR)/scenes_data.asm
+SCENES_DLI_ASM   := $(GEN_DIR)/scenes_dli_data.asm
 
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
-                    engine/render.asm engine/render_tables.asm \
+                    engine/dli.asm engine/render.asm engine/render_tables.asm \
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 .PHONY: all assets tiles music data tests xex check_memory run clean
@@ -83,9 +84,9 @@ $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 # 4. Data generation (Scene structures, platforms, objects)
 # ------------------------------------------------------------------------------
-data: $(SCENES_ASM)
+data: $(SCENES_ASM) $(SCENES_DLI_ASM)
 
-$(SCENES_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json platform_profiles.json scripts/compile_scenes.py
+$(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json platform_profiles.json scripts/compile_scenes.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM)
 
