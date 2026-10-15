@@ -149,7 +149,60 @@ class EnemyDefinition(CatalogDefinition):
 @dataclass
 class SecretDefinition(CatalogDefinition):
     """Specific definition for a secret / collectible type."""
-    pass
+    dependency: Optional[int] = None
+
+    def validate(self) -> None:
+        super().validate()
+        if self.dependency is not None:
+            if isinstance(self.dependency, str) and self.dependency.strip().isdigit():
+                self.dependency = int(self.dependency.strip())
+
+            if isinstance(self.dependency, bool) or not isinstance(self.dependency, int) or not (1 <= self.dependency <= 255):
+                raise InvalidDefinitionError(
+                    f"Secret 'dependency' must be an integer between 1 and 255, got {self.dependency!r}."
+                )
+
+            if self.dependency == self.id:
+                raise InvalidDefinitionError(
+                    f"Secret '{self.id}' cannot depend on itself."
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        d = super().to_dict()
+        if self.dependency is not None:
+            d["dependency"] = int(self.dependency)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SecretDefinition:
+        if not isinstance(data, dict):
+            raise InvalidDefinitionError("Definition data must be a dictionary.")
+
+        base_defn = super().from_dict(data)
+        raw_dep = data.get("dependency")
+        dep: Optional[int] = None
+        if raw_dep is not None:
+            if isinstance(raw_dep, str) and raw_dep.strip().isdigit():
+                dep = int(raw_dep.strip())
+            elif isinstance(raw_dep, int) and not isinstance(raw_dep, bool):
+                dep = raw_dep
+            elif raw_dep == "" or raw_dep is False:
+                dep = None
+            else:
+                raise InvalidDefinitionError(
+                    f"Secret 'dependency' must be an integer between 1 and 255, got {raw_dep!r}."
+                )
+
+        defn = cls(
+            id=base_defn.id,
+            name=base_defn.name,
+            rgb_color=base_defn.rgb_color,
+            atari_color=base_defn.atari_color,
+            blink=base_defn.blink,
+            dependency=dep,
+        )
+        defn.validate()
+        return defn
 
 
 @dataclass
@@ -171,11 +224,158 @@ class ProjectCatalogues:
             raise KeyError(f"Invalid definition ID '{defn_id}'. Must be an integer 1-255.")
 
     def validate(self) -> None:
-        """Validate all definitions."""
+        """Validate all definitions and relationship integrity."""
         for enemy in self.enemies.values():
             enemy.validate()
         for secret in self.secrets.values():
             secret.validate()
+        self.validate_secrets_chain()
+
+    def get_secret_stage(self, defn_id: Any) -> int:
+        """Calculate the stage index (1-based) for a secret definition.
+        Secrets with no dependency (or unresolvable) belong to Stage 1.
+        Each dependency link increments the stage by 1."""
+        if defn_id is None:
+            return 1
+        try:
+            norm_id = self._normalize_id(defn_id)
+        except KeyError:
+            return 1
+
+        curr_id = norm_id
+        stage = 1
+        visited = set()
+        while curr_id in self.secrets:
+            if curr_id in visited:
+                break
+            visited.add(curr_id)
+            dep = self.secrets[curr_id].dependency
+            if dep is None or dep not in self.secrets or dep == curr_id:
+                break
+            stage += 1
+            curr_id = dep
+        return stage
+
+    def get_all_secret_stages(self) -> dict[int, int]:
+        """Return a mapping of secret ID to its calculated stage number."""
+        return {s_id: self.get_secret_stage(s_id) for s_id in self.secrets}
+
+    def validate_secrets_chain(self) -> None:
+        """Validate that secrets form a valid, non-cyclic, non-branching linear chain.
+        - All referenced dependencies must exist in secrets catalogue.
+        - No self-dependencies.
+        - No cycles (A -> B -> A).
+        - No branching: no secret definition may have more than one child depending on it.
+        - No multiple independent chains: if dependencies exist, they must all belong
+          to a single linear chain sequence."""
+        if not self.secrets:
+            return
+
+        # 1. Basic validation and missing dependency check
+        children_map: dict[int, list[int]] = {}
+        for s_id, s in self.secrets.items():
+            s.validate()
+            if s.dependency is not None:
+                dep_id = self._normalize_id(s.dependency)
+                if dep_id not in self.secrets:
+                    raise InvalidDefinitionError(
+                        f"Secret '{s.name}' [{s_id}] depends on non-existent secret ID '{dep_id}'."
+                    )
+                if dep_id == s_id:
+                    raise InvalidDefinitionError(
+                        f"Secret '{s.name}' [{s_id}] cannot depend on itself."
+                    )
+                children_map.setdefault(dep_id, []).append(s_id)
+
+        # 2. Check branching (multiple dependents on the same secret)
+        for parent_id, children in children_map.items():
+            if len(children) > 1:
+                parent_name = self.secrets[parent_id].name
+                child_names = [f"'{self.secrets[cid].name}' [{cid}]" for cid in children]
+                raise InvalidDefinitionError(
+                    f"Branching is not allowed in secret dependency chain: "
+                    f"Secret '{parent_name}' [{parent_id}] is a dependency for multiple secrets: "
+                    f"{', '.join(child_names)}."
+                )
+
+        # 3. Check cycles
+        for s_id in self.secrets:
+            visited = set()
+            curr = s_id
+            while curr in self.secrets:
+                if curr in visited:
+                    cycle_path = " -> ".join(str(i) for i in visited)
+                    raise InvalidDefinitionError(
+                        f"Cyclic dependency detected involving secret ID '{curr}': {cycle_path}."
+                    )
+                visited.add(curr)
+                dep = self.secrets[curr].dependency
+                if dep is None:
+                    break
+                curr = dep
+
+        # 4. Check multiple independent chains
+        # Chains with dependencies have edges.
+        # If there are secrets with dependencies, there can only be ONE chain with dependents.
+        chain_roots_with_dependents = [
+            s_id for s_id, s in self.secrets.items()
+            if s.dependency is None and s_id in children_map
+        ]
+        if len(chain_roots_with_dependents) > 1:
+            roots_desc = [f"'{self.secrets[rid].name}' [{rid}]" for rid in chain_roots_with_dependents]
+            raise InvalidDefinitionError(
+                f"Multiple independent dependency chains are not allowed: "
+                f"found separate chains starting at {', '.join(roots_desc)}."
+            )
+
+    def get_valid_dependencies_for(self, secret_id: Optional[int]) -> list[SecretDefinition]:
+        """Return secret definitions that can be chosen as a dependency for secret_id
+        without causing cycles, branching, or multiple independent chains."""
+        valid: list[SecretDefinition] = []
+        target_id = self._normalize_id(secret_id) if secret_id is not None else None
+
+        for cand_id, cand_defn in self.secrets.items():
+            if target_id is not None and cand_id == target_id:
+                continue
+
+            # Check branching: cand_defn cannot already have a dependent other than target_id
+            other_dependents = [
+                s.id for s in self.secrets.values()
+                if s.dependency == cand_id and (target_id is None or s.id != target_id)
+            ]
+            if other_dependents:
+                continue
+
+            # Check cycle: cand_defn cannot depend on target_id
+            if target_id is not None:
+                curr = cand_defn.dependency
+                has_cycle = False
+                visited = {target_id}
+                while curr is not None and curr in self.secrets:
+                    if curr in visited:
+                        has_cycle = True
+                        break
+                    visited.add(curr)
+                    curr = self.secrets[curr].dependency
+                if has_cycle:
+                    continue
+
+            # Check multiple chains: test-run simulation
+            sim_catalogues = self.clone()
+            if target_id is not None and target_id in sim_catalogues.secrets:
+                sim_catalogues.secrets[target_id].dependency = cand_id
+            else:
+                avail_ids = sorted(set(range(1, 256)) - set(sim_catalogues.secrets.keys()))
+                dummy_id = avail_ids[0] if avail_ids else 255
+                sim_catalogues.secrets[dummy_id] = SecretDefinition(id=dummy_id, name="Temp", dependency=cand_id)
+            try:
+                sim_catalogues.validate_secrets_chain()
+                valid.append(cand_defn)
+            except InvalidDefinitionError:
+                continue
+
+        # Sort by stage order
+        return sorted(valid, key=lambda s: (self.get_secret_stage(s.id), s.id))
 
     def add_enemy(self, defn: EnemyDefinition) -> None:
         defn.validate()
@@ -208,6 +408,11 @@ class ProjectCatalogues:
         if norm_id in self.secrets:
             raise DuplicateDefinitionIdError(f"Secret with ID '{norm_id}' already exists.")
         self.secrets[norm_id] = defn.clone()
+        try:
+            self.validate_secrets_chain()
+        except Exception:
+            del self.secrets[norm_id]
+            raise
 
     def update_secret(self, defn_id: Any, defn: SecretDefinition) -> None:
         defn.validate()
@@ -217,14 +422,34 @@ class ProjectCatalogues:
             raise KeyError(f"Secret with ID '{old_id}' not found.")
         if new_id != old_id and new_id in self.secrets:
             raise DuplicateDefinitionIdError(f"Secret with ID '{new_id}' already exists.")
+
+        backup_secrets = {k: v.clone() for k, v in self.secrets.items()}
         if new_id != old_id:
             del self.secrets[old_id]
+            for s in self.secrets.values():
+                if s.dependency == old_id:
+                    s.dependency = new_id
+
         self.secrets[new_id] = defn.clone()
+        try:
+            self.validate_secrets_chain()
+        except Exception:
+            self.secrets = backup_secrets
+            raise
 
     def remove_secret(self, defn_id: Any) -> SecretDefinition:
         norm_id = self._normalize_id(defn_id)
         if norm_id not in self.secrets:
             raise KeyError(f"Secret with ID '{norm_id}' not found.")
+
+        # Guard against breaking dependencies
+        dependents = [s for s in self.secrets.values() if s.dependency == norm_id]
+        if dependents:
+            dep_names = ", ".join(f"'{s.name}' [{s.id}]" for s in dependents)
+            raise DefinitionInUseError(
+                f"Cannot delete secret '{self.secrets[norm_id].name}' [{norm_id}]: "
+                f"the following secret(s) depend on it: {dep_names}."
+            )
         return self.secrets.pop(norm_id)
 
     def get_enemy(self, defn_id: Any) -> Optional[EnemyDefinition]:
@@ -288,8 +513,8 @@ class ProjectCatalogues:
     @classmethod
     def load_from_paths(
         cls,
-        enemies_path: Optional[Path | str],
-        secrets_path: Optional[Path | str],
+        enemies_path: Optional[Path | str] = None,
+        secrets_path: Optional[Path | str] = None,
     ) -> ProjectCatalogues:
         """Load catalogues from specific file paths."""
         e_path = Path(enemies_path).resolve() if enemies_path else None
@@ -358,6 +583,13 @@ class ProjectCatalogues:
                         f"Error in {s_path.name} at entry {idx}: {err}"
                     ) from err
 
+            try:
+                catalogues.validate_secrets_chain()
+            except Exception as err:
+                raise CorruptedCatalogueFileError(
+                    f"Invalid secret dependency chain in {s_path.name}: {err}"
+                ) from err
+
         return catalogues
 
     @classmethod
@@ -386,6 +618,30 @@ class ProjectCatalogues:
             "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
         }
         self._atomic_save_json(secrets_path, secrets_data)
+
+    def save_to_paths(
+        self,
+        enemies_path: Optional[Path | str] = None,
+        secrets_path: Optional[Path | str] = None,
+    ) -> None:
+        """Atomically save catalogues to specific file paths if provided."""
+        if enemies_path is not None:
+            e_p = Path(enemies_path).resolve()
+            e_p.parent.mkdir(parents=True, exist_ok=True)
+            enemies_data = {
+                "version": 1,
+                "enemies": [e.to_dict() for e in sorted(self.enemies.values(), key=lambda e: e.id)],
+            }
+            self._atomic_save_json(e_p, enemies_data)
+        if secrets_path is not None:
+            s_p = Path(secrets_path).resolve()
+            s_p.parent.mkdir(parents=True, exist_ok=True)
+            secrets_data = {
+                "version": 1,
+                "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
+            }
+            self._atomic_save_json(s_p, secrets_data)
+
 
     @staticmethod
     def _atomic_save_json(target_path: Path, data: dict[str, Any]) -> None:

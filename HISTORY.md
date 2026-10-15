@@ -2,6 +2,226 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-15] - Simplification of Secret Dependency UI and Scene-Isolated Progress Runtime
+
+- **Refactored Secrets Catalogue UI to Pure Type-Based Dependencies** in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py):
+  - Removed all `Stage 1`, `Stage 2`, and `(Stage X -> Unlocks Stage Y)` text from the Dependency dropdown, label, and secrets list items.
+  - Dependency dropdown now clearly displays `None (dostępny od początku sceny)` for root secrets and clean prerequisite names: `Name [ID]` (e.g. `Gold Key [ID: 11]`).
+  - Replaced the `Stage in Chain` label with an intuitive `Unlock Condition (Warunek):` label displaying either `"Available from the start of the scene (no dependency)"` or `"Unlocks after collecting all '<Prerequisite>' secrets on the scene"`.
+  - Secrets list widget displays clean annotations: `Name [ID] (from start)` or `Name [ID] (requires: <Prerequisite>)`.
+- **Refactored Scene Runtime for Strict Multi-Scene Isolation** in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py):
+  - Refactored [SceneSecretRuntime](atari-scene-editor/src/scene_editor/scene_model.py) so unlock checks evaluate prerequisite secret types on the specific scene instance.
+  - Secret collection progress is strictly isolated per scene: collecting keys on Scene 1 leaves doors on Scene 2 locked.
+  - A dependent secret type unlocks only when all instances of its prerequisite type on the current scene are collected.
+  - Preserved backward-compatible helper properties (`current_stage`, `is_stage_complete`) while keeping internal state purely type- and scene-driven.
+- **Added Integration Tests for Multi-Scene Isolation and Type Prerequisites** in [tests/test_catalogues.py](tests/test_catalogues.py) and [tests/test_scene_objects.py](tests/test_scene_objects.py):
+  - Added `test_dependencies_work_across_multiple_scenes_with_isolated_progress` verifying Scene 1 actions do not unlock Scene 2.
+  - Added `test_unlock_requires_all_secrets_of_dependent_type_on_scene` verifying partial collection does not unlock dependent types.
+  - Updated UI tests to assert absence of `Stage` text and presence of prerequisite descriptions.
+  - Verified full test suite (271 passed) and memory check via `make all`.
+
+
+## [2026-10-15] - Linear Dependency Chain for Secrets & Stage-Based Row Limit Validation
+
+- **Extended Secrets Catalogue Data Model** in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py):
+  - Added `dependency: Optional[int] = None` to `SecretDefinition` with backward-compatible JSON serialization (`to_dict` / `from_dict`).
+  - Implemented single linear dependency chain validation in `ProjectCatalogues`: rejects cycles, branching (multiple dependents on the same predecessor), and multiple independent chains.
+  - Added `get_secret_stage()`, `get_all_secret_stages()`, and `get_valid_dependencies_for()` to dynamically compute topological stage numbering and filter valid predecessor candidates.
+  - Implemented deletion guards in `remove_secret()` to prevent deleting secrets referenced as dependencies, and automatic ID cascading in `update_secret()`.
+- **Refined Row Limits and Scene Validation** in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py):
+  - Separated hardware object limits: `MAX_ENEMIES_PER_ROW = 3` (Players P1-P3) and `MAX_SECRETS_PER_STAGE = 4` (Missiles M0-M3).
+  - Updated `can_add_object_to_platform()`, `add_object()`, `move_object()`, and `Scene.validate()`: secrets in the same row are validated per-stage. Up to 4 secrets per stage are allowed per row, enabling multiple stages (e.g. 4 Stage 1 + 4 Stage 2 = 8 secrets) to occupy the same row and positions without exceeding hardware capacity.
+  - Implemented `SceneSecretRuntime` to simulate single-scene gameplay progression: activates Stage 1 at start, automatically unlocks the next stage upon collecting all secrets of the current stage, prevents collected secrets from reappearing, and triggers scene transition upon finishing the final stage.
+- **Enhanced Catalogue & Scene Editor UI** in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) and [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py):
+  - Added dependency selector (`QComboBox`) and dynamic stage indicator label (`QLabel`) in Secret Details panel.
+  - Displayed stage badges and dependency links in catalogue list items (`[Stage X] Name [ID] (after: ...)`).
+  - Integrated `self.catalogues` into `MainWindow.scene_model` for real-time stage-aware placement validation.
+- **Unit and Integration Test Suites** in [tests/test_catalogues.py](tests/test_catalogues.py) and [tests/test_scene_objects.py](tests/test_scene_objects.py):
+  - Added tests covering legacy backward compatibility, linear chain rules, cycle/branching prevention, 4-secrets-per-stage validation, row position sharing, and runtime progression.
+  - Verified full test suite (269 passed) and memory map validation via `make all`.
+
+## [2026-10-15] - Memory Reservation for Gameplay VRAM (ANTIC E 160x96) & PMG Buffer
+
+- **Reserved dedicated Gameplay Playfield VRAM (`GAME_VRAM`)** in [main.asm](main.asm):
+  - Address: `$3000` (aligned to a 4 KB boundary: `$3000-$3EFF`).
+  - Size: 3,840 bytes ($40 \text{ bytes/line} \times 96 \text{ lines}$).
+  - Hardware advantage: Because the entire 3,840-byte buffer lies strictly inside the 4 KB page `$3000-$3FFF`, ANTIC's 12-bit address counter never wraps, eliminating the need for any mid-screen LMS instructions.
+- **Created Gameplay Display List (`dlist_game`)** in [main.asm](main.asm):
+  - Address: `GAME_DLIST = $3F00` (107 bytes: `$3F00-$3F6A`, aligned within `$3C00-$3FFF`, no 1 KB boundary crossing).
+  - Structure: 3x top blank scanlines (`DL_BLANK8`), 1x mode line with LMS (`DL_MODE_E | DL_LMS` pointing to `$3000`), 95x `DL_MODE_E` lines, 3x bottom blank scanlines (`DL_BLANK8`), and `DL_JVB` back to `dlist_game`.
+- **Reserved Player-Missile Graphics buffer (`PMG_ADDR`)** in [main.asm](main.asm):
+  - Address: `$6800` (2 KB boundary aligned: `$6800-$6FFF`, `PMBASE = $68`).
+  - Size: 2,048 bytes (supports both 1-line single-line resolution and 2-line double-line resolution).
+  - Equates defined: `PMBASE_PAGE = $68`, `PMG_MISSILES = $6B00`, `PMG_PLAYER0 = $6C00`, `PMG_PLAYER1 = $6D00`, `PMG_PLAYER2 = $6E00`, `PMG_PLAYER3 = $6F00`.
+- **Updated Gameplay State Initializer** in [scenes/game.asm](scenes/game.asm):
+  - Configures `SDLSTL`/`SDLSTH` (and direct `DLISTL`/`DLISTH`) to point to `dlist_game`.
+  - Sets `PMBASE` hardware register to `$68`.
+  - Applies default Forest palette from `tileset_trees` (`COLOR4/COLBK = $00`, `COLOR0/COLPF0 = $C4`, `COLOR1/COLPF1 = $C8`, `COLOR2/COLPF2 = $DC`).
+  - Enables ANTIC Mode E playfield DMA (`$22` into `SDMCTL` and `DMACTL`).
+- **Enhanced Memory Checker** in [scripts/check_memory.py](scripts/check_memory.py):
+  - Automatically identifies and labels known subsystem segments: Engine Code, Fonts, Intro, Tileset Metadata, Gameplay VRAM & DLIST, Title Screen VRAM & DLIST, PMG + Audio, and Tileset Bitmaps.
+  - Accurately tracks total user allocation (**35,198 bytes**) and remaining contiguous/total headroom (**5,762 bytes** below `$C000`).
+- **Added Automated Emulation Tests** in [tests/test_convert_tiles.py](tests/test_convert_tiles.py):
+  - `test_gameplay_vram_and_pmg_reservation`: Verifies addresses, 4 KB alignment of VRAM, 2 KB alignment of PMG, 107-byte display list structure, and py65 emulation of `game_init` setting `PMBASE=$68` and `SDLSTL=$3F00`.
+  - Full test suite passing: 242 tests.
+
+## [2026-10-15] - ANTIC Mode E Tileset Conversion & Memory Integration
+
+- **Developed ANTIC Mode E tile conversion pipeline** in [scripts/convert_tiles.py](scripts/convert_tiles.py):
+  - Scans `tiles/` folder directly (excluding subdirectories like `tiles/org`).
+  - Supports both indexed mode `P` images (`castles.png`, `depths.png`, `trees.png`) and true-color RGB (`hell.png`).
+  - Implemented 1D k-means luminance clustering for RGB graphics: classifies background ($\le 10$ lum) as index 0 and non-black pixels into 3 distinct tone levels (1=dark, 2=mid, 3=highlight).
+  - Packs 4 pixels per byte in ANTIC Mode E format (2bpp, MSB leftmost: `(p0<<6)|(p1<<4)|(p2<<2)|p3`), padding incomplete bytes with background color.
+  - Generates binary bitmapped assets:
+    - [gen/tiles_castles.bin](gen/tiles_castles.bin) (270x44 px, 68 B/line, 2,992 bytes)
+    - [gen/tiles_depths.bin](gen/tiles_depths.bin) (360x72 px, 90 B/line, 6,480 bytes)
+    - [gen/tiles_hell.bin](gen/tiles_hell.bin) (291x57 px, 73 B/line, 4,161 bytes)
+    - [gen/tiles_trees.bin](gen/tiles_trees.bin) (246x42 px, 62 B/line, 2,604 bytes)
+    - Total tiles payload: 16,237 bytes across 4 tilesets.
+- **Generated MADS 6502 assembly descriptors and SoA tables** in [gen/tiles_data.asm](gen/tiles_data.asm):
+  - Equates: `TILESET_CASTLES=0`, `TILESET_DEPTHS=1`, `TILESET_HELL=2`, `TILESET_TREES=3`, `TILESET_COUNT=4`.
+  - Dimensions & pitch constants (`TILESET_*_W_PX`, `TILESET_*_W_BYTES`, `TILESET_*_H_LINES`, `TILESET_*_SIZE`).
+  - Structure-of-Arrays (SoA) tables: `tileset_w_px_lo/hi`, `tileset_w_bytes`, `tileset_h_lines`, `tileset_size_lo/hi`, `tileset_data_lo/hi`.
+  - Recommended Atari GTIA color palette registers for each tileset (`tileset_colbk`, `tileset_colpf0`, `tileset_colpf1`, `tileset_colpf2`).
+  - Precomputed row offset tables (`tiles_*_row_lo/hi` for $y \times \text{stride}$) and pointers (`tileset_row_table_lo/hi`) for $O(1)$ fast indexed blitting.
+- **Integrated tiles into game memory architecture** in [main.asm](main.asm):
+  - Allocated `TILES_META` at `$2B00` (486 bytes: `$2B00-$2CE5`) in the gap between intro display list and title VRAM.
+  - Added early boot vector `init_disable_basic` (`ini`) before tiles payload to disable BASIC ROM (`PORTB |= $02`), ensuring `$A000-$BFFF` RAM is writable during XEX loading.
+  - Allocated `TILES_ADDR` at `$8000`: all 4 tileset binaries reside contiguously in `$8000-$BF6C` (16,237 bytes), strictly below `$C000`.
+- **Integrated build automation** in [Makefile](Makefile):
+  - Added `tiles` target and dependencies on `scripts/convert_tiles.py` and `$(TILES_SRCS)`.
+  - Added tile binaries and ASM descriptors as prerequisites for binary assembly `$(TARGET)`.
+- **Automated verification & testing**:
+  - Added unit, packing, and integration tests in [tests/test_convert_tiles.py](tests/test_convert_tiles.py).
+  - py65 CPU emulation test verifying memory layout, symbol addresses, SoA tables, and row offset lookups directly from the compiled binary.
+  - Full suite passes: 241 tests, memory checker confirms 29,145 bytes user RAM allocated with 11,815 bytes available headroom below `$C000`.
+
+## [2026-10-15] - Intro Screen in ANTIC Mode 2 with Polish Diacritics & Text Source
+
+- **Implemented Intro Screen text generation pipeline** in [scripts/gen_intro_text.py](scripts/gen_intro_text.py):
+  - Reads 10 story lines from [texts/intro.txt](texts/intro.txt) instead of hardcoded strings.
+  - Automatically calculates horizontal centering for each line across 40 columns (`left_pad = (40 - len) // 2`).
+  - Implemented new custom font Polish character mappings:
+    - Uppercase (`Ą, Ć, Ę, Ł, Ń, Ó, Ś, Ź, Ż` -> `65, 66, 67, 68, 69, 70, 71, 72, 73`).
+    - Lowercase (`ą, ć, ę, ł, ń, ó, ś, ź, ż` -> `81, 82, 83, 84, 85, 86, 87, 88, 89`).
+  - Outputs 400-byte raw screen VRAM binary [gen/intro_text.bin](gen/intro_text.bin).
+- **Added Polish 8-bit character font**:
+  - Integrated 1,024-byte font [fonts/font.fnt](fonts/font.fnt) containing the updated Polish diacritics layout.
+  - Placed at 1 KB boundary `$2400` (`FONT_ADDR`), referenced by `CHBASE = $24`.
+- **Created ANTIC 2 Display List with 8-line spacing** in [main.asm](main.asm) and [scenes/intro.asm](scenes/intro.asm):
+  - Total vertical layout: 3x `DL_BLANK8` (top margin) + 10x `DL_MODE_2` text lines with 9x `DL_BLANK8` (8 blank scanlines between each line) + 3x `DL_BLANK8` (bottom margin) + `DL_JVB`.
+  - Configured colors: Light green text foreground (`COLOR1` / `COLPF1` = `$CA`, Hue $C, Lum $A), pure black background/border (`COLOR2` / `COLOR4` = `$00`).
+  - Display list located at `$2A00` (`INTRO_DLIST`), text VRAM at `$2800` (`INTRO_VRAM`).
+- **Updated build automation** in [Makefile](Makefile):
+  - Added `$(INTRO_TXT_SRC)` dependency (`texts/intro.txt`), `$(INTRO_TXT_BIN)`, and `$(INTRO_FONT)` to targets.
+  - Ensured `tests` depend on `$(TARGET)` so clean builds run binary assembly before py65 emulation tests.
+- **Added automated tests** in [tests/test_intro_screen.py](tests/test_intro_screen.py):
+  - Verified exact Polish character mappings (65..73 and 81..89) and file-based conversion from [texts/intro.txt](texts/intro.txt).
+  - py65 emulation test verifying `intro_init` registers: `COLOR1` ($CA), `COLOR2` ($00), `CHBASE` ($24), and Display List pointer.
+  - All 233 tests pass, memory validation confirms 12,411 bytes allocated with 28,549 bytes headroom below `$C000`.
+
+
+## [2026-10-15] - State Machine & 28-Frame Title Fade-In with Music Trigger
+
+- **Implemented game state machine architecture**:
+  - In [zeropage.asm](zeropage.asm): Defined state equates (`STATE_TITLE=0`, `STATE_INTRO=1`, `STATE_GAME=2`, `STATE_OVER=3`) and state control variables (`game_state`, `current_state`, `title_first_run`, `fade_frame`, `fire_released`).
+  - In [main.asm](main.asm): Built top-level dispatcher that detects state changes, calls `*_init` upon entry, and dispatches `*_run` each frame.
+- **Implemented 28-frame smooth fade-in for title screen** in [scenes/title.asm](scenes/title.asm):
+  - Formula: `(fade_frame >> 1) & $0E` smoothly increments foreground color (`COLOR1` / `COLPF1`) through even GTIA luminances (`$00, $02, ..., $0E`) over exactly 28 frames.
+  - Music playback is delayed during fade-in and starts only upon reaching full brightness at frame 28 (`audio_play_title`).
+  - Sets `title_first_run = 0` when fade-in finishes.
+  - On re-entry from Game Over (`title_first_run == 0`), skips fade-in completely, displaying title image at full brightness (`$0E`) and playing music immediately.
+  - Input polling (Joystick Fire `STRIG0` / Keyboard `CH`) with debounce stops music (`audio_stop`) and transitions to `STATE_INTRO`.
+- **Created scene stubs with input debouncing**:
+  - [scenes/intro.asm](scenes/intro.asm): blanks display, waits for Fire press to transition to `STATE_GAME`.
+  - [scenes/game.asm](scenes/game.asm): blanks display, waits for Fire press to transition to `STATE_OVER`.
+  - [scenes/gameover.asm](scenes/gameover.asm): blanks display, waits for Fire press to transition back to `STATE_TITLE`.
+- **Automated verification & py65 testing**:
+  - Added [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py) with py65 MPU emulation:
+    - Tested `title_init` on first run (`title_first_run == 1`): asserts color is `$00` and `fade_frame == 0`.
+    - Tested `title_init` on subsequent runs (`title_first_run == 0`): asserts color is `$0E` and `fade_frame == 28` immediately.
+    - Tested 28-frame luminance progression formula.
+  - Added `py65>=1.1.0` to [requirements.txt](requirements.txt).
+  - Updated [Makefile](Makefile) with scene sources in `ASM_SRCS`.
+  - All 230 unit/integration/emulation tests pass (`make all`).
+
+
+## [2026-10-15] - Title Screen Music Integration (Atari Music Composer & POKEY Player)
+
+- **Created music compilation pipeline** in [scripts/compile_music.py](scripts/compile_music.py):
+  - Uses `atari_music` library (`load_composition_json`, `generate_music_from_composition`, `export_mads_asm`) to compile [music/title.json](music/title.json) into relocatable MADS assembly [gen/title_music.asm](gen/title_music.asm) with label `music_title_data`.
+  - Song "Horde of the North" by Chiptune Necromancer (140 BPM, D minor, 4 channels with 16-bit coupled bass on Ch1+Ch2).
+- **Added audio subsystem wrapper** in [lib/audio.asm](lib/audio.asm):
+  - Integrates 4-channel relocatable driver [lib/player.asm](lib/player.asm).
+  - Implements `audio_play_title` (initializes song via `music_init` and triggers playback with `music_play`), `audio_update` (advances playback by 1 frame), and `audio_stop` (stops and silences POKEY).
+- **Configured Zero Page allocations** in [zeropage.asm](zeropage.asm):
+  - Allocated `PLAYER_ZP_BASE = $90` ($90-$99, 10 bytes) for audio player track and temporary pointers, avoiding collision with engine variables ($80-$8F).
+- **Integrated playback into title screen** in [main.asm](main.asm):
+  - Calls `audio_play_title` at startup.
+  - Updates music player once per 50 Hz frame (`audio_update`) synchronized with vertical blank via `RTCLOK`.
+  - Allocated isolated audio segment at `$7000` (`$7000-$79CE`, 2,511 bytes: 886 bytes player + 1,618 bytes song data and structures), keeping music memory isolated from VRAM (`$4000-$5E0F`) and Display List (`$6000-$60C9`).
+- **Updated build automation** in [Makefile](Makefile):
+  - Added `music` target compiling `music/title.json` into `gen/title_music.asm`.
+  - Updated dependencies and added `-i:lib` flag to MADS assembly command.
+- **Added automated tests** in [tests/test_compile_music.py](tests/test_compile_music.py):
+  - Verified music compilation, label generation, and error handling.
+  - All 227 tests passing; memory validation verifies 10,495 bytes allocated with 30,465 bytes headroom below `$C000`.
+
+
+## [2026-10-15] - Title Screen Implementation in ANTIC Mode F & Build Pipeline
+
+- **Created image conversion tool for ANTIC Mode F** in [scripts/convert_image.py](scripts/convert_image.py):
+  - Converts 320x192 1bpp PNG images into ANTIC Mode F (Graphics 8, 40 bytes/line) binary data.
+  - Automatically splits image into two VRAM segments to respect ANTIC's 12-bit address 4 KB boundary wrap:
+    - Segment 1: scanlines 0..101 (102 lines * 40 bytes = 4,080 bytes) at `$4000`.
+    - Padding: 16 zero-bytes to align Segment 2 at `$5000`.
+    - Segment 2: scanlines 102..191 (90 lines * 40 bytes = 3,600 bytes) at `$5000`.
+    - Total output binary size: 7,696 bytes (`gen/title.bin`).
+- **Created automated memory validation tool** in [scripts/check_memory.py](scripts/check_memory.py):
+  - Parses Atari DOS `.xex` segments and verifies adherence to project architecture rules.
+  - Asserts that no segment overlaps OS ROM (`$C000-$CFFF`, `$E000-$FFFF`) or Hardware registers (`$D000-$DFFF`), and all code/data ends at or below `$BFFF`.
+  - Calculates total allocated RAM and reports remaining headroom below `$C000`.
+- **Created assembly architecture for title screen**:
+  - In [zeropage.asm](zeropage.asm): Defined user zero-page equates strictly in `$80-$FF`.
+  - In [main.asm](main.asm):
+    - Added startup routine disabling BASIC ROM (`PORTB |= $02`) to ensure full 64 KB RAM is accessible.
+    - Configured ANTIC Mode F colors: Background black (`COLPF2` / `COLOR2` = `$00`, `COLBK` / `COLOR4` = `$00`), Foreground white (`COLPF1` / `COLOR1` = `$0E`).
+    - Built Display List (`dlist_title`) at `$6000` with 24 top blank scanlines, two LMS mode F segments (`$4000` and `$5000`), and a `DL_JVB` loop.
+    - Synchronized main loop with vertical blank via `RTCLOK` and reset `ATRACT` screensaver timer.
+    - Set standard DOS run vector at `RUNAD` (`$02E0`).
+- **Created cross-platform build automation** in [Makefile](Makefile):
+  - Target binary set to `call_of_the_wintermon.xex`.
+  - Integrated portable Python-based directory and cleanup helpers (`MKDIR`, `RM`).
+  - Configured target chain: `assets -> data -> tests -> xex -> check_memory`.
+  - Targets: `all`, `assets`, `data`, `tests`, `xex`, `check_memory`, `run`, `clean`.
+- **Added automated tests** in [tests/test_convert_image.py](tests/test_convert_image.py):
+  - Tested output binary length (7,696 bytes), pixel packing (MSB first), 16-byte padding at offset 4080, and dimension validation.
+  - Verified full test suite passes (225 tests) and memory check validates `call_of_the_wintermon.xex` (7,978 bytes allocated with 32,982 bytes headroom).
+
+
+## [2026-10-15] - Support Multi-Resource Hardware Platform Widths (Sprite & Missile)
+
+- **Expanded hardware platform width lists and resource consumption logic** in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py):
+  - Added new `SPRITE_WIDTHS`: `[4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96]`.
+  - Added new `MISSILE_WIDTHS`: `[4, 8, 12, 16, 20, 24, 28, 32]`.
+  - Implemented single shared calculation function `get_required_platform_resources(platform_type, width)`:
+    - Sprite: `ceil(width / 32)` (4–32 px: 1 sprite, 36–64 px: 2 sprites, 68–96 px: 3 sprites).
+    - Missile: `ceil(width / 8)` (4–8 px: 1 missile, 12–16 px: 2 missiles, 20–24 px: 3 missiles, 28–32 px: 4 missiles).
+    - Rejects invalid platform types with `ModelValidationError` and invalid widths with `InvalidPlatformDimensionError`.
+  - Added `required_resources` property on `PlatformElement`.
+  - Updated `get_row_resource_usage()` to accumulate hardware resource units rather than raw platform count.
+  - Updated `can_add_platform_to_row()`, `Scene.add_platform()`, `Scene.move_platform()`, `Scene.resize_platform()`, `Scene.set_platform_type()`, and `Scene.validate()` to validate hardware resource limits using platform width.
+- **Updated UI controls and resource indicators** in [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py):
+  - Populated creator width combo `new_plat_width_combo` and property panel `plat_prop_width_combo` with new allowed widths and resource counts.
+  - Enforced resource validation and collision detection when resizing platform width (`_on_plat_prop_width_changed`) and changing type (`_on_plat_prop_type_changed`).
+  - Updated row status labels and combo row labels to format resource usage as `Sprite: X/3, Missile: Y/4`.
+  - Updated platform documentation in [atari-scene-editor/README.md](atari-scene-editor/README.md).
+- **Automated Tests**:
+  - In [tests/test_platform_editor.py](tests/test_platform_editor.py), added `TestPlatformResourceCalculation` and comprehensive tests covering all width intervals, limit checks, combinations (Sprite 96, 32+64, 32+32+32, 64+64 rejected; Missile 12+8, 12+12, 32+4 rejected), resize and move limits, and JSON load rejections.
+  - In [tests/test_gui_integration.py](tests/test_gui_integration.py), added `test_platform_gui_resource_limit_rejection`.
+  - In [tests/test_scene_objects.py](tests/test_scene_objects.py), made `test_load_01_forest_scene_with_numeric_objects` verify object count dynamically from the scene file.
+  - Verified all 222 unit and integration tests pass.
+
 ## [2026-10-14] - Fix Scene Loading for Integer Object IDs in Sequence Number Calculation
 
 - **Fixed `AttributeError: 'int' object has no attribute 'split'` when loading scenes with numeric object IDs** in [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py):

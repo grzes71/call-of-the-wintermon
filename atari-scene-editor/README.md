@@ -94,14 +94,16 @@ atari-scene-editor/
 
 Edytor umożliwia tworzenie platform opartych na zasobach sprzętowych Atari 8-bit (Player-Missile Graphics):
 - **Wysokość:** Stała i wynosi dokładnie **4 linie obrazu**.
-- **Powiększenie poziome:** Tryb ×4.
-- **Szerokości sprite'ów:** `[4, 8, 12, 16, 20, 24, 28, 32]` px (odpowiada 1..8 aktywnym bitom rejestru PMG).
-- **Szerokości missile'i:** `[4, 8]` px (odpowiada 1..2 aktywnym bitom).
+- **Szerokości platform Sprite:** `[4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96]` px.
+- **Szerokości platform Missile:** `[4, 8, 12, 16, 20, 24, 28, 32]` px.
+- **Obliczanie zużycia zasobów sprzętowych:**
+  - Sprite: `ceil(width / 32)` (4–32 px: 1 sprite, 36–64 px: 2 sprite'y, 68–96 px: 3 sprite'y).
+  - Missile: `ceil(width / 8)` (4–8 px: 1 missile, 12–16 px: 2 missiles, 20–24 px: 3 missiles, 28–32 px: 4 missiles).
 - **Ograniczenie pionowe:** Początek platformy dozwolony wyłącznie w wierszach `y % 16 == 8` (np. `y = 8, 24, 40, 56, 72, 88, 104, ...`).
 - **Limity sprzętowe na wiersz:**
-  - Maksymalnie **3 sprite'y** w jednym wierszu platform.
-  - Maksymalnie **4 missile'e** w jednym wierszu platform.
-- **Zakaz nakładania się platform:** Żadne dwie platformy (niezależnie od typu: sprite lub missile) nie mogą nachodzić na siebie geometrycznie na scenie. Dozwolone jest wyłącznie bezpośrednie stykanie się krawędziami (bez wspólnych pikseli). Wszystkie operacje dodawania, przesuwania, zmiany rozmiaru i typu podlegają ścisłej walidacji kolizji.
+  - Maksymalnie **3 zasoby Sprite** w jednym wierszu platform (suma `ceil(width / 32)` <= 3).
+  - Maksymalnie **4 zasoby Missile** w jednym wierszu platform (suma `ceil(width / 8)` <= 4).
+- **Zakaz nakładania się platform:** Żadne dwie platformy (niezależnie od typu: sprite lub missile) nie mogą nachodzić na siebie geometrycznie na scenie. Dozwolone jest wyłącznie bezpośrednie stykanie się krawędziami (bez wspólnych pikseli). Wszystkie operacje dodawania, przesuwania, zmiany rozmiaru i typu podlegają ścisłej walidacji kolizji oraz limitów zasobów.
 - **Pozycjonowanie poziome:** Z dokładnością do 1 piksela w granicach sceny (`0 <= x <= scene.width - width`).
 
 ---

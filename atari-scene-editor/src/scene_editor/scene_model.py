@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+import math
 from typing import Any, Optional
 
 
@@ -208,8 +209,12 @@ PLATFORM_TYPE_SPRITE = "sprite"
 PLATFORM_TYPE_MISSILE = "missile"
 PLATFORM_TYPES = (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE)
 
-SPRITE_WIDTHS = (4, 8, 12, 16, 20, 24, 28, 32)
-MISSILE_WIDTHS = (4, 8)
+SPRITE_WIDTHS = (
+    4, 8, 12, 16, 20, 24, 28, 32,
+    36, 40, 44, 48, 52, 56, 60, 64,
+    68, 72, 76, 80, 84, 88, 92, 96,
+)
+MISSILE_WIDTHS = (4, 8, 12, 16, 20, 24, 28, 32)
 PLATFORM_HEIGHT = 4
 
 MAX_SPRITES_PER_ROW = 3
@@ -251,12 +256,37 @@ def get_allowed_widths(platform_type: str) -> tuple[int, ...]:
     return ()
 
 
+def get_required_platform_resources(platform_type: str, width: int) -> int:
+    """Calculate the number of hardware resources (sprites or missiles) required for a platform.
+
+    - Sprite: ceil(width / 32) (1 resource up to 32px, 2 up to 64px, 3 up to 96px)
+    - Missile: ceil(width / 8) (1 up to 8px, 2 up to 16px, 3 up to 24px, 4 up to 32px)
+
+    Raises ModelValidationError if platform_type is invalid.
+    Raises InvalidPlatformDimensionError if width is not in allowed widths for the given type.
+    """
+    if platform_type not in PLATFORM_TYPES:
+        raise ModelValidationError(
+            f"Invalid platform type '{platform_type}'. Must be one of {PLATFORM_TYPES}."
+        )
+    allowed = get_allowed_widths(platform_type)
+    if not isinstance(width, int) or width not in allowed:
+        raise InvalidPlatformDimensionError(
+            f"Invalid width {width} for {platform_type}. Allowed widths: {list(allowed)} px."
+        )
+    if platform_type == PLATFORM_TYPE_SPRITE:
+        return math.ceil(width / 32)
+    elif platform_type == PLATFORM_TYPE_MISSILE:
+        return math.ceil(width / 8)
+    raise ModelValidationError(f"Unsupported platform type: '{platform_type}'.")
+
+
 def get_row_resource_usage(
     platforms: list[PlatformElement],
     y: int,
     exclude_id: Optional[str] = None,
 ) -> tuple[int, int]:
-    """Return (sprite_count, missile_count) for row y in the given platform list."""
+    """Return (sprite_count, missile_count) resources used for row y in the given platform list."""
     sprites = 0
     missiles = 0
     for p in platforms:
@@ -264,9 +294,9 @@ def get_row_resource_usage(
             continue
         if p.position.y == y:
             if p.type == PLATFORM_TYPE_SPRITE:
-                sprites += 1
+                sprites += get_required_platform_resources(p.type, p.width)
             elif p.type == PLATFORM_TYPE_MISSILE:
-                missiles += 1
+                missiles += get_required_platform_resources(p.type, p.width)
     return sprites, missiles
 
 
@@ -276,8 +306,9 @@ def can_add_platform_to_row(
     y: int,
     exclude_id: Optional[str] = None,
     scene_height: Optional[int] = None,
+    width: Optional[int] = None,
 ) -> tuple[bool, str]:
-    """Check if adding/moving a platform of platform_type to row y is within hardware limits and bounds."""
+    """Check if adding/moving/resizing a platform of platform_type to row y is within hardware limits and bounds."""
     if not is_valid_platform_y(y, scene_height=scene_height):
         if scene_height is not None and (y + PLATFORM_HEIGHT) > scene_height:
             return (
@@ -289,24 +320,34 @@ def can_add_platform_to_row(
             f"Invalid platform row y={y}. Platforms must start at y % 16 == 8 (e.g. y=8, 24, 40...).",
         )
 
-    sprites, missiles = get_row_resource_usage(platforms, y, exclude_id=exclude_id)
-    if platform_type == PLATFORM_TYPE_SPRITE:
-        if sprites >= MAX_SPRITES_PER_ROW:
-            return (
-                False,
-                f"Row y={y} already uses {sprites}/{MAX_SPRITES_PER_ROW} sprites. Maximum limit reached.",
-            )
-    elif platform_type == PLATFORM_TYPE_MISSILE:
-        if missiles >= MAX_MISSILES_PER_ROW:
-            return (
-                False,
-                f"Row y={y} already uses {missiles}/{MAX_MISSILES_PER_ROW} missiles. Maximum limit reached.",
-            )
-    else:
+    if platform_type not in PLATFORM_TYPES:
         return (
             False,
             f"Unknown platform type: '{platform_type}'. Must be 'sprite' or 'missile'.",
         )
+
+    needed = 1
+    if width is not None:
+        try:
+            needed = get_required_platform_resources(platform_type, width)
+        except (InvalidPlatformDimensionError, ModelValidationError) as exc:
+            return False, str(exc)
+
+    sprites, missiles = get_row_resource_usage(platforms, y, exclude_id=exclude_id)
+    if platform_type == PLATFORM_TYPE_SPRITE:
+        if sprites + needed > MAX_SPRITES_PER_ROW:
+            return (
+                False,
+                f"Row y={y} would exceed sprite limit: {sprites + needed}/{MAX_SPRITES_PER_ROW} "
+                f"(requires {needed}, row currently has {sprites}/{MAX_SPRITES_PER_ROW}).",
+            )
+    elif platform_type == PLATFORM_TYPE_MISSILE:
+        if missiles + needed > MAX_MISSILES_PER_ROW:
+            return (
+                False,
+                f"Row y={y} would exceed missile limit: {missiles + needed}/{MAX_MISSILES_PER_ROW} "
+                f"(requires {needed}, row currently has {missiles}/{MAX_MISSILES_PER_ROW}).",
+            )
     return True, ""
 
 
@@ -353,6 +394,11 @@ class PlatformElement:
     @property
     def row_index(self) -> int:
         return get_row_index(self.position.y)
+
+    @property
+    def required_resources(self) -> int:
+        """Return the number of hardware resources (sprites or missiles) consumed by this platform."""
+        return get_required_platform_resources(self.type, self.width)
 
     def validate(self, scene_height: Optional[int] = None) -> None:
         if not isinstance(self.id, str) or not self.id.strip():
@@ -419,7 +465,9 @@ class PlatformElement:
 # -----------------------------------------------------------------------------
 # Scene Object (Enemies and Treasures) Constants & Model
 # -----------------------------------------------------------------------------
-MAX_OBJECTS_PER_ROW = 3
+MAX_ENEMIES_PER_ROW = 3
+MAX_SECRETS_PER_STAGE = 4
+MAX_OBJECTS_PER_ROW = 3  # Kept for backward compatibility
 
 OBJECT_TYPE_ENEMY = "enemy"
 OBJECT_TYPE_SECRET = "secret"
@@ -686,9 +734,16 @@ class Scene:
     elements: list[SceneElement] = field(default_factory=list)
     platforms: list[PlatformElement] = field(default_factory=list)
     objects: list[SceneObjectElement] = field(default_factory=list)
+    catalogues: Optional[Any] = None
 
     def __post_init__(self) -> None:
         self._sync_z_indices()
+
+    def get_secret_stage(self, definition_id: Any) -> int:
+        """Resolve stage (1-based) for a secret definition. Defaults to 1 if catalogues missing or not found."""
+        if self.catalogues is not None and hasattr(self.catalogues, "get_secret_stage"):
+            return self.catalogues.get_secret_stage(definition_id)
+        return 1
 
     def _sync_z_indices(self) -> None:
         """Ensure z_index reflects the exact list order."""
@@ -749,7 +804,7 @@ class Scene:
                 p.position.y,
                 {PLATFORM_TYPE_SPRITE: 0, PLATFORM_TYPE_MISSILE: 0},
             )
-            counts[p.type] += 1
+            counts[p.type] += p.required_resources
             if counts[PLATFORM_TYPE_SPRITE] > MAX_SPRITES_PER_ROW:
                 raise HardwareResourceLimitError(
                     f"Row y={p.position.y} exceeds sprite limit ({counts[PLATFORM_TYPE_SPRITE]}/{MAX_SPRITES_PER_ROW})."
@@ -773,24 +828,39 @@ class Scene:
                         f"collides with platform '{p2.id}' ({p2.type}, x={p2.position.x}..{p2.position.x+p2.width}, y={p2.position.y})."
                     )
 
-        # Validate scene objects and hardware row limits (max 3 objects per platform row)
+        # Validate scene objects and hardware row limits:
+        # - Max 3 enemies per platform row
+        # - Max 4 secrets per stage per platform row
         seen_object_ids: set[str] = set()
-        row_object_counts: dict[int, int] = {}
+        row_enemy_counts: dict[int, int] = {}
+        row_secret_stage_counts: dict[int, dict[int, int]] = {}
+
         for obj in self.objects:
             obj.validate(scene=self)
-            if obj.id in seen_object_ids:
+            str_id = str(obj.id)
+            if str_id in seen_object_ids:
                 raise DuplicateElementIdError(f"Duplicate object ID detected: '{obj.id}'.")
-            seen_object_ids.add(obj.id)
+            seen_object_ids.add(str_id)
 
             plat = self.get_platform(obj.platform_id)
             if plat is not None:
                 row_y = plat.position.y
-                row_object_counts[row_y] = row_object_counts.get(row_y, 0) + 1
-                if row_object_counts[row_y] > MAX_OBJECTS_PER_ROW:
-                    raise ObjectLimitExceededError(
-                        f"Platform row y={row_y} exceeds maximum object limit "
-                        f"({row_object_counts[row_y]}/{MAX_OBJECTS_PER_ROW})."
-                    )
+                if obj.type == OBJECT_TYPE_ENEMY:
+                    row_enemy_counts[row_y] = row_enemy_counts.get(row_y, 0) + 1
+                    if row_enemy_counts[row_y] > MAX_ENEMIES_PER_ROW:
+                        raise ObjectLimitExceededError(
+                            f"Platform row y={row_y} exceeds maximum enemy limit "
+                            f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
+                        )
+                elif obj.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+                    stage = self.get_secret_stage(obj.definition_id)
+                    stage_map = row_secret_stage_counts.setdefault(row_y, {})
+                    stage_map[stage] = stage_map.get(stage, 0) + 1
+                    if stage_map[stage] > MAX_SECRETS_PER_STAGE:
+                        raise ObjectLimitExceededError(
+                            f"Platform row y={row_y} exceeds maximum secret limit for stage {stage} "
+                            f"({stage_map[stage]}/{MAX_SECRETS_PER_STAGE})."
+                        )
 
     def resize(self, new_width: int, new_height: int) -> None:
         """Resize scene canvas dimensions (does not scale or reposition elements)."""
@@ -920,7 +990,11 @@ class Scene:
             raise DuplicateElementIdError(f"Platform with ID '{platform.id}' already exists.")
 
         ok, msg = can_add_platform_to_row(
-            self.platforms, platform.type, platform.position.y, scene_height=self.height
+            self.platforms,
+            platform.type,
+            platform.position.y,
+            scene_height=self.height,
+            width=platform.width,
         )
         if not ok:
             raise HardwareResourceLimitError(msg)
@@ -968,19 +1042,46 @@ class Scene:
                     f"Target row y={target_y} is invalid or exceeds scene height {self.height}."
                 )
             ok, msg = can_add_platform_to_row(
-                self.platforms, p.type, target_y, exclude_id=platform_id, scene_height=self.height
+                self.platforms,
+                p.type,
+                target_y,
+                exclude_id=platform_id,
+                scene_height=self.height,
+                width=p.width,
             )
             if not ok:
                 raise HardwareResourceLimitError(msg)
 
-            # Check if moving attached objects to target_y exceeds the 3-object row limit
+            # Check if moving attached objects to target_y exceeds row limits
             target_row_objs = [o for o in self.get_row_objects(target_y) if o.platform_id != platform_id]
-            if len(target_row_objs) + len(attached_objs) > MAX_OBJECTS_PER_ROW:
+            moving_enemies = sum(1 for o in attached_objs if o.type == OBJECT_TYPE_ENEMY)
+            target_enemies = sum(1 for o in target_row_objs if o.type == OBJECT_TYPE_ENEMY)
+            if target_enemies + moving_enemies > MAX_ENEMIES_PER_ROW:
                 raise ObjectLimitExceededError(
-                    f"Moving platform '{platform_id}' to row y={target_y} exceeds object limit: "
-                    f"target row would have {len(target_row_objs) + len(attached_objs)} objects "
-                    f"(hardware limit is {MAX_OBJECTS_PER_ROW} per row)."
+                    f"Moving platform '{platform_id}' to row y={target_y} exceeds enemy limit: "
+                    f"target row would have {target_enemies + moving_enemies} enemies "
+                    f"(hardware limit is {MAX_ENEMIES_PER_ROW} per row)."
                 )
+
+            # Check secret limits per stage
+            moving_secret_stages: dict[int, int] = {}
+            for o in attached_objs:
+                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+                    st = self.get_secret_stage(o.definition_id)
+                    moving_secret_stages[st] = moving_secret_stages.get(st, 0) + 1
+
+            for st, count in moving_secret_stages.items():
+                target_stage_secrets = sum(
+                    1 for o in target_row_objs
+                    if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)
+                    and self.get_secret_stage(o.definition_id) == st
+                )
+                if target_stage_secrets + count > MAX_SECRETS_PER_STAGE:
+                    raise ObjectLimitExceededError(
+                        f"Moving platform '{platform_id}' to row y={target_y} exceeds secret limit for stage {st}: "
+                        f"target row would have {target_stage_secrets + count} secrets "
+                        f"(hardware limit is {MAX_SECRETS_PER_STAGE} per stage)."
+                    )
 
         colliding = check_platform_collision(
             self.platforms,
@@ -1000,7 +1101,7 @@ class Scene:
             obj.x += dx
 
     def resize_platform(self, platform_id: str, new_width: int) -> None:
-        """Change platform width to another allowed hardware width without collisions."""
+        """Change platform width to another allowed hardware width without collisions or exceeding limits."""
         p = self.get_platform(platform_id)
         if p is None:
             raise KeyError(f"Platform '{platform_id}' not found.")
@@ -1009,6 +1110,18 @@ class Scene:
             raise InvalidPlatformDimensionError(
                 f"Invalid width {new_width} for {p.type}. Allowed widths: {list(allowed)} px."
             )
+
+        # Validate hardware limits with new width
+        ok, msg = can_add_platform_to_row(
+            self.platforms,
+            p.type,
+            p.position.y,
+            exclude_id=platform_id,
+            scene_height=self.height,
+            width=new_width,
+        )
+        if not ok:
+            raise HardwareResourceLimitError(msg)
 
         colliding = check_platform_collision(
             self.platforms,
@@ -1041,12 +1154,17 @@ class Scene:
         else:
             target_w = allowed[-1]
 
-        if new_type != p.type:
-            ok, msg = can_add_platform_to_row(
-                self.platforms, new_type, p.position.y, exclude_id=platform_id, scene_height=self.height
-            )
-            if not ok:
-                raise HardwareResourceLimitError(msg)
+        # Always check resource limits for target configuration
+        ok, msg = can_add_platform_to_row(
+            self.platforms,
+            new_type,
+            p.position.y,
+            exclude_id=platform_id,
+            scene_height=self.height,
+            width=target_w,
+        )
+        if not ok:
+            raise HardwareResourceLimitError(msg)
 
         colliding = check_platform_collision(
             self.platforms,
@@ -1096,14 +1214,56 @@ class Scene:
         platform_id: str,
         exclude_id: Optional[Any] = None,
         exclude_obj_id: Optional[Any] = None,
+        obj_type: Optional[str] = None,
+        definition_id: Optional[Any] = None,
+        stage: Optional[int] = None,
+        obj: Optional[SceneObjectElement] = None,
     ) -> tuple[bool, str]:
-        """Check if adding an object to the specified platform satisfies the 3-object row limit."""
+        """Check if adding an object to the specified platform satisfies hardware row limits:
+        - Max 3 enemies per row.
+        - Max 4 secrets per stage per row."""
         eff_exclude = exclude_id if exclude_id is not None else exclude_obj_id
         plat = self.get_platform(platform_id)
         if plat is None:
             return False, f"Platform '{platform_id}' not found."
+
+        if obj is not None:
+            obj_type = obj.type
+            definition_id = obj.definition_id
+            if eff_exclude is None:
+                eff_exclude = obj.id
+
         row_objs = self.get_row_objects(plat.position.y, exclude_id=eff_exclude)
-        if len(row_objs) >= MAX_OBJECTS_PER_ROW:
+        eff_type = (obj_type or "").lower()
+
+        if eff_type == OBJECT_TYPE_ENEMY:
+            enemy_count = sum(1 for o in row_objs if o.type == OBJECT_TYPE_ENEMY)
+            if enemy_count >= MAX_ENEMIES_PER_ROW:
+                return (
+                    False,
+                    f"Row y={plat.position.y} already has {enemy_count}/{MAX_ENEMIES_PER_ROW} enemies. "
+                    f"Hardware limit reached for enemies on this platform row.",
+                )
+            return True, ""
+
+        if eff_type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+            eff_stage = stage if stage is not None else self.get_secret_stage(definition_id)
+            stage_count = sum(
+                1 for o in row_objs
+                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)
+                and self.get_secret_stage(o.definition_id) == eff_stage
+            )
+            if stage_count >= MAX_SECRETS_PER_STAGE:
+                return (
+                    False,
+                    f"Row y={plat.position.y} already has {stage_count}/{MAX_SECRETS_PER_STAGE} secrets for stage {eff_stage}. "
+                    f"Hardware limit reached for stage {eff_stage} secrets on this platform row.",
+                )
+            return True, ""
+
+        # Generic / untyped check (fallback for callers not specifying object type):
+        enemies_count = sum(1 for o in row_objs if o.type == OBJECT_TYPE_ENEMY)
+        if enemies_count >= MAX_ENEMIES_PER_ROW and len(row_objs) >= MAX_OBJECTS_PER_ROW:
             return (
                 False,
                 f"Row y={plat.position.y} already has {len(row_objs)}/{MAX_OBJECTS_PER_ROW} objects. "
@@ -1122,7 +1282,7 @@ class Scene:
                 f"Cannot add object '{obj.id}': assigned platform '{obj.platform_id}' does not exist."
             )
 
-        ok, msg = self.can_add_object_to_platform(obj.platform_id)
+        ok, msg = self.can_add_object_to_platform(obj.platform_id, obj=obj)
         if not ok:
             raise ObjectLimitExceededError(msg)
 
@@ -1150,7 +1310,7 @@ class Scene:
             raise InvalidPlatformAssignmentError(f"Platform '{target_plat_id}' not found.")
 
         if target_plat_id != obj.platform_id:
-            ok, msg = self.can_add_object_to_platform(target_plat_id, exclude_id=object_id)
+            ok, msg = self.can_add_object_to_platform(target_plat_id, obj=obj, exclude_id=object_id)
             if not ok:
                 raise ObjectLimitExceededError(msg)
 
@@ -1194,7 +1354,7 @@ class Scene:
             target_plat = self.get_platform(new_platform_id)
             if target_plat is None:
                 raise InvalidPlatformAssignmentError(f"Platform '{new_platform_id}' not found.")
-            ok, msg = self.can_add_object_to_platform(new_platform_id, exclude_id=object_id)
+            ok, msg = self.can_add_object_to_platform(new_platform_id, obj=obj, exclude_id=object_id)
             if not ok:
                 raise ObjectLimitExceededError(msg)
             obj.platform_id = new_platform_id
@@ -1230,6 +1390,8 @@ class Scene:
 
         try:
             obj.validate(scene=self)
+            # Re-check row limits for the scene
+            self.validate()
         except Exception:
             obj.type = old_type
             obj.definition_id = old_def_id
@@ -1243,3 +1405,168 @@ class Scene:
     def clone(self) -> Scene:
         """Deep copy of the scene."""
         return copy.deepcopy(self)
+
+
+# -----------------------------------------------------------------------------
+# Runtime State Simulation for Secret Chains
+# -----------------------------------------------------------------------------
+class SceneSecretRuntime:
+    """Runtime state simulator for secret dependency chains on a scene.
+    Enforces the single-scene gameplay requirements:
+    1. Dependencies are defined globally between secret types (SecretDefinition.dependency).
+    2. Progress in collecting secrets is strictly local to each scene.
+    3. A secret type with dependency=None is available from the start of the scene.
+    4. A secret type with dependency=P unlocks on this scene once all secrets of type P
+       present on this scene have been collected.
+    5. At any time, only currently unlocked, uncollected secrets are active.
+    6. Collected secrets never reappear.
+    7. Collecting all secrets on the scene completes the scene and triggers transition."""
+
+    def __init__(self, scene: Scene) -> None:
+        self.scene = scene
+        self.collected_secret_ids: set[str] = set()
+
+    def get_scene_secret_objects(self) -> list[SceneObjectElement]:
+        """Return all secret objects placed on this scene."""
+        return [
+            o for o in self.scene.objects
+            if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)
+        ]
+
+    def get_scene_secret_type_ids(self) -> set[int]:
+        """Return set of secret definition IDs present on this scene."""
+        result = set()
+        for o in self.get_scene_secret_objects():
+            if o.definition_id is not None:
+                try:
+                    result.add(int(o.definition_id))
+                except (ValueError, TypeError):
+                    pass
+        return result
+
+    def is_type_fully_collected(self, defn_id: int) -> bool:
+        """Check if all secrets of type defn_id on THIS scene have been collected."""
+        type_objs = [
+            o for o in self.get_scene_secret_objects()
+            if o.definition_id is not None and int(o.definition_id) == int(defn_id)
+        ]
+        if not type_objs:
+            return True
+        return all(str(o.id) in self.collected_secret_ids for o in type_objs)
+
+    def is_type_unlocked(self, defn_id: int) -> bool:
+        """Check if a secret type is currently unlocked on THIS scene.
+        A type is unlocked if:
+        - It has no dependency (dependency is None).
+        - OR its dependency P is unlocked AND all secrets of type P on THIS scene are collected."""
+        if not self.scene.catalogues:
+            return True
+        defn = self.scene.catalogues.get_secret(defn_id)
+        if defn is None or defn.dependency is None:
+            return True
+
+        parent_id = defn.dependency
+        if not self.is_type_unlocked(parent_id):
+            return False
+
+        return self.is_type_fully_collected(parent_id)
+
+    def is_secret_active(self, secret_id: Any) -> bool:
+        """Check if a secret is currently active (visible and collectible) on the scene."""
+        str_id = str(secret_id)
+        if str_id in self.collected_secret_ids:
+            return False
+        obj = self.scene.get_object(str_id)
+        if obj is None or obj.type not in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+            return False
+        if obj.definition_id is None:
+            return True
+
+        try:
+            defn_id = int(obj.definition_id)
+        except (ValueError, TypeError):
+            return True
+
+        if not self.is_type_unlocked(defn_id):
+            return False
+
+        if self.is_type_fully_collected(defn_id):
+            return False
+
+        return True
+
+    def get_active_secrets(self) -> list[SceneObjectElement]:
+        """Return all secrets currently active on the scene."""
+        return [
+            obj for obj in self.scene.objects
+            if self.is_secret_active(obj.id)
+        ]
+
+    def is_secret_collected(self, secret_id: Any) -> bool:
+        """Return True if secret has already been collected."""
+        return str(secret_id) in self.collected_secret_ids
+
+    def is_scene_complete(self) -> bool:
+        """Return True if all secrets across all types on this scene have been collected."""
+        secret_objs = self.get_scene_secret_objects()
+        if not secret_objs:
+            return True
+        return all(str(o.id) in self.collected_secret_ids for o in secret_objs)
+
+    @property
+    def current_stage(self) -> int:
+        """Return the current active stage index (1-based) on this scene."""
+        active = self.get_active_secrets()
+        if active and self.scene.catalogues:
+            first_def = active[0].definition_id
+            return self.scene.get_secret_stage(first_def)
+        if self.scene.catalogues:
+            scene_objs = self.get_scene_secret_objects()
+            if scene_objs:
+                return max(self.scene.get_secret_stage(o.definition_id) for o in scene_objs)
+        return 1
+
+    def is_stage_complete(self, stage: int) -> bool:
+        """Return True if all secrets assigned to given stage on this scene have been collected."""
+        stage_objs = [
+            o for o in self.get_scene_secret_objects()
+            if self.scene.get_secret_stage(o.definition_id) == stage
+        ]
+        if not stage_objs:
+            return True
+        return all(str(o.id) in self.collected_secret_ids for o in stage_objs)
+
+    def collect_secret(self, secret_id: Any) -> bool:
+        """Collect a secret by ID.
+        Returns True if this collection unlocked the next secret type on the scene, False otherwise."""
+        str_id = str(secret_id)
+        if not self.is_secret_active(str_id):
+            return False
+
+        obj = self.scene.get_object(str_id)
+        defn_id = obj.definition_id if obj else None
+
+        self.collected_secret_ids.add(str_id)
+
+        # Check if collecting this secret completed its type and unlocked a successor type on this scene
+        if defn_id is not None:
+            try:
+                norm_def_id = int(defn_id)
+            except (ValueError, TypeError):
+                norm_def_id = None
+
+            if norm_def_id is not None and self.is_type_fully_collected(norm_def_id):
+                for scene_obj in self.get_scene_secret_objects():
+                    if scene_obj.definition_id is not None:
+                        try:
+                            s_def_id = int(scene_obj.definition_id)
+                        except (ValueError, TypeError):
+                            continue
+                        if s_def_id != norm_def_id:
+                            defn = self.scene.catalogues.get_secret(s_def_id) if self.scene.catalogues else None
+                            if defn and defn.dependency == norm_def_id:
+                                if self.is_secret_active(scene_obj.id):
+                                    return True
+        return False
+
+

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scene": {
-    "name": "untitled",
+    "name": "Be Quick or Be Dead",
     "width": 160,
     "height": 96
   },
@@ -231,6 +231,45 @@
       },
       "width": 32,
       "height": 4
+    }
+  ],
+  "objects": [
+    {
+      "id": 1,
+      "type": "enemy",
+      "definition_id": 1,
+      "platform_id": "platform-001",
+      "x": 69,
+      "speed": "medium",
+      "movement_strategy": "stationary"
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-008",
+      "x": 91
+    },
+    {
+      "id": 3,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-003",
+      "x": 23
+    },
+    {
+      "id": 4,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-004",
+      "x": 129
+    },
+    {
+      "id": 5,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-016",
+      "x": 96
     }
   ]
 }

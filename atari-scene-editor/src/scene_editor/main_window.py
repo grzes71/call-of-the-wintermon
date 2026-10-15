@@ -122,6 +122,7 @@ from .scene_model import (
     check_platform_collision,
     get_allowed_platform_rows,
     get_allowed_widths,
+    get_required_platform_resources,
     get_row_index,
     get_row_resource_usage,
     platforms_overlap,
@@ -246,6 +247,7 @@ class MainWindow(QMainWindow):
             name="level_01",
             width=DEFAULT_SCENE_WIDTH,
             height=DEFAULT_SCENE_HEIGHT,
+            catalogues=self.catalogues,
         )
         self.current_file_path: Optional[Path] = None
         self._is_dirty: bool = False
@@ -841,7 +843,7 @@ class MainWindow(QMainWindow):
                 return
             name, width, height = dialog.get_values()
 
-        self.scene_model = Scene(name=name, width=width, height=height)
+        self.scene_model = Scene(name=name, width=width, height=height, catalogues=self.catalogues)
         self.current_file_path = None
         self._next_element_num = 1
         self._next_platform_num = 1
@@ -956,6 +958,7 @@ class MainWindow(QMainWindow):
                 + "\n\nThese objects will be displayed with default warning colors.",
             )
 
+        scene.catalogues = self.catalogues
         self.scene_model = scene
         self.current_file_path = Path(file_path).resolve()
         self.undo_stack.clear()
@@ -1271,6 +1274,10 @@ class MainWindow(QMainWindow):
             self._update_property_panel(None)
             self._update_object_property_panel(None)
             self._refresh_platform_list(platform_id)
+            if platform_id and hasattr(self, "new_obj_platform_combo"):
+                idx = self.new_obj_platform_combo.findData(platform_id)
+                if idx >= 0 and self.new_obj_platform_combo.currentIndex() != idx:
+                    self.new_obj_platform_combo.setCurrentIndex(idx)
             self.prop_tabs.setCurrentIndex(1)
         finally:
             self._is_selecting_platform = False
@@ -1351,6 +1358,7 @@ class MainWindow(QMainWindow):
                 new_y,
                 exclude_id=platform_id,
                 scene_height=self.scene_model.height,
+                width=plat.width,
             )
             if not ok:
                 QMessageBox.warning(self, "Invalid Platform Position", msg)
@@ -1388,7 +1396,10 @@ class MainWindow(QMainWindow):
         self.new_plat_width_combo.blockSignals(True)
         self.new_plat_width_combo.clear()
         for w in get_allowed_widths(p_type):
-            self.new_plat_width_combo.addItem(f"{w} px", w)
+            res = get_required_platform_resources(p_type, w)
+            unit = "sprite" if p_type == PLATFORM_TYPE_SPRITE else "missile"
+            plural = "s" if res > 1 else ""
+            self.new_plat_width_combo.addItem(f"{w} px ({res} {unit}{plural})", w)
         default_w = 16 if p_type == PLATFORM_TYPE_SPRITE else 8
         idx = self.new_plat_width_combo.findData(default_w)
         if idx >= 0:
@@ -1407,7 +1418,7 @@ class MainWindow(QMainWindow):
             return
 
         ok, msg = can_add_platform_to_row(
-            self.scene_model.platforms, p_type, y, scene_height=self.scene_model.height
+            self.scene_model.platforms, p_type, y, width=width, scene_height=self.scene_model.height
         )
         if not ok:
             QMessageBox.warning(self, "Invalid Platform Position", msg)
@@ -1504,6 +1515,7 @@ class MainWindow(QMainWindow):
             new_y,
             exclude_id=selected_id,
             scene_height=self.scene_model.height,
+            width=plat.width,
         )
         if not ok:
             QMessageBox.warning(self, "Invalid Platform Position", msg)
@@ -1546,6 +1558,19 @@ class MainWindow(QMainWindow):
         if new_w is None or plat.width == new_w:
             return
 
+        ok, msg = can_add_platform_to_row(
+            self.scene_model.platforms,
+            plat.type,
+            plat.position.y,
+            exclude_id=selected_id,
+            scene_height=self.scene_model.height,
+            width=new_w,
+        )
+        if not ok:
+            QMessageBox.warning(self, "Hardware Resource Limit", msg)
+            self._update_platform_property_panel(plat)
+            return
+
         colliding = check_platform_collision(
             self.scene_model.platforms,
             (plat.position.x, plat.position.y, new_w, plat.height),
@@ -1582,20 +1607,21 @@ class MainWindow(QMainWindow):
         if new_type is None or plat.type == new_type:
             return
 
+        allowed = get_allowed_widths(new_type)
+        new_w = plat.width if plat.width in allowed else (16 if new_type == PLATFORM_TYPE_SPRITE else 8)
+
         ok, msg = can_add_platform_to_row(
             self.scene_model.platforms,
             new_type,
             plat.position.y,
             exclude_id=selected_id,
             scene_height=self.scene_model.height,
+            width=new_w,
         )
         if not ok:
-            QMessageBox.warning(self, "Invalid Platform Position", msg)
+            QMessageBox.warning(self, "Hardware Resource Limit", msg)
             self._update_platform_property_panel(plat)
             return
-
-        allowed = get_allowed_widths(new_type)
-        new_w = plat.width if plat.width in allowed else (16 if new_type == PLATFORM_TYPE_SPRITE else 8)
 
         colliding = check_platform_collision(
             self.scene_model.platforms,
@@ -1655,7 +1681,7 @@ class MainWindow(QMainWindow):
         for y in allowed_rows:
             s_count, m_count = self.scene_model.get_platform_row_usage(y)
             row_idx = get_row_index(y)
-            label = f"Row {row_idx} (y={y}) — {s_count}/{MAX_SPRITES_PER_ROW} Sprites, {m_count}/{MAX_MISSILES_PER_ROW} Missiles"
+            label = f"Row {row_idx} (y={y}) — Sprite: {s_count}/{MAX_SPRITES_PER_ROW}, Missile: {m_count}/{MAX_MISSILES_PER_ROW}"
             self.new_plat_row_combo.addItem(label, y)
         if cur_creator_y in allowed_rows:
             idx = self.new_plat_row_combo.findData(cur_creator_y)
@@ -1696,7 +1722,10 @@ class MainWindow(QMainWindow):
         self.plat_prop_width_combo.blockSignals(True)
         self.plat_prop_width_combo.clear()
         for w in get_allowed_widths(plat.type):
-            self.plat_prop_width_combo.addItem(f"{w} px", w)
+            res = get_required_platform_resources(plat.type, w)
+            unit = "sprite" if plat.type == PLATFORM_TYPE_SPRITE else "missile"
+            plural = "s" if res > 1 else ""
+            self.plat_prop_width_combo.addItem(f"{w} px ({res} {unit}{plural})", w)
         w_idx = self.plat_prop_width_combo.findData(plat.width)
         if w_idx >= 0:
             self.plat_prop_width_combo.setCurrentIndex(w_idx)
@@ -1710,11 +1739,11 @@ class MainWindow(QMainWindow):
             s_count, m_count = self.scene_model.get_platform_row_usage(y, exclude_id=plat.id)
             if y == plat.position.y:
                 if plat.type == PLATFORM_TYPE_SPRITE:
-                    s_count += 1
+                    s_count += get_required_platform_resources(plat.type, plat.width)
                 else:
-                    m_count += 1
+                    m_count += get_required_platform_resources(plat.type, plat.width)
             row_idx = get_row_index(y)
-            label = f"Row {row_idx} (y={y}) [{s_count}/{MAX_SPRITES_PER_ROW} S, {m_count}/{MAX_MISSILES_PER_ROW} M]"
+            label = f"Row {row_idx} (y={y}) [Sprite: {s_count}/{MAX_SPRITES_PER_ROW}, Missile: {m_count}/{MAX_MISSILES_PER_ROW}]"
             self.plat_prop_row_combo.addItem(label, y)
         r_idx = self.plat_prop_row_combo.findData(plat.position.y)
         if r_idx >= 0:
@@ -1729,8 +1758,8 @@ class MainWindow(QMainWindow):
         # Row status label
         s_used, m_used = self.scene_model.get_platform_row_usage(plat.position.y)
         self.plat_prop_row_status_lbl.setText(
-            f"Row {plat.row_index} (y={plat.position.y}): <b>{s_used}/{MAX_SPRITES_PER_ROW}</b> Sprites, "
-            f"<b>{m_used}/{MAX_MISSILES_PER_ROW}</b> Missiles"
+            f"Row {plat.row_index} (y={plat.position.y}): <b>Sprite: {s_used}/{MAX_SPRITES_PER_ROW}</b>, "
+            f"<b>Missile: {m_used}/{MAX_MISSILES_PER_ROW}</b>"
         )
 
     def _on_prop_pos_changed(self) -> None:
@@ -2047,7 +2076,13 @@ class MainWindow(QMainWindow):
         if plat_id:
             plat = self.scene_model.get_platform(plat_id)
             if plat:
+                obj_w = self._new_obj_rect.width if self._new_obj_rect else 8
+                min_x = max(0, plat.position.x - obj_w + 1)
+                max_x = min(self.scene_model.width - obj_w, plat.position.x + plat.width - 1)
+                self.new_obj_x_spin.blockSignals(True)
+                self.new_obj_x_spin.setRange(min_x, max_x)
                 self.new_obj_x_spin.setValue(plat.position.x)
+                self.new_obj_x_spin.blockSignals(False)
 
     def _on_capture_crop_for_new_obj_clicked(self) -> None:
         """Compatibility helper for capturing crop."""
@@ -2059,6 +2094,7 @@ class MainWindow(QMainWindow):
         if not self.catalogues.enemies:
             self.catalogues.add_enemy(EnemyDefinition(id=1, name="Default Enemy"))
             self._refresh_object_creator_definitions()
+        self._on_new_obj_platform_combo_changed()
 
     def _on_add_object_clicked(self) -> None:
         obj_type = self.new_obj_type_combo.currentData() or OBJECT_TYPE_ENEMY
@@ -2091,14 +2127,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid Platform", f"Platform '{plat_id}' not found.")
             return
 
-        # Check limit: max 3 objects per row
-        can_add, reason = self.scene_model.can_add_object_to_platform(plat_id)
+        # Check limits: max 3 enemies, max 4 secrets per stage per row
+        can_add, reason = self.scene_model.can_add_object_to_platform(
+            plat_id, obj_type=obj_type, definition_id=defn_id
+        )
         if not can_add:
             QMessageBox.warning(
                 self,
                 "Object Limit Exceeded",
-                f"Cannot add object to platform '{plat_id}':\n{reason}\n"
-                f"Maximum allowed objects per row level is {MAX_OBJECTS_PER_ROW}.",
+                f"Cannot add object to platform '{plat_id}':\n{reason}",
             )
             return
 
@@ -2116,6 +2153,12 @@ class MainWindow(QMainWindow):
                 break
 
         x = self.new_obj_x_spin.value()
+        obj_w = self._new_obj_rect.width if self._new_obj_rect else 8
+        # Ensure object rests on the platform
+        if not (max(x, plat.position.x) < min(x + obj_w, plat.position.x + plat.width)):
+            x = plat.position.x
+            self.new_obj_x_spin.setValue(x)
+
         speed = self.new_obj_speed_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
         strategy = self.new_obj_strategy_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
 
@@ -2132,12 +2175,15 @@ class MainWindow(QMainWindow):
         )
 
         try:
+            obj.validate(scene=self.scene_model)
             cmd = AddSceneObjectCommand(
                 self.scene_model,
                 obj,
                 callback=lambda: self._on_object_command_executed(obj_id),
             )
             self.undo_stack.push(cmd)
+        except InvalidPlatformAssignmentError as err:
+            QMessageBox.warning(self, "Invalid Platform Assignment", str(err))
         except Exception as err:
             QMessageBox.warning(self, "Error Adding Object", str(err))
 
@@ -2246,13 +2292,12 @@ class MainWindow(QMainWindow):
         if not new_plat_id or new_plat_id == obj.platform_id:
             return
 
-        can_add, reason = self.scene_model.can_add_object_to_platform(new_plat_id, exclude_id=selected_id)
+        can_add, reason = self.scene_model.can_add_object_to_platform(new_plat_id, obj=obj, exclude_id=selected_id)
         if not can_add:
             QMessageBox.warning(
                 self,
                 "Object Limit Exceeded",
-                f"Cannot move object to platform '{new_plat_id}':\n{reason}\n"
-                f"Maximum allowed objects per row level is {MAX_OBJECTS_PER_ROW}.",
+                f"Cannot move object to platform '{new_plat_id}':\n{reason}",
             )
             self._update_object_property_panel(obj)
             return
@@ -2362,7 +2407,12 @@ class MainWindow(QMainWindow):
             idx = self.new_obj_platform_combo.findData(cur_id)
             if idx >= 0:
                 self.new_obj_platform_combo.setCurrentIndex(idx)
+            elif self.new_obj_platform_combo.count() > 0:
+                self.new_obj_platform_combo.setCurrentIndex(0)
+        elif self.new_obj_platform_combo.count() > 0:
+            self.new_obj_platform_combo.setCurrentIndex(0)
         self.new_obj_platform_combo.blockSignals(False)
+        self._on_new_obj_platform_combo_changed()
 
     def _update_object_property_panel(self, obj: Optional[SceneObjectElement]) -> None:
         self.obj_elem_group.setEnabled(True)
@@ -2470,7 +2520,12 @@ class MainWindow(QMainWindow):
         self.obj_prop_platform_combo.blockSignals(False)
 
         # X position
+        plat = self.scene_model.get_platform(obj.platform_id)
         self.obj_prop_x_spin.blockSignals(True)
+        if plat:
+            min_x = max(0, plat.position.x - obj.width + 1)
+            max_x = min(self.scene_model.width - obj.width, plat.position.x + plat.width - 1)
+            self.obj_prop_x_spin.setRange(min_x, max_x)
         self.obj_prop_x_spin.setValue(obj.x)
         self.obj_prop_x_spin.blockSignals(False)
 

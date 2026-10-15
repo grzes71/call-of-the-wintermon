@@ -1,20 +1,28 @@
-# Call of the Wintermoon
+# Call of the Wintermon
 
 Projekt gry platformowej na komputery **Atari 8-bit (XL/XE)** w architekturze 6502 assembly (MADS) zintegrowanej z pipeline'em narzędziowym w Pythonie.
 
 ![Atari 8-bit screen](/cover.png)
 
-> To miał być dzień jak co dzień.
-> Grabbath ćwiczył właśnie nowy growl
-> na festiwalu na zamku Wintermon.
-> Jednak jego gardłowy śpiew dotarł
-> aż do pradawnych głębin pod górami.
-> Uśpiona od eonów istota usłyszała
-> wezwanie i rozpoczęła marsz ku Światu.
-> Pradawny bóg zażądał tantiem,
-> a potem podpisał kontrakt na trzy albumy.
-> Teraz wokalista musi coś zrobić,
-> zanim kosmiczny horror zniszczy ludzkość.
+To miał być rutynowy koncert.
+
+Grabbath dawał popis growlu
+
+na scenie zamku Wintermon.
+
+Jednak jego gardłowy śpiew dotarł
+
+aż do pradawnych głębin pod górami.
+
+Uśpiona od eonów przedwieczna istota
+
+usłyszała jego śpiew i zażądała płyt CD
+
+z najlepszym black metalem na świecie.
+
+Teraz Grabbath musi zebrać albumy
+
+i dostarczyć je, zanim skończy się noc!
 
 ---
 

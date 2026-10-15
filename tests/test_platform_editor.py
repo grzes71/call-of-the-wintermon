@@ -36,6 +36,7 @@ from scene_editor.scene_model import (
     check_platform_collision,
     get_allowed_platform_rows,
     get_allowed_widths,
+    get_required_platform_resources,
     get_row_index,
     get_row_resource_usage,
     is_valid_platform_y,
@@ -47,6 +48,14 @@ class TestPlatformDimensions:
     """Tests for platform width and height constraints."""
 
     def test_all_sprite_widths_allowed(self):
+        expected_widths = (
+            4, 8, 12, 16, 20, 24, 28, 32,
+            36, 40, 44, 48, 52, 56, 60, 64,
+            68, 72, 76, 80, 84, 88, 92, 96,
+        )
+        assert SPRITE_WIDTHS == expected_widths
+        assert get_allowed_widths(PLATFORM_TYPE_SPRITE) == expected_widths
+
         for w in SPRITE_WIDTHS:
             plat = PlatformElement(
                 id=f"spr-{w}",
@@ -60,6 +69,10 @@ class TestPlatformDimensions:
             assert plat.height == 4
 
     def test_all_missile_widths_allowed(self):
+        expected_widths = (4, 8, 12, 16, 20, 24, 28, 32)
+        assert MISSILE_WIDTHS == expected_widths
+        assert get_allowed_widths(PLATFORM_TYPE_MISSILE) == expected_widths
+
         for w in MISSILE_WIDTHS:
             plat = PlatformElement(
                 id=f"mis-{w}",
@@ -73,7 +86,7 @@ class TestPlatformDimensions:
             assert plat.height == 4
 
     def test_rejection_of_invalid_sprite_widths(self):
-        invalid_widths = [0, 1, 2, 3, 5, 6, 7, 10, 15, 30, 36, 64]
+        invalid_widths = [-8, -4, 0, 1, 2, 3, 5, 6, 7, 9, 10, 15, 30, 31, 33, 97, 98, 100]
         for w in invalid_widths:
             plat = PlatformElement(
                 id="bad-spr",
@@ -86,7 +99,7 @@ class TestPlatformDimensions:
                 plat.validate()
 
     def test_rejection_of_invalid_missile_widths(self):
-        invalid_widths = [0, 2, 6, 12, 16, 20, 32]
+        invalid_widths = [-8, -4, 0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 15, 33, 36, 40]
         for w in invalid_widths:
             plat = PlatformElement(
                 id="bad-mis",
@@ -109,6 +122,71 @@ class TestPlatformDimensions:
             )
             with pytest.raises(InvalidPlatformDimensionError):
                 plat.validate()
+
+
+class TestPlatformResourceCalculation:
+    """Tests for shared hardware resource usage calculation: ceil(width / 32) and ceil(width / 8)."""
+
+    def test_sprite_resource_calculation_all_intervals(self):
+        # 4–32 px -> 1 sprite
+        for w in (4, 8, 12, 16, 20, 24, 28, 32):
+            assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, w) == 1
+            plat = PlatformElement(f"s-{w}", PLATFORM_TYPE_SPRITE, Position(0, 8), w)
+            assert plat.required_resources == 1
+
+        # 36–64 px -> 2 sprites
+        for w in (36, 40, 44, 48, 52, 56, 60, 64):
+            assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, w) == 2
+            plat = PlatformElement(f"s-{w}", PLATFORM_TYPE_SPRITE, Position(0, 8), w)
+            assert plat.required_resources == 2
+
+        # 68–96 px -> 3 sprites
+        for w in (68, 72, 76, 80, 84, 88, 92, 96):
+            assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, w) == 3
+            plat = PlatformElement(f"s-{w}", PLATFORM_TYPE_SPRITE, Position(0, 8), w)
+            assert plat.required_resources == 3
+
+    def test_missile_resource_calculation_all_intervals(self):
+        # 4–8 px -> 1 missile
+        for w in (4, 8):
+            assert get_required_platform_resources(PLATFORM_TYPE_MISSILE, w) == 1
+            plat = PlatformElement(f"m-{w}", PLATFORM_TYPE_MISSILE, Position(0, 8), w)
+            assert plat.required_resources == 1
+
+        # 12–16 px -> 2 missiles
+        for w in (12, 16):
+            assert get_required_platform_resources(PLATFORM_TYPE_MISSILE, w) == 2
+            plat = PlatformElement(f"m-{w}", PLATFORM_TYPE_MISSILE, Position(0, 8), w)
+            assert plat.required_resources == 2
+
+        # 20–24 px -> 3 missiles
+        for w in (20, 24):
+            assert get_required_platform_resources(PLATFORM_TYPE_MISSILE, w) == 3
+            plat = PlatformElement(f"m-{w}", PLATFORM_TYPE_MISSILE, Position(0, 8), w)
+            assert plat.required_resources == 3
+
+        # 28–32 px -> 4 missiles
+        for w in (28, 32):
+            assert get_required_platform_resources(PLATFORM_TYPE_MISSILE, w) == 4
+            plat = PlatformElement(f"m-{w}", PLATFORM_TYPE_MISSILE, Position(0, 8), w)
+            assert plat.required_resources == 4
+
+    def test_resource_calculation_invalid_type_rejected(self):
+        with pytest.raises(ModelValidationError):
+            get_required_platform_resources("unknown", 16)
+
+    def test_resource_calculation_invalid_widths_rejected(self):
+        with pytest.raises(InvalidPlatformDimensionError):
+            get_required_platform_resources(PLATFORM_TYPE_SPRITE, 30)
+
+        with pytest.raises(InvalidPlatformDimensionError):
+            get_required_platform_resources(PLATFORM_TYPE_SPRITE, 100)
+
+        with pytest.raises(InvalidPlatformDimensionError):
+            get_required_platform_resources(PLATFORM_TYPE_MISSILE, 36)
+
+        with pytest.raises(InvalidPlatformDimensionError):
+            get_required_platform_resources(PLATFORM_TYPE_MISSILE, 6)
 
 
 class TestPlatformVerticalPositioning:
@@ -345,6 +423,102 @@ class TestHardwareRowLimits:
         assert scene.get_platform_row_usage(8)[0] == 0
         assert scene.get_platform_row_usage(40)[0] == 1
 
+    def test_sprite_platform_width_96_consumes_all_three_sprites(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("spr-wide", PLATFORM_TYPE_SPRITE, Position(0, 8), 96))
+        assert scene.get_platform_row_usage(8) == (3, 0)
+
+        # Adding another sprite is rejected
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("spr-tiny", PLATFORM_TYPE_SPRITE, Position(100, 8), 4))
+
+    def test_sprite_platforms_32_and_64_can_coexist(self):
+        scene = Scene(width=160, height=192)
+        p1 = PlatformElement("spr-32", PLATFORM_TYPE_SPRITE, Position(0, 24), 32)
+        p2 = PlatformElement("spr-64", PLATFORM_TYPE_SPRITE, Position(35, 24), 64)
+        scene.add_platform(p1)
+        scene.add_platform(p2)
+        assert scene.get_platform_row_usage(24) == (3, 0)
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("spr-extra", PLATFORM_TYPE_SPRITE, Position(105, 24), 4))
+
+    def test_sprite_platforms_three_32s_can_coexist(self):
+        scene = Scene(width=160, height=192)
+        p1 = PlatformElement("spr-1", PLATFORM_TYPE_SPRITE, Position(0, 40), 32)
+        p2 = PlatformElement("spr-2", PLATFORM_TYPE_SPRITE, Position(35, 40), 32)
+        p3 = PlatformElement("spr-3", PLATFORM_TYPE_SPRITE, Position(70, 40), 32)
+        scene.add_platform(p1)
+        scene.add_platform(p2)
+        scene.add_platform(p3)
+        assert scene.get_platform_row_usage(40) == (3, 0)
+
+    def test_sprite_platforms_two_64s_rejected(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("spr-64-a", PLATFORM_TYPE_SPRITE, Position(0, 56), 64))
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("spr-64-b", PLATFORM_TYPE_SPRITE, Position(70, 56), 64))
+
+    def test_missile_platforms_12_and_8_can_coexist(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("mis-12", PLATFORM_TYPE_MISSILE, Position(0, 8), 12))
+        scene.add_platform(PlatformElement("mis-8", PLATFORM_TYPE_MISSILE, Position(20, 8), 8))
+        assert scene.get_platform_row_usage(8) == (0, 3)
+
+    def test_missile_platforms_two_12s_can_coexist(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("mis-12a", PLATFORM_TYPE_MISSILE, Position(0, 24), 12))
+        scene.add_platform(PlatformElement("mis-12b", PLATFORM_TYPE_MISSILE, Position(20, 24), 12))
+        assert scene.get_platform_row_usage(24) == (0, 4)
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("mis-extra", PLATFORM_TYPE_MISSILE, Position(40, 24), 4))
+
+    def test_missile_platforms_32_and_4_rejected(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("mis-32", PLATFORM_TYPE_MISSILE, Position(0, 40), 32))
+        assert scene.get_platform_row_usage(40) == (0, 4)
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("mis-4", PLATFORM_TYPE_MISSILE, Position(40, 40), 4))
+
+    def test_resizing_platform_enforces_hardware_limits(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(0, 8), 32))
+        scene.add_platform(PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(40, 8), 64))
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.resize_platform("p1", 36)
+
+        assert scene.get_platform("p1").width == 32
+
+        scene.resize_platform("p2", 32)
+        assert scene.get_platform_row_usage(8) == (2, 0)
+
+        scene.resize_platform("p1", 36)
+        assert scene.get_platform("p1").width == 36
+        assert scene.get_platform_row_usage(8) == (3, 0)
+
+    def test_change_platform_type_enforces_hardware_limits(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("mis-row", PLATFORM_TYPE_MISSILE, Position(0, 8), 24))
+        scene.add_platform(PlatformElement("spr-cand", PLATFORM_TYPE_SPRITE, Position(30, 8), 32))
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.set_platform_type("spr-cand", PLATFORM_TYPE_MISSILE, new_width=32)
+
+        assert scene.get_platform("spr-cand").type == PLATFORM_TYPE_SPRITE
+
+    def test_move_platform_between_rows_wide_sprites(self):
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("s1", PLATFORM_TYPE_SPRITE, Position(0, 8), 64))
+        scene.add_platform(PlatformElement("s2", PLATFORM_TYPE_SPRITE, Position(0, 24), 64))
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.move_platform("s1", 70, 24)
+
+        assert scene.get_platform("s1").position.y == 8
+
 
 class TestPlatformSerialization:
     """Tests for JSON export and import with platforms."""
@@ -443,6 +617,95 @@ class TestPlatformSerialization:
         }
         with pytest.raises(CorruptedFileError):
             SceneSerializer.from_dict(bad_json)
+
+    def test_json_round_trip_with_wide_platforms(self):
+        scene = Scene(name="wide_scene", width=160, height=192)
+        scene.add_platform(PlatformElement("spr-wide", PLATFORM_TYPE_SPRITE, Position(0, 8), 96))
+        scene.add_platform(PlatformElement("mis-wide", PLATFORM_TYPE_MISSILE, Position(0, 24), 24))
+
+        json_str = SceneSerializer.to_json(scene)
+        restored = SceneSerializer.from_json(json_str)
+
+        assert len(restored.platforms) == 2
+        p1 = restored.get_platform("spr-wide")
+        assert p1.width == 96
+        assert p1.required_resources == 3
+
+        p2 = restored.get_platform("mis-wide")
+        assert p2.width == 24
+        assert p2.required_resources == 3
+
+    def test_json_rejection_of_invalid_platform_width(self):
+        bad_json = {
+            "schema_version": 1,
+            "scene": {"name": "bad_w", "width": 160, "height": 192},
+            "elements": [],
+            "platforms": [
+                {
+                    "id": "bad-w",
+                    "type": "sprite",
+                    "position": {"x": 0, "y": 8},
+                    "width": 35,  # Invalid width (not in SPRITE_WIDTHS)
+                    "height": 4,
+                }
+            ],
+        }
+        with pytest.raises(CorruptedFileError):
+            SceneSerializer.from_dict(bad_json)
+
+    def test_json_rejection_of_sprite_row_limit_exceeded(self):
+        # Two 64px sprites on same row -> 2 + 2 = 4 > 3
+        bad_json = {
+            "schema_version": 1,
+            "scene": {"name": "bad_spr_limit", "width": 160, "height": 192},
+            "elements": [],
+            "platforms": [
+                {
+                    "id": "spr-1",
+                    "type": "sprite",
+                    "position": {"x": 0, "y": 8},
+                    "width": 64,
+                    "height": 4,
+                },
+                {
+                    "id": "spr-2",
+                    "type": "sprite",
+                    "position": {"x": 70, "y": 8},
+                    "width": 64,
+                    "height": 4,
+                },
+            ],
+        }
+        with pytest.raises(CorruptedFileError) as exc_info:
+            SceneSerializer.from_dict(bad_json)
+        assert "sprite limit" in str(exc_info.value).lower()
+
+    def test_json_rejection_of_missile_row_limit_exceeded(self):
+        # 32px missile (4) + 4px missile (1) on same row -> 5 > 4
+        bad_json = {
+            "schema_version": 1,
+            "scene": {"name": "bad_mis_limit", "width": 160, "height": 192},
+            "elements": [],
+            "platforms": [
+                {
+                    "id": "mis-1",
+                    "type": "missile",
+                    "position": {"x": 0, "y": 8},
+                    "width": 32,
+                    "height": 4,
+                },
+                {
+                    "id": "mis-2",
+                    "type": "missile",
+                    "position": {"x": 40, "y": 8},
+                    "width": 4,
+                    "height": 4,
+                },
+            ],
+        }
+        with pytest.raises(CorruptedFileError) as exc_info:
+            SceneSerializer.from_dict(bad_json)
+        assert "missile limit" in str(exc_info.value).lower()
 
 
 class TestPlatformUndoRedo:

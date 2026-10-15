@@ -573,3 +573,196 @@ class TestGUIIntegrationCatalogues:
         assert Path(dialog.edit_enemies.text()) == default_e
         assert Path(dialog.edit_secrets.text()) == default_s
 
+
+# =============================================================================
+# 6. Secret Linear Dependency Chain Tests
+# =============================================================================
+
+class TestSecretLinearDependencyChain:
+    """Tests verifying secret linear dependency chains, stage resolution, and validation."""
+
+    def test_secret_definition_with_dependency_valid(self):
+        s1 = SecretDefinition(id=1, name="Keys", dependency=None)
+        s1.validate()
+        assert s1.dependency is None
+
+        s2 = SecretDefinition(id=2, name="CDs", dependency=1)
+        s2.validate()
+        assert s2.dependency == 1
+
+        s3 = SecretDefinition(id=3, name="Artifacts", dependency="2")
+        s3.validate()
+        assert s3.dependency == 2
+
+    def test_secret_definition_self_dependency_rejected(self):
+        with pytest.raises(CatalogueValidationError, match="cannot depend on itself"):
+            s = SecretDefinition(id=10, name="Ouroboros", dependency=10)
+            s.validate()
+
+    @pytest.mark.parametrize("invalid_dep", [0, -1, 256, 1000, True, False, 12.5, "invalid"])
+    def test_secret_definition_invalid_dependency_type_rejected(self, invalid_dep):
+        with pytest.raises(CatalogueValidationError, match="dependency"):
+            s = SecretDefinition(id=10, name="Item", dependency=invalid_dep)
+            s.validate()
+
+    def test_secret_serialization_roundtrip_with_dependency(self):
+        s = SecretDefinition(
+            id=42,
+            name="Ancient Relic",
+            rgb_color=(200, 150, 50),
+            atari_color=0x34,
+            blink=True,
+            dependency=7,
+        )
+        data = s.to_dict()
+        assert data["dependency"] == 7
+
+        restored = SecretDefinition.from_dict(data)
+        assert restored.dependency == 7
+        assert restored == s
+
+    def test_secret_serialization_backward_compatibility_no_dependency_key(self):
+        legacy_data = {
+            "id": 1,
+            "name": "Legacy Key",
+            "blink": False,
+        }
+        restored = SecretDefinition.from_dict(legacy_data)
+        assert restored.dependency is None
+        assert restored.id == 1
+
+    def test_linear_chain_stages_calculation(self):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+        cats.add_secret(SecretDefinition(id=3, name="Artifacts", dependency=2))
+
+        assert cats.get_secret_stage(1) == 1
+        assert cats.get_secret_stage(2) == 2
+        assert cats.get_secret_stage(3) == 3
+        assert cats.get_all_secret_stages() == {1: 1, 2: 2, 3: 3}
+
+    def test_linear_chain_rejects_missing_dependency(self):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+
+        with pytest.raises(CatalogueValidationError, match="depends on non-existent secret ID"):
+            cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=99))
+
+    def test_linear_chain_rejects_branching(self):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+
+        # Trying to add another secret that also depends on Keys (id=1) creates branching!
+        with pytest.raises(CatalogueValidationError, match="Branching is not allowed"):
+            cats.add_secret(SecretDefinition(id=3, name="Artifacts", dependency=1))
+
+    def test_linear_chain_rejects_cycles(self):
+        cats = ProjectCatalogues()
+        s1 = SecretDefinition(id=1, name="Secret 1", dependency=None)
+        s2 = SecretDefinition(id=2, name="Secret 2", dependency=1)
+        cats.add_secret(s1)
+        cats.add_secret(s2)
+
+        # Trying to update s1 to depend on s2 creates cycle 1 <-> 2
+        with pytest.raises(CatalogueValidationError, match="Cyclic dependency detected"):
+            s1_cyclic = SecretDefinition(id=1, name="Secret 1", dependency=2)
+            cats.update_secret(1, s1_cyclic)
+
+    def test_linear_chain_rejects_multiple_independent_chains(self):
+        cats = ProjectCatalogues()
+        # Chain 1: 1 -> 2
+        cats.add_secret(SecretDefinition(id=1, name="Chain1-A", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="Chain1-B", dependency=1))
+
+        # Root for Chain 2: 3 (currently Stage 1)
+        cats.add_secret(SecretDefinition(id=3, name="Chain2-A", dependency=None))
+
+        # Trying to add 4 depending on 3 creates a second independent chain (3 -> 4)!
+        with pytest.raises(CatalogueValidationError, match="Multiple independent dependency chains are not allowed"):
+            cats.add_secret(SecretDefinition(id=4, name="Chain2-B", dependency=3))
+
+    def test_cannot_delete_secret_when_another_depends_on_it(self):
+        from scene_editor.catalogue_model import DefinitionInUseError
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+        cats.add_secret(SecretDefinition(id=3, name="Artifacts", dependency=2))
+
+        # Cannot delete Keys (id=1) because CDs (id=2) depends on it
+        with pytest.raises(DefinitionInUseError, match="depend on it"):
+            cats.remove_secret(1)
+
+        # Cannot delete CDs (id=2) because Artifacts (id=3) depends on it
+        with pytest.raises(DefinitionInUseError, match="depend on it"):
+            cats.remove_secret(2)
+
+        # Removing Artifacts (id=3) succeeds as nothing depends on it
+        removed = cats.remove_secret(3)
+        assert removed.id == 3
+        assert cats.get_secret(3) is None
+
+    def test_updating_secret_id_cascades_dependency(self):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+
+        # Change Keys id from 1 to 10
+        updated_keys = SecretDefinition(id=10, name="Master Keys", dependency=None)
+        cats.update_secret(1, updated_keys)
+
+        assert 1 not in cats.secrets
+        assert 10 in cats.secrets
+        # Secret 2 should now depend on 10
+        assert cats.get_secret(2).dependency == 10
+        assert cats.get_secret_stage(2) == 2
+
+    def test_get_valid_dependencies_for_prevents_branching_and_cycles(self):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+
+        # For a new secret (None), valid dependency can only be Secret 2 (CDs).
+        # Secret 1 (Keys) is NOT valid because it already has a child (CDs).
+        valid_for_new = cats.get_valid_dependencies_for(None)
+        assert len(valid_for_new) == 1
+        assert valid_for_new[0].id == 2
+
+        # For Secret 1 (which already has child 2), it cannot depend on 2 (cycle)
+        valid_for_1 = cats.get_valid_dependencies_for(1)
+        assert len(valid_for_1) == 0
+
+    def test_catalogues_dialog_secrets_dependency_ui(self, qapp, tmp_path: Path):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
+        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+
+        dlg = CataloguesDialog(cats, base_dir=tmp_path, initial_tab="secrets")
+        assert dlg.tabs.currentIndex() == 1
+
+        # Check list item formatting shows clean names and dependency requirements without Stage numbers
+        item0 = dlg.secret_list.item(0)
+        assert "Keys [1]" in item0.text()
+        assert "(from start)" in item0.text()
+        assert "Stage" not in item0.text()
+
+        item1 = dlg.secret_list.item(1)
+        assert "CDs [2]" in item1.text()
+        assert "(requires: Keys)" in item1.text()
+        assert "Stage" not in item1.text()
+
+        # Select second item (CDs)
+        dlg.secret_list.setCurrentRow(1)
+        assert dlg.secret_dep_combo.currentData() == 1
+        assert "Keys" in dlg.secret_stage_lbl.text()
+        assert "Unlocks after collecting all 'Keys'" in dlg.secret_stage_lbl.text()
+        assert "Stage" not in dlg.secret_stage_lbl.text()
+
+        # Click new secret
+        dlg._on_new_secret_clicked()
+        assert dlg.secret_dep_combo.currentData() is None
+        assert "Available from the start of the scene" in dlg.secret_stage_lbl.text()
+        assert "Stage" not in dlg.secret_stage_lbl.text()
+
+

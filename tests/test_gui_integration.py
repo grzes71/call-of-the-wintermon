@@ -167,3 +167,54 @@ class TestMainWindowIntegration:
         assert p2.position.x == 60  # unchanged
         assert len(warnings) == 3
         assert warnings[-1][0] == "Platform Collision"
+
+    def test_platform_gui_resource_limit_rejection(self, test_app, monkeypatch):
+        window, tmp_path, tile_path = test_app
+        from PySide6.QtWidgets import QMessageBox
+
+        warnings = []
+        monkeypatch.setattr(QMessageBox, "warning", lambda parent, title, text: warnings.append((title, text)))
+
+        # Switch to platforms tab
+        window.prop_tabs.setCurrentIndex(1)
+
+        # 1. Add sprite platform width 64 at (0, 8) -> 2 sprites
+        window.new_plat_x_spin.setValue(0)
+        idx_64 = window.new_plat_width_combo.findData(64)
+        assert idx_64 >= 0
+        window.new_plat_width_combo.setCurrentIndex(idx_64)
+        window.btn_add_plat.click()
+        assert len(window.scene_model.platforms) == 1
+
+        # 2. Add sprite platform width 32 at (70, 8) -> 1 sprite -> total 3 sprites (row 8 full)
+        window.new_plat_x_spin.setValue(70)
+        idx_32 = window.new_plat_width_combo.findData(32)
+        assert idx_32 >= 0
+        window.new_plat_width_combo.setCurrentIndex(idx_32)
+        window.btn_add_plat.click()
+        assert len(window.scene_model.platforms) == 2
+
+        # 3. Check property panel status label for row 8
+        window._on_platform_selected(window.scene_model.platforms[1].id)
+        assert "Sprite: 3/3" in window.plat_prop_row_status_lbl.text()
+        assert "Missile: 0/4" in window.plat_prop_row_status_lbl.text()
+
+        # 4. Try adding a 3rd sprite platform at (110, 8) width 16 -> exceeds limit (3+1=4)
+        window.new_plat_x_spin.setValue(110)
+        idx_16 = window.new_plat_width_combo.findData(16)
+        window.new_plat_width_combo.setCurrentIndex(idx_16)
+        window.btn_add_plat.click()
+        assert len(window.scene_model.platforms) == 2  # rejected
+        assert len(warnings) == 1
+        assert "Invalid Platform Position" in warnings[-1][0]
+
+        # 5. Try resizing platform 2 from 32 to 36 -> needs 2 sprites (total would be 4)
+        p2_id = window.scene_model.platforms[1].id
+        window._on_platform_selected(p2_id)
+        idx_prop_36 = window.plat_prop_width_combo.findData(36)
+        assert idx_prop_36 >= 0
+        window.plat_prop_width_combo.setCurrentIndex(idx_prop_36)
+        assert window.scene_model.get_platform(p2_id).width == 32  # preserved
+        assert len(warnings) == 2
+        assert "Hardware Resource Limit" in warnings[-1][0]
+

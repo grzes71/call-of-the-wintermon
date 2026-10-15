@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scene": {
-    "name": "untitled",
+    "name": "The Forest Whispers My Name",
     "width": 160,
     "height": 96,
     "tile_source": "tiles/trees.png"
@@ -90,43 +90,23 @@
   ],
   "platforms": [
     {
-      "id": "platform-001",
-      "type": "sprite",
-      "position": {
-        "x": 96,
-        "y": 88
-      },
-      "width": 32,
-      "height": 4
-    },
-    {
       "id": "platform-002",
       "type": "sprite",
       "position": {
-        "x": 32,
+        "x": 49,
         "y": 88
       },
-      "width": 32,
-      "height": 4
-    },
-    {
-      "id": "platform-003",
-      "type": "sprite",
-      "position": {
-        "x": 64,
-        "y": 88
-      },
-      "width": 32,
+      "width": 96,
       "height": 4
     },
     {
       "id": "platform-004",
       "type": "sprite",
       "position": {
-        "x": 33,
+        "x": 32,
         "y": 72
       },
-      "width": 32,
+      "width": 48,
       "height": 4
     },
     {
@@ -150,23 +130,13 @@
       "height": 4
     },
     {
-      "id": "platform-007",
-      "type": "sprite",
-      "position": {
-        "x": 65,
-        "y": 72
-      },
-      "width": 16,
-      "height": 4
-    },
-    {
       "id": "platform-008",
       "type": "sprite",
       "position": {
-        "x": 32,
+        "x": 1,
         "y": 40
       },
-      "width": 32,
+      "width": 16,
       "height": 4
     },
     {
@@ -203,7 +173,7 @@
       "id": "platform-012",
       "type": "sprite",
       "position": {
-        "x": 110,
+        "x": 112,
         "y": 56
       },
       "width": 16,
@@ -218,6 +188,26 @@
       },
       "width": 32,
       "height": 4
+    },
+    {
+      "id": "platform-014",
+      "type": "missile",
+      "position": {
+        "x": 16,
+        "y": 88
+      },
+      "width": 32,
+      "height": 4
+    },
+    {
+      "id": "platform-015",
+      "type": "missile",
+      "position": {
+        "x": 72,
+        "y": 56
+      },
+      "width": 8,
+      "height": 4
     }
   ],
   "objects": [
@@ -226,7 +216,7 @@
       "type": "enemy",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 117,
+      "x": 101,
       "speed": "slow",
       "movement_strategy": "left_right"
     },
@@ -235,32 +225,37 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-006",
-      "x": 0,
+      "x": 8,
       "speed": "medium",
       "movement_strategy": "right_left"
     },
     {
       "id": 3,
       "type": "secret",
-      "definition_id": 2,
+      "definition_id": 1,
       "platform_id": "platform-013",
       "x": 29
     },
     {
       "id": 4,
       "type": "secret",
-      "definition_id": 2,
+      "definition_id": 1,
       "platform_id": "platform-006",
       "x": 20
     },
     {
+      "id": 6,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-010",
+      "x": 115
+    },
+    {
       "id": 5,
-      "type": "enemy",
-      "definition_id": 5,
-      "platform_id": "platform-007",
-      "x": 66,
-      "speed": "slow",
-      "movement_strategy": "right_pause_left"
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-011",
+      "x": 76
     }
   ]
 }
