@@ -97,7 +97,8 @@
         "y": 88
       },
       "width": 96,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 3
     },
     {
       "id": "platform-004",
@@ -107,7 +108,8 @@
         "y": 72
       },
       "width": 48,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 1
     },
     {
       "id": "platform-005",
@@ -117,7 +119,8 @@
         "y": 72
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 2
     },
     {
       "id": "platform-006",
@@ -127,7 +130,8 @@
         "y": 56
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 3
     },
     {
       "id": "platform-008",
@@ -137,7 +141,8 @@
         "y": 40
       },
       "width": 16,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 2
     },
     {
       "id": "platform-009",
@@ -147,7 +152,8 @@
         "y": 40
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 1
     },
     {
       "id": "platform-010",
@@ -157,7 +163,8 @@
         "y": 24
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 2
     },
     {
       "id": "platform-011",
@@ -167,7 +174,8 @@
         "y": 24
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 2
     },
     {
       "id": "platform-012",
@@ -177,7 +185,8 @@
         "y": 56
       },
       "width": 16,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 2
     },
     {
       "id": "platform-013",
@@ -187,7 +196,8 @@
         "y": 24
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 3
     },
     {
       "id": "platform-014",
