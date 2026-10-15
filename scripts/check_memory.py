@@ -73,8 +73,10 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Intro Display List"
         elif start == 0x2B00:
             seg_type = "Tileset Metadata & Row Tables"
+        elif start == 0x2D00:
+            seg_type = "Scene Definitions & Object Tables"
         elif start == 0x3000:
-            seg_type = "Gameplay VRAM (ANTIC E 160x96) + DLIST"
+            seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
         elif start == 0x3F00:
             seg_type = "Gameplay Display List"
         elif start == 0x4000:
@@ -85,6 +87,8 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Player-Missile Graphics (PMG 2 KB) + Audio"
         elif start == 0x7000:
             seg_type = "Audio Player & Music Buffers"
+        elif start == 0x7A00:
+            seg_type = "Render Lookup Tables (Flip & Row Pointers)"
         elif start == 0x8000:
             seg_type = "ANTIC Mode E Tileset Bitmaps"
 

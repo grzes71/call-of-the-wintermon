@@ -299,16 +299,16 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
     dl_addr = labels["DLIST_GAME"]
     assert list(mem[dl_addr : dl_addr + 3]) == [0x70, 0x70, 0x70]
 
-    # Byte 3: DL_MODE_E | DL_LMS ($0E | $40 = $4E)
-    assert mem[dl_addr + 3] == 0x4E
+    # Byte 3: DL_MODE_D | DL_LMS ($0D | $40 = $4D)
+    assert mem[dl_addr + 3] == 0x4D
 
     # Bytes 4..5: LMS target address ($3000)
     lms_target = mem[dl_addr + 4] | (mem[dl_addr + 5] << 8)
     assert lms_target == 0x3000
 
-    # Remaining 95 lines of mode E ($0E)
+    # Remaining 95 lines of mode D ($0D)
     for i in range(95):
-        assert mem[dl_addr + 6 + i] == 0x0E
+        assert mem[dl_addr + 6 + i] == 0x0D
 
     # Bottom 3 blank scanlines
     assert list(mem[dl_addr + 101 : dl_addr + 104]) == [0x70, 0x70, 0x70]
@@ -327,14 +327,18 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
 
     mpu.pc = labels["GAME_INIT"]
     steps = 0
-    while mpu.pc != 0x2000 and steps < 1000:
+    while mpu.pc != 0x2000 and steps < 50_000:
         mpu.step()
         steps += 1
 
     # Verify game_init sets PMBASE to $68
     assert mem[labels["PMBASE"]] == 0x68
-    # Verify SDLSTL points to dlist_game ($3F00)
+    # Verify SDLSTL points to dlist_scene_title for initial scene title card
     sdlst = mem[labels["SDLSTL"]] | (mem[labels["SDLSTH"]] << 8)
-    assert sdlst == 0x3F00
+    assert sdlst == labels["DLIST_SCENE_TITLE"]
+    # Verify title card LMS points to scene 0 name line (centered screencodes)
+    title_lms = mem[labels["DLIST_SCENE_TITLE_ADDR"]] | (mem[labels["DLIST_SCENE_TITLE_ADDR"] + 1] << 8)
+    assert title_lms == labels["SCENE_SC_01_FOREST_NAME_LINE"]
+
 
 

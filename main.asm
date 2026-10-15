@@ -14,14 +14,16 @@ FONT_ADDR   = $2400     ; 1 KB aligned font (1024 bytes: $2400-$27FF)
 INTRO_VRAM  = $2800     ; Intro text VRAM (400 bytes: $2800-$298F)
 INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
 TILES_META  = $2B00     ; Tileset SoA metadata & row offset tables (~486 bytes: $2B00-$2CE5)
-GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode E 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
+SCENES_DATA = $2D00     ; Scene definitions, platforms & objects SoA tables (~350 bytes: $2D00-$2E60)
+GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 VRAM_SEG1   = $4000     ; Title VRAM Segment 1
 VRAM_SEG2   = $5000     ; Title VRAM Segment 2
 DLIST_ADDR  = $6000     ; Title Display List
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
-AUDIO_ADDR  = $7000     ; Audio Player & Music Buffers
-TILES_ADDR  = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
+AUDIO_ADDR    = $7000     ; Audio Player & Music Buffers
+RENDER_TABLES = $7A00     ; Render Lookup Tables: Flip byte (256 B) + Playfield row offsets (192 B)
+TILES_ADDR    = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
 
 ; --- Gameplay Buffer Equates ---
 GAME_VRAM_SIZE  = 3840  ; 40 bytes/line * 96 lines
@@ -58,6 +60,9 @@ start
 
     lda #1
     sta title_first_run ; First run: enable 28-frame fade-in
+
+    lda #0
+    sta active_scene_id ; Default to scene 0 (Forest)
 
 main_loop
     ; Check if active state needs initialization
@@ -198,8 +203,14 @@ dlist_intro
     icl 'gen/tiles_data.asm'
 
 ; ==============================================================================
+; SCENE DEFINITIONS & OBJECT TABLES ($2D00)
+; ==============================================================================
+    org SCENES_DATA
+    icl 'gen/scenes_data.asm'
+
+; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
-; ANTIC Mode E (160x96 2bpp, 40 bytes/line * 96 lines = 3,840 bytes: $3000-$3EFF)
+; ANTIC Mode D ($0D, 160x96 2bpp, 2 scanlines/line, 40 bytes/line * 96 lines = 3,840 bytes)
 ; 4 KB aligned: strictly within $3000-$3FFF (never crosses 4 KB boundary)
 ; ==============================================================================
     org GAME_VRAM
@@ -208,7 +219,7 @@ game_vram_buf
 
 ; ==============================================================================
 ; GAME DISPLAY LIST SEGMENT ($3F00)
-; 96 lines of ANTIC Mode E with top/bottom blank margins (~107 bytes: $3F00-$3F6A)
+; 96 lines of ANTIC Mode D ($0D) with top/bottom blank margins (~107 bytes: $3F00-$3F6A)
 ; 1 KB aligned: strictly within $3C00-$3FFF (never crosses 1 KB boundary)
 ; ==============================================================================
     org GAME_DLIST
@@ -218,9 +229,9 @@ dlist_game
     .byte DL_BLANK8
 
     ; Line 0 with LMS (starts at $3000, 3840 bytes -> ends at $3EFF, never wraps)
-    .byte DL_MODE_E | DL_LMS
+    .byte DL_MODE_D | DL_LMS
     .word GAME_VRAM
-    :95 .byte DL_MODE_E
+    :95 .byte DL_MODE_D
 
     .byte DL_BLANK8
     .byte DL_BLANK8
@@ -229,6 +240,27 @@ dlist_game
     ; Jump and wait for vertical blank
     .byte DL_JVB
     .word dlist_game
+
+; ==============================================================================
+; SCENE TITLE CARD DISPLAY LIST
+; 1 line of ANTIC Mode 2 (8 scanlines) centered in 192 scanlines:
+; 92 blank scanlines (11x8 + 1x4), 1 line ANTIC 2 with LMS (8 scanlines),
+; 92 blank scanlines (11x8 + 1x4), and JVB.
+; Strictly within $3F00-$3FFF (never crosses 1 KB boundary)
+; ==============================================================================
+dlist_scene_title
+    :11 .byte DL_BLANK8
+    .byte DL_BLANK4
+
+    .byte DL_MODE_2 | DL_LMS
+dlist_scene_title_addr
+    .word 0
+
+    :11 .byte DL_BLANK8
+    .byte DL_BLANK4
+
+    .byte DL_JVB
+    .word dlist_scene_title
 
 ; ==============================================================================
 ; TITLE GRAPHICS DATA SEGMENT ($4000)
@@ -283,6 +315,13 @@ pmg_memory
     org AUDIO_ADDR
     icl 'lib/audio.asm'
     icl 'gen/title_music.asm'
+
+; ==============================================================================
+; RENDER LOOKUP TABLES SEGMENT ($7A00)
+; ==============================================================================
+    org RENDER_TABLES
+    icl 'engine/render_tables.asm'
+    icl 'engine/render.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader

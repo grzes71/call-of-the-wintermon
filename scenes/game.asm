@@ -1,55 +1,74 @@
 ; ==============================================================================
-; SCENES/GAME.ASM — Main Gameplay State Handler (Stub)
-; Transitions to STATE_OVER upon Fire / Keypress
+; SCENES/GAME.ASM — Main Gameplay State Handler
+; Target: Atari 800XL / 65XE (MOS 6502)
 ; ==============================================================================
 
+; --- Game Sub-Phases ---
+GAME_PHASE_TITLE_IN   = 0   ; Title card fade in (8 steps of 3 frames = 24 frames ~0.48s)
+GAME_PHASE_TITLE_HOLD = 1   ; Title card hold (100 frames = 2.0s at 50 Hz PAL)
+GAME_PHASE_TITLE_OUT  = 2   ; Title card fade out (8 steps of 3 frames = 24 frames ~0.48s)
+GAME_PHASE_PLAYING    = 3   ; Active gameplay playfield (ANTIC Mode D)
+
+; Fade table for scene title card (green hue $C, increasing luminance)
+; 8 luminance steps: black -> faint green -> bright light green
+scene_title_fade_colors
+    .byte $00, $C2, $C4, $C6, $C8, $CA, $CC, $CE
+SCENE_TITLE_FADE_STEPS = 8
+
 .proc game_init
-    ; Blank playfield DMA during setup
+    ; 1. Turn off DMA during setup
     lda #0
     sta SDMCTL
     sta DMACTL
 
-    ; Point display list to dlist_game
-    lda <dlist_game
-    sta SDLSTL
-    sta DLISTL
-    lda >dlist_game
-    sta SDLSTH
-    sta DLISTH
-
-    ; Set PMBASE (Player-Missile Graphics buffer page)
+    ; 2. Set PMBASE (Player-Missile Graphics buffer page)
     lda #PMBASE_PAGE
     sta PMBASE
 
-    ; Configure default palette: Forest theme (tileset_trees)
-    lda #$00
-    sta COLOR4
-    sta COLBK           ; Background: Black ($00)
+    ; 3. Pre-render scene background into GAME_VRAM ($3000)
+    lda active_scene_id
+    jsr render_scene_background
 
-    lda tileset_colpf0+TILESET_TREES
-    sta COLOR0
-    sta COLPF0          ; Dark green ($C4)
+    ; 4. Set up Scene Title Card LMS operand in dlist_scene_title
+    ldx active_scene_id
+    lda scene_name_line_lo,x
+    sta dlist_scene_title_addr
+    lda scene_name_line_hi,x
+    sta dlist_scene_title_addr+1
 
-    lda tileset_colpf1+TILESET_TREES
-    sta COLOR1
-    sta COLPF1          ; Medium emerald ($C8)
+    ; 5. Set font pointer to intro_font ($24)
+    lda >intro_font
+    sta CHBAS
+    sta CHBASE
 
-    lda tileset_colpf2+TILESET_TREES
-    sta COLOR2
-    sta COLPF2          ; Bright lime ($DC)
-
-    ; Require releasing fire button before accepting next press
+    ; 6. Set initial title card colors: black background, black text (ready for fade-in)
     lda #0
+    sta COLOR1
+    sta COLPF1
+    sta COLOR2
+    sta COLPF2
+    sta COLOR4
+    sta COLBK
+
+    ; 7. Point display list to dlist_scene_title
+    lda <dlist_scene_title
+    sta SDLSTL
+    sta DLISTL
+    lda >dlist_scene_title
+    sta SDLSTH
+    sta DLISTH
+
+    ; 8. Initialize title card animation phase
+    lda #GAME_PHASE_TITLE_IN
+    sta game_phase
+    lda #0
+    sta scene_card_step
+    sta scene_card_timer
     sta fire_released
     rts
 .endp
 
 .proc game_run
-    ; Enable ANTIC Mode E playfield DMA (standard width 40 cols + DLIST)
-    lda #$22
-    sta SDMCTL
-    sta DMACTL
-
     ; Reset attract mode
     lda #0
     sta ATRACT
@@ -59,6 +78,160 @@
 @sync_vblank
     cmp RTCLOK+2
     beq @sync_vblank
+
+    ; Dispatch based on game_phase
+    lda game_phase
+    cmp #GAME_PHASE_TITLE_IN
+    bne @chk_phase_hold
+    jmp @do_title_in
+
+@chk_phase_hold
+    cmp #GAME_PHASE_TITLE_HOLD
+    bne @chk_phase_out
+    jmp @do_title_hold
+
+@chk_phase_out
+    cmp #GAME_PHASE_TITLE_OUT
+    bne @chk_phase_playing
+    jmp @do_title_out
+
+@chk_phase_playing
+    jmp @do_playing
+
+; ------------------------------------------------------------------------------
+; PHASE 0: Title Card Fade In (8 steps, 3 frames each = 24 frames ~0.48s)
+; ------------------------------------------------------------------------------
+@do_title_in
+    lda #$22
+    sta SDMCTL
+    sta DMACTL
+
+    ldx scene_card_step
+    lda scene_title_fade_colors,x
+    sta COLOR1
+    sta COLPF1
+
+    inc scene_card_timer
+    lda scene_card_timer
+    cmp #3
+    bcc @done_in
+
+    lda #0
+    sta scene_card_timer
+    inc scene_card_step
+    lda scene_card_step
+    cmp #SCENE_TITLE_FADE_STEPS
+    bcc @done_in
+
+    lda #GAME_PHASE_TITLE_HOLD
+    sta game_phase
+    lda #0
+    sta scene_card_timer
+@done_in
+    rts
+
+; ------------------------------------------------------------------------------
+; PHASE 1: Title Card Hold (100 frames = 2.0s at 50 Hz PAL)
+; ------------------------------------------------------------------------------
+@do_title_hold
+    lda #$22
+    sta SDMCTL
+    sta DMACTL
+
+    lda scene_title_fade_colors + SCENE_TITLE_FADE_STEPS - 1
+    sta COLOR1
+    sta COLPF1
+
+    ; Check skip conditions (debounced fire or keypress)
+    lda STRIG0
+    bne @fire_up
+    lda fire_released
+    bne @skip_to_fade_out
+    jmp @advance_hold_timer
+@fire_up
+    lda #1
+    sta fire_released
+    lda CH
+    cmp #$FF
+    bne @skip_key
+@advance_hold_timer
+    inc scene_card_timer
+    lda scene_card_timer
+    cmp #100
+    bcc @done_hold
+
+    jmp @start_fade_out
+
+@skip_key
+    lda #$FF
+    sta CH              ; Clear key buffer
+@skip_to_fade_out
+@start_fade_out
+    lda #GAME_PHASE_TITLE_OUT
+    sta game_phase
+    lda #SCENE_TITLE_FADE_STEPS - 1
+    sta scene_card_step
+    lda #0
+    sta scene_card_timer
+@done_hold
+    rts
+
+; ------------------------------------------------------------------------------
+; PHASE 2: Title Card Fade Out (8 steps, 3 frames each = 24 frames ~0.48s)
+; ------------------------------------------------------------------------------
+@do_title_out
+    lda #$22
+    sta SDMCTL
+    sta DMACTL
+
+    ldx scene_card_step
+    lda scene_title_fade_colors,x
+    sta COLOR1
+    sta COLPF1
+
+    inc scene_card_timer
+    lda scene_card_timer
+    cmp #3
+    bcc @done_out
+
+    lda #0
+    sta scene_card_timer
+    dec scene_card_step
+    bpl @done_out
+
+    ; Fade-out complete: switch to active gameplay with dlist_game!
+    lda #0
+    sta SDMCTL
+    sta DMACTL
+    sta COLOR1
+    sta COLPF1
+
+    ; Point display list to dlist_game
+    lda <dlist_game
+    sta SDLSTL
+    sta DLISTL
+    lda >dlist_game
+    sta SDLSTH
+    sta DLISTH
+
+    ; Set scene palette for gameplay (ANTIC Mode D)
+    lda active_scene_id
+    jsr set_scene_palette
+
+    lda #GAME_PHASE_PLAYING
+    sta game_phase
+    lda #0
+    sta fire_released
+@done_out
+    rts
+
+; ------------------------------------------------------------------------------
+; PHASE 3: Active Gameplay Loop
+; ------------------------------------------------------------------------------
+@do_playing
+    lda #$22
+    sta SDMCTL
+    sta DMACTL
 
     ; Check if button was released first
     lda fire_released

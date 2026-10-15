@@ -36,7 +36,13 @@ TILES_ARTIFACTS  := $(TILES_BIN_CAST) $(TILES_BIN_DEP) $(TILES_BIN_HELL) $(TILES
 MUSIC_TITLE_JSON := music/title.json
 MUSIC_TITLE_ASM  := $(GEN_DIR)/title_music.asm
 
+SCENES_MANIFEST  := scenes/scenes.json
+SCENES_DIR       := scenes
+SCENES_SRCS      := $(wildcard $(SCENES_DIR)/*.json)
+SCENES_ASM       := $(GEN_DIR)/scenes_data.asm
+
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
+                    engine/render.asm engine/render_tables.asm \
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 .PHONY: all assets tiles music data tests xex check_memory run clean
@@ -75,17 +81,20 @@ $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_title_data
 
 # ------------------------------------------------------------------------------
-# 4. Data generation (future data tables / level definitions)
+# 4. Data generation (Scene structures, platforms, objects)
 # ------------------------------------------------------------------------------
-data:
-	@echo "Data pipeline: up to date."
+data: $(SCENES_ASM)
+
+$(SCENES_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json scripts/compile_scenes.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM)
 
 # ------------------------------------------------------------------------------
 # 5. Binary assembly (MADS)
 # ------------------------------------------------------------------------------
 xex: $(TARGET)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(MUSIC_TITLE_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS)
+$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(MUSIC_TITLE_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
 	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
 

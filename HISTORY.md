@@ -2,6 +2,90 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-15] - Scene Title Card Screen with Centered ANTIC 2 Display List & Fade Sequence
+
+- **Generated 40-Character Centered Screen Codes in Scene Compiler** in [scripts/compile_scenes.py](scripts/compile_scenes.py):
+  - Added `POLISH_CHARS` diacritic mapping and `char_to_atari_screencode(c)` converting ASCII/Unicode to Atari ANTIC Mode 2 internal screen codes.
+  - Added `text_to_screencodes_line(text, width=40)` to pre-center scene names into 40-character screen lines at build time.
+  - Emitted `scene_{symbol}_name_line` per scene and master index pointer tables `scene_name_line_lo` / `scene_name_line_hi` in [gen/scenes_data.asm](gen/scenes_data.asm).
+- **Added Centered ANTIC 2 Display List** in [main.asm](main.asm):
+  - Defined `dlist_scene_title` in segment `GAME_DLIST` ($3F00) safely below 1 KB boundary ($3F88): 92 blank scanlines (11x `DL_BLANK8` + 1x `DL_BLANK4`), 1 line of ANTIC Mode 2 with LMS (`dlist_scene_title_addr`, 8 scanlines), 92 blank scanlines, and `DL_JVB` back to `dlist_scene_title` (total 192 scanlines, perfectly centered vertically).
+  - Relocated [engine/render.asm](engine/render.asm) code into segment `RENDER_ADDR = $7A00` alongside lookup tables, freeing 300+ bytes in code segment at `$2000`.
+- **Implemented Frame-Driven Title Card Phase State Machine** in [scenes/game.asm](scenes/game.asm):
+  - Added game sub-phases: `GAME_PHASE_TITLE_IN` (0), `GAME_PHASE_TITLE_HOLD` (1), `GAME_PHASE_TITLE_OUT` (2), `GAME_PHASE_PLAYING` (3).
+  - Added green luminance fade table `scene_title_fade_colors` ($00, $C2, $C4, $C6, $C8, $CA, $CC, $CE).
+  - `game_init`: pre-renders playfield into `GAME_VRAM` ($3000), points `dlist_scene_title_addr` to active scene name line, sets font to `intro_font` ($24), sets colors to black, and switches `SDLSTL` to `dlist_scene_title`.
+  - `game_run`:
+    - Phase 0: Smooth 24-frame fade-in (8 luminance steps x 3 frames = ~0.48s).
+    - Phase 1: 100-frame hold (~2.0s at 50 Hz PAL) with optional debounced button/key skip.
+    - Phase 2: Smooth 24-frame fade-out (8 luminance steps x 3 frames = ~0.48s).
+    - Transition: switches `SDLSTL` to `dlist_game` ($3F00) and restores scene gameplay palette via `set_scene_palette`.
+- **Added Automated Emulation & Unit Tests**:
+  - Added screen code unit tests in [tests/test_compile_scenes.py](tests/test_compile_scenes.py) verifying ASCII, Polish diacritics, and 40-character centering.
+  - Added py65 6502 emulation test `test_scene_title_card_frame_progression` in [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py) validating the complete 148-frame progression (fade in -> 100-frame hold -> fade out -> playfield display list swap).
+  - All 288 automated tests pass and memory validation passes with 3,984 bytes headroom.
+
+
+## [2026-10-15] - Switch Gameplay Graphics Mode to ANTIC $0D (Graphics 7)
+
+- **Switched Gameplay Display List to ANTIC Mode D ($0D)** in [main.asm](main.asm):
+  - Updated `dlist_game` from `DL_MODE_E` ($0E) to `DL_MODE_D` ($0D) with `DL_MODE_D | DL_LMS` at `$3000` followed by 95 mode lines of `DL_MODE_D`.
+  - In ANTIC Mode D, each mode line spans 2 scanlines (totaling 192 scanlines for full-screen display height), preserving 160x96 2bpp resolution with 3,840 bytes of VRAM while avoiding 7,680-byte 192-line Mode E VRAM expansion.
+- **Updated State Handlers and Renderers** in [scenes/game.asm](scenes/game.asm) and [engine/render.asm](engine/render.asm):
+  - Updated gameplay DMA comments and mode documentation.
+- **Updated Automated Validation and Tests** in [scripts/check_memory.py](scripts/check_memory.py) and [tests/test_convert_tiles.py](tests/test_convert_tiles.py):
+  - Updated `check_memory.py` segment label for `$3000` to `Gameplay VRAM (ANTIC Mode D 160x96) + DLIST`.
+  - Updated DLIST assertions in `test_convert_tiles.py` to assert `0x4D` (`DL_MODE_D | DL_LMS`) and `0x0D` (`DL_MODE_D`).
+  - Confirmed all 285 tests pass and memory validation passes with 4,386 bytes headroom via `make all`.
+
+## [2026-10-15] - Playfield Background Renderer (ANTIC Mode E) & Hardware Horizontal Flip
+
+- **Implemented Core Renderer Engine** in [engine/render.asm](engine/render.asm):
+  - Created `clear_game_vram` clearing all 3,840 bytes of gameplay playfield VRAM ($3000-$3EFF) using an unrolled 15-page loop (~21,000 cycles).
+  - Created `render_scene_background`: parameterized background graphics renderer accepting scene index in `A` (`0..SCENE_COUNT-1`).
+  - Automatically configures Atari GTIA color palette registers (`COLBK`, `COLPF0..COLPF2`, and OS shadows `COLOR4`, `COLOR0..COLOR2`) from the scene's primary tileset.
+  - Computes source tileset bitmap row offsets from 16-bit row tables and playfield row offsets from precomputed lookup tables.
+  - Implemented boundary clipping against screen bounds (40 bytes / 96 scanlines) preventing memory overruns.
+  - Implemented 2bpp horizontal flipping (`flip_x`): inverts pixel bit ordering using precomputed lookup table `flip_byte_2bpp` and reverses byte order across the scanline.
+- **Created Precomputed Render Lookup Tables** in [engine/render_tables.asm](engine/render_tables.asm):
+  - `flip_byte_2bpp` (256 bytes): swaps pixel 0 <-> pixel 3 and pixel 1 <-> pixel 2.
+  - `playfield_row_lo` and `playfield_row_hi` (192 bytes): 96 precomputed addresses for Mode E scanlines at `$3000`.
+  - Allocated in memory segment `RENDER_TABLES = $7A00` ($7A00-$7BCA, 459 bytes) within free RAM before `$8000`.
+- **Integrated Scene Rendering in Gameplay State** in [scenes/game.asm](scenes/game.asm):
+  - Updated `game_init` to invoke `render_scene_background` with `SCENE_SC_01_FOREST_ID` (Scene 0 - Forest).
+  - Screen displays rendered forest background when transitioning to `STATE_GAME`.
+- **Added Automated Pytest Test Harness** in [tests/test_render_scene.py](tests/test_render_scene.py):
+  - Tested `clear_game_vram` verifying 100% of bytes in `$3000-$3EFF` are cleared to 0.
+  - Tested `flip_byte_2bpp` verifying exact 2-bit pixel reversal across all 4 pixel positions.
+  - Tested `render_scene_background` on Scene 0 (Forest) and Scene 1 (Castle) verifying correct GTIA palette configuration, active scene ID update, and non-zero blitted graphics at expected element coordinates.
+  - Verified full test suite (285 passed) and memory check (4,386 bytes headroom) via `make all`.
+
+## [2026-10-15] - Automated Scene Compiler & Structure-of-Arrays 6502 Engine Data Integration
+
+- **Created Scene Compilation Tool** in [scripts/compile_scenes.py](scripts/compile_scenes.py):
+  - Parses scene definitions listed in [scenes/scenes.json](scenes/scenes.json) and resolves tilesets, element dimensions/coordinates, platforms, and entities.
+  - Cross-references entity definition IDs with [enemies.json](enemies.json) and [secrets.json](secrets.json) to resolve Atari GTIA colors and blink flags.
+  - Automatically associates objects with platform indices and calculates resting vertical positions (`platform.y - 8`).
+  - Generates Structure-of-Arrays (SoA) tables in [gen/scenes_data.asm](gen/scenes_data.asm) containing per-scene element, platform, and object tables plus master indexing pointer tables for `O(1)` runtime scene loading (`LDX active_scene_id`).
+- **Integrated Scene Compilation into Build Pipeline** in [Makefile](Makefile):
+  - Added `data: $(SCENES_ASM)` rule compiling scene data whenever [scenes/scenes.json](scenes/scenes.json), scene JSON files, or catalogue definitions change.
+  - Added `$(SCENES_ASM)` as prerequisite to `$(TARGET)` (`call_of_the_wintermon.xex`).
+- **Mapped Scene Structures into 6502 Memory Map** in [main.asm](main.asm):
+  - Allocated segment `SCENES_DATA = $2D00` ($2D00-$2EF8, 505 bytes) in available RAM before gameplay VRAM ($3000), preserving strictly ascending `org` order.
+  - Included `gen/scenes_data.asm` into assembly.
+- **Updated Memory Map Validation** in [scripts/check_memory.py](scripts/check_memory.py):
+  - Registered segment `$2D00` as `Scene Definitions & Object Tables`.
+- **Added Automated Pytest Test Suite** in [tests/test_compile_scenes.py](tests/test_compile_scenes.py):
+  - Verified symbol sanitization, tileset ID resolution, catalogue lookups, scene parsing, and end-to-end ASM generation.
+  - Verified presence of all generated scene and table symbols in compiled `gen/main.lab`.
+  - Confirmed all 281 tests pass and memory validation passes with 5,257 bytes headroom.
+
+## [2026-10-15] - Add Game Scenes Order Manifest (scenes/scenes.json)
+
+- **Created scenes order manifest** in [scenes/scenes.json](scenes/scenes.json):
+  - Defined the list and sequence of game scenes (`01-forest.json`, `02-forest-castle.json`).
+  - Formatted as a JSON object with `"scenes"` array for game level progression.
+
 ## [2026-10-15] - Simplification of Secret Dependency UI and Scene-Isolated Progress Runtime
 
 - **Refactored Secrets Catalogue UI to Pure Type-Based Dependencies** in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py):

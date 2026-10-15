@@ -23,7 +23,33 @@ current_state   = $89   ; Active running state ($FF = uninitialized)
 title_first_run = $8A   ; 1 = first display (fade in), 0 = subsequent (immediate)
 fade_frame      = $8B   ; Frame counter for 28-frame fade-in (0..28)
 fire_released   = $8C   ; Debounce flag: 1 = fire button was released
+game_phase      = $8D   ; Gameplay phase (0=title in, 1=title hold, 2=title out, 3=playing)
+scene_card_step = $8E   ; Fade step index (0..7)
+scene_card_timer= $8F   ; Frame counter within title card phase
 
 ; --- Audio Player Zero Page Base ($90-$99, 10 bytes) ---
 ; lib/player.asm uses PLAYER_ZP_BASE + 0..9 for track and temporary pointers
 PLAYER_ZP_BASE  = $90
+
+; --- Scene Renderer Zero Page Variables ($9A-$B7) ---
+active_scene_id     = $9A   ; Currently active / loaded scene index (0..SCENE_COUNT-1)
+zp_elem_idx         = $9B   ; Current element index within scene (0..elem_count-1)
+zp_elem_count       = $9C   ; Total elements in scene
+zp_elem_w           = $9D   ; Element width in bytes
+zp_elem_h           = $9E   ; Element height in scanlines
+zp_stride           = $9F   ; Tileset stride (bytes per line)
+zp_flags            = $A0   ; Element flags (bit 0 = flip_x)
+zp_ptr_row_lo       = $A1   ; 2 bytes: Pointer to tileset row_lo table
+zp_ptr_row_hi       = $A3   ; 2 bytes: Pointer to tileset row_hi table
+zp_src_idx          = $A5   ; Temporary index for flip loop
+zp_dst_idx          = $A6   ; Temporary index for flip loop
+zp_bytes_left       = $A7   ; Loop counter for columns
+zp_ptr_elem_ts      = $A8   ; 2 bytes: Pointer to scene elem tileset table
+zp_ptr_elem_sx      = $AA   ; 2 bytes: Pointer to scene elem src_x_byte table
+zp_ptr_elem_sy      = $AC   ; 2 bytes: Pointer to scene elem src_y table
+zp_ptr_elem_w       = $AE   ; 2 bytes: Pointer to scene elem w_byte table
+zp_ptr_elem_h       = $B0   ; 2 bytes: Pointer to scene elem h_lines table
+zp_ptr_elem_dx      = $B2   ; 2 bytes: Pointer to scene elem dst_x_byte table
+zp_ptr_elem_dy      = $B4   ; 2 bytes: Pointer to scene elem dst_y table
+zp_ptr_elem_fl      = $B6   ; 2 bytes: Pointer to scene elem flags table
+

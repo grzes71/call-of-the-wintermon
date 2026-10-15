@@ -135,3 +135,61 @@ def test_fade_frame_progression_over_28_frames():
     for val in luminances:
         assert val % 2 == 0
         assert 0 <= val <= 0x0E
+
+
+def test_scene_title_card_frame_progression(emu_env):
+    """Verify that game_run advances scene title card: fade in -> hold 2s -> fade out -> playing."""
+    mpu, labels = emu_env
+
+    # 1. Initialize game state for scene 0
+    mpu.memory[labels["ACTIVE_SCENE_ID"]] = 0
+    run_subroutine(mpu, labels["GAME_INIT"])
+
+    # Verify initial setup
+    assert mpu.memory[labels["GAME_PHASE"]] == 0  # GAME_PHASE_TITLE_IN
+    assert mpu.memory[labels["COLOR1"]] == 0x00
+    sdlst = mpu.memory[labels["SDLSTL"]] | (mpu.memory[labels["SDLSTH"]] << 8)
+    assert sdlst == labels["DLIST_SCENE_TITLE"]
+
+    # Patch VBLANK loop in game_run so it doesn't wait on real hardware VBLANK
+    # In game_run, find the BEQ instruction and replace with NOPs ($EA, $EA)
+    for offset in range(25):
+        if mpu.memory[labels["GAME_RUN"] + offset] == 0xF0:
+            mpu.memory[labels["GAME_RUN"] + offset] = 0xEA
+            mpu.memory[labels["GAME_RUN"] + offset + 1] = 0xEA
+            break
+
+    # Prevent STRIG0 / CH from skipping
+    mpu.memory[labels["STRIG0"]] = 1
+    mpu.memory[labels["CH"]] = 0xFF
+
+    # Phase 0: 24 frames of fade in (8 steps of 3 frames)
+    for _ in range(24):
+        assert mpu.memory[labels["GAME_PHASE"]] == 0
+        run_subroutine(mpu, labels["GAME_RUN"])
+
+    # At frame 24, transitioned to Phase 1 (TITLE_HOLD)
+    assert mpu.memory[labels["GAME_PHASE"]] == 1
+    assert mpu.memory[labels["COLOR1"]] == 0xCE
+
+    # Phase 1: 100 frames of hold (~2.0s)
+    for _ in range(100):
+        assert mpu.memory[labels["GAME_PHASE"]] == 1
+        assert mpu.memory[labels["COLOR1"]] == 0xCE
+        run_subroutine(mpu, labels["GAME_RUN"])
+
+    # At frame 124, transitioned to Phase 2 (TITLE_OUT)
+    assert mpu.memory[labels["GAME_PHASE"]] == 2
+
+    # Phase 2: 24 frames of fade out (8 steps of 3 frames)
+    for _ in range(24):
+        assert mpu.memory[labels["GAME_PHASE"]] == 2
+        run_subroutine(mpu, labels["GAME_RUN"])
+
+    # After fade out complete: transitioned to Phase 3 (GAME_PHASE_PLAYING)
+    assert mpu.memory[labels["GAME_PHASE"]] == 3
+    # Display list switched to dlist_game ($3F00)
+    sdlst = mpu.memory[labels["SDLSTL"]] | (mpu.memory[labels["SDLSTH"]] << 8)
+    assert sdlst == labels["DLIST_GAME"]
+    assert sdlst == 0x3F00
+
