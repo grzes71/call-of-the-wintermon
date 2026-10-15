@@ -89,6 +89,7 @@ class CatalogueItem:
     name: str
     atari_color: int
     blink: bool = False
+    dependency: Optional[int] = None
 
 
 @dataclass
@@ -120,6 +121,8 @@ class PlatformData:
     y: int
     width: int
     height: int
+    color_profile_id: int | None = None
+    colors: list[int] = field(default_factory=lambda: [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80])
 
 
 @dataclass
@@ -196,11 +199,14 @@ def load_catalogues(
         try:
             data = json.loads(secrets_file.read_text(encoding="utf-8"))
             for item in data.get("secrets", []):
+                raw_dep = item.get("dependency")
+                dep = int(raw_dep) if (raw_dep is not None and str(raw_dep).strip() != "") else None
                 secrets[item["id"]] = CatalogueItem(
                     id=item["id"],
                     name=item.get("name", f"Secret {item['id']}"),
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
+                    dependency=dep,
                 )
         except Exception as exc:
             print(f"Warning: Failed loading secrets catalog ({exc})", file=sys.stderr)
@@ -208,10 +214,46 @@ def load_catalogues(
     return enemies, secrets
 
 
+DEFAULT_PLATFORM_COLORS: list[int] = [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80]
+
+
+def load_platform_profiles(profiles_file: Path) -> dict[int, list[int]]:
+    """Load platform color profiles (8 scanline GTIA color bytes each)."""
+    profiles: dict[int, list[int]] = {}
+    if profiles_file.is_file():
+        try:
+            data = json.loads(profiles_file.read_text(encoding="utf-8"))
+            items = []
+            if isinstance(data, dict):
+                items = data.get("profiles") or data.get("platform_profiles", [])
+            elif isinstance(data, list):
+                items = data
+            for item in items:
+                raw_id = item.get("id")
+                try:
+                    pid = int(raw_id)
+                except (ValueError, TypeError):
+                    continue
+                colors = item.get("colors", [])
+                if len(colors) == 8:
+                    parsed_colors: list[int] = []
+                    for c in colors:
+                        if isinstance(c, str):
+                            val = int(c, 16) if c.startswith(("0x", "0X", "$")) else int(c)
+                        else:
+                            val = int(c)
+                        parsed_colors.append(val & 0xFE)
+                    profiles[pid] = parsed_colors
+        except Exception as exc:
+            print(f"Warning: Failed loading platform profiles ({exc})", file=sys.stderr)
+    return profiles
+
+
 def parse_scene_json(
     scene_file: Path,
     enemies: dict[int, CatalogueItem],
     secrets: dict[int, CatalogueItem],
+    profiles: dict[str, list[int]] | None = None,
 ) -> SceneCompiledData:
     """Parse and validate a scene JSON file into structured compiler models."""
     if not scene_file.is_file():
@@ -292,6 +334,19 @@ def parse_scene_json(
 
         plat_id_to_idx[pid] = idx
         plat_id_to_y[pid] = py
+        raw_cprof_id = p.get("color_profile_id")
+        cprof_id: Optional[int] = None
+        if raw_cprof_id is not None and str(raw_cprof_id).strip() != "":
+            try:
+                cprof_id = int(raw_cprof_id)
+            except (ValueError, TypeError):
+                cprof_id = None
+
+        if cprof_id is not None and profiles and cprof_id in profiles:
+            colors = list(profiles[cprof_id])
+        else:
+            colors = list(DEFAULT_PLATFORM_COLORS)
+
         platforms.append(
             PlatformData(
                 id=pid,
@@ -300,17 +355,20 @@ def parse_scene_json(
                 y=py,
                 width=pw,
                 height=ph,
+                color_profile_id=cprof_id,
+                colors=colors,
             )
         )
 
     # 3. Objects
     raw_objects = data.get("objects", [])
     objects: list[SceneObjectData] = []
+    row_secret_deps: dict[int, dict[Optional[int], int]] = {}
 
     for obj in raw_objects:
         oid = int(obj.get("id", 0))
         otype_str = str(obj.get("type", "enemy")).lower()
-        is_secret = otype_str == "secret"
+        is_secret = otype_str in ("secret", "treasure")
         type_code = 1 if is_secret else 0
         def_id = int(obj.get("definition_id", 1))
         plat_id = str(obj.get("platform_id", ""))
@@ -328,18 +386,34 @@ def parse_scene_json(
         strat_str = str(obj.get("movement_strategy", "stationary")).lower()
         strat_code = OBJ_STRATEGY_MAP.get(strat_str, 0) if not is_secret else 0
 
-        # Secret dependency
-        dep_id = int(obj.get("dependency", 0)) if is_secret else 0
-
-        # Catalogue lookup for Atari GTIA color and blink
+        # Catalogue lookup for Atari GTIA color, blink, and dependency
         if is_secret:
             cat_item = secrets.get(def_id)
             color = cat_item.atari_color if cat_item else 0x1A
             blink = cat_item.blink if cat_item else False
+            dep_val = cat_item.dependency if cat_item else None
+            dep_id = int(dep_val) if dep_val is not None else 0
+
+            # Validate unique secret dependency per platform row
+            deps_on_row = row_secret_deps.setdefault(plat_y, {})
+            if dep_val in deps_on_row:
+                first_oid = deps_on_row[dep_val]
+                dep_desc = (
+                    f"'{secrets[dep_val].name}' (ID {dep_val})"
+                    if (dep_val is not None and dep_val in secrets)
+                    else "None"
+                )
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}) violates secret row constraint at platform row y={plat_y}: "
+                    f"conflict between secret '{first_oid}' and secret '{oid}' (both have dependency {dep_desc}). "
+                    f"Only one secret per unique dependency is allowed per row."
+                )
+            deps_on_row[dep_val] = oid
         else:
             cat_item = enemies.get(def_id)
             color = cat_item.atari_color if cat_item else 0x42
             blink = cat_item.blink if cat_item else False
+            dep_id = 0
 
         objects.append(
             SceneObjectData(
@@ -484,14 +558,19 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(p.width) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_h")
             lines.append("    .byte " + ", ".join(str(p.height) for p in sc.platforms))
+            for sl in range(8):
+                lines.append(f"scene_{sym}_plat_color_sl{sl + 1}")
+                lines.append("    .byte " + ", ".join(f"${p.colors[sl]:02X}" for p in sc.platforms))
         else:
             lines.extend([
-                f"scene_{sym}_plat_type .byte 0",
-                f"scene_{sym}_plat_x    .byte 0",
-                f"scene_{sym}_plat_y    .byte 0",
-                f"scene_{sym}_plat_w    .byte 0",
-                f"scene_{sym}_plat_h    .byte 0",
+                f"scene_{sym}_plat_type      .byte 0",
+                f"scene_{sym}_plat_x         .byte 0",
+                f"scene_{sym}_plat_y         .byte 0",
+                f"scene_{sym}_plat_w         .byte 0",
+                f"scene_{sym}_plat_h         .byte 0",
             ])
+            for sl in range(8):
+                lines.append(f"scene_{sym}_plat_color_sl{sl + 1} .byte 0")
         lines.append("")
 
         # Scene objects
@@ -615,6 +694,16 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_h" for sc in scenes),
         "scene_plat_h_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_h" for sc in scenes),
+        *[
+            line
+            for sl in range(1, 9)
+            for line in [
+                f"scene_plat_color_sl{sl}_lo",
+                "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_color_sl{sl}" for sc in scenes),
+                f"scene_plat_color_sl{sl}_hi",
+                "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_color_sl{sl}" for sc in scenes),
+            ]
+        ],
         "",
         "; --- Object Pointer Tables ---",
         "scene_obj_type_lo",
@@ -669,6 +758,7 @@ def compile_scenes(
     scenes_dir: Path | None = None,
     enemies_path: Path | None = None,
     secrets_path: Path | None = None,
+    profiles_path: Path | None = None,
 ) -> int:
     """Main compilation pipeline: parse manifest, compile scene JSONs, emit ASM."""
     if not manifest_path.is_file():
@@ -678,8 +768,12 @@ def compile_scenes(
     sdir = scenes_dir or manifest_path.parent
     efile = enemies_path or (manifest_path.parent.parent / "enemies.json")
     sfile = secrets_path or (manifest_path.parent.parent / "secrets.json")
+    pfile = profiles_path or (manifest_path.parent.parent / "platform_profiles.json")
+    if not pfile.is_file():
+        pfile = Path("platform_profiles.json")
 
     enemies, secrets = load_catalogues(efile, sfile)
+    profiles = load_platform_profiles(pfile)
 
     try:
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -700,7 +794,7 @@ def compile_scenes(
             return 1
 
         try:
-            sc_data = parse_scene_json(scene_file, enemies, secrets)
+            sc_data = parse_scene_json(scene_file, enemies, secrets, profiles)
             compiled_scenes.append(sc_data)
             print(
                 f"Compiled scene: {sc_data.name} ({fname}) — "
@@ -751,6 +845,13 @@ def main() -> int:
         default=Path("secrets.json"),
         help="Path to secrets.json catalogue",
     )
+    parser.add_argument(
+        "--profiles",
+        "-p",
+        type=Path,
+        default=Path("platform_profiles.json"),
+        help="Path to platform_profiles.json catalogue",
+    )
 
     args = parser.parse_args()
     return compile_scenes(
@@ -759,6 +860,7 @@ def main() -> int:
         scenes_dir=args.scenes_dir,
         enemies_path=args.enemies,
         secrets_path=args.secrets,
+        profiles_path=args.profiles,
     )
 
 

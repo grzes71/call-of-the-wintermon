@@ -375,6 +375,38 @@ class ChangePlatformTypeCommand(SceneBaseCommand):
         self.notify()
 
 
+class ChangePlatformColorProfileCommand(SceneBaseCommand):
+    """Command to change the assigned color profile of a platform."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        platform_id: str,
+        old_profile_id: Optional[int],
+        new_profile_id: Optional[int],
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(f"Change platform {platform_id} color profile", callback)
+        self.scene = scene
+        self.platform_id = platform_id
+        self.old_profile_id = old_profile_id
+        self.new_profile_id = new_profile_id
+
+    def redo(self) -> None:
+        plat = self.scene.get_platform(self.platform_id)
+        if plat:
+            plat.color_profile_id = self.new_profile_id
+            plat.validate(self.scene.height)
+        self.notify()
+
+    def undo(self) -> None:
+        plat = self.scene.get_platform(self.platform_id)
+        if plat:
+            plat.color_profile_id = self.old_profile_id
+            plat.validate(self.scene.height)
+        self.notify()
+
+
 # -----------------------------------------------------------------------------
 # Scene Object (Enemies and Treasures) Commands
 # -----------------------------------------------------------------------------

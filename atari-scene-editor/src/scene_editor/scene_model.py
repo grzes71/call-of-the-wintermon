@@ -390,6 +390,7 @@ class PlatformElement:
     position: Position
     width: int
     height: int = PLATFORM_HEIGHT
+    color_profile_id: Optional[int] = None
 
     @property
     def row_index(self) -> int:
@@ -425,18 +426,32 @@ class PlatformElement:
             raise InvalidPlatformPositionError(
                 f"Platform y={self.position.y} is invalid. Must satisfy y % 16 == 8 (e.g. 8, 24, 40...)."
             )
+        if self.color_profile_id is not None:
+            if isinstance(self.color_profile_id, str) and self.color_profile_id.strip().isdigit():
+                self.color_profile_id = int(self.color_profile_id.strip())
+            if (
+                isinstance(self.color_profile_id, bool)
+                or not isinstance(self.color_profile_id, int)
+                or not (1 <= self.color_profile_id <= 255)
+            ):
+                raise ModelValidationError(
+                    f"Platform color_profile_id must be an integer between 1 and 255 or None, got {self.color_profile_id!r}."
+                )
 
     def clone(self) -> PlatformElement:
         return copy.deepcopy(self)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "id": self.id,
             "type": self.type,
             "position": self.position.to_dict(),
             "width": int(self.width),
             "height": int(self.height),
         }
+        if self.color_profile_id is not None:
+            d["color_profile_id"] = int(self.color_profile_id)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlatformElement:
@@ -451,12 +466,25 @@ class PlatformElement:
         if raw_h == 8:
             raw_h = PLATFORM_HEIGHT
 
+        raw_cprof = data.get("color_profile_id")
+        color_profile_id: Optional[int] = None
+        if raw_cprof is not None:
+            if isinstance(raw_cprof, str) and raw_cprof.strip().isdigit():
+                color_profile_id = int(raw_cprof.strip())
+            elif isinstance(raw_cprof, int) and not isinstance(raw_cprof, bool):
+                color_profile_id = raw_cprof
+            else:
+                raise ModelValidationError(
+                    f"Platform color_profile_id must be an integer between 1 and 255 or None, got {raw_cprof!r}."
+                )
+
         p = cls(
             id=str(data["id"]),
             type=str(data["type"]),
             position=Position.from_dict(data["position"]),
             width=int(data["width"]),
             height=raw_h,
+            color_profile_id=color_profile_id,
         )
         p.validate()
         return p
@@ -745,6 +773,30 @@ class Scene:
             return self.catalogues.get_secret_stage(definition_id)
         return 1
 
+    def get_secret_dependency(self, definition_id: Any) -> Optional[int]:
+        """Resolve dependency (None or int ID) for a secret definition. Defaults to None if catalogues missing or not found."""
+        if self.catalogues is not None:
+            if hasattr(self.catalogues, "get_secret_dependency"):
+                return self.catalogues.get_secret_dependency(definition_id)
+            if hasattr(self.catalogues, "get_secret"):
+                sec = self.catalogues.get_secret(definition_id)
+                if sec is not None:
+                    return sec.dependency
+        return None
+
+    def get_dependency_display_name(self, dependency: Optional[int]) -> str:
+        """Return human-readable representation of a dependency, e.g. "'Gold Key' (ID 1)" or "None"."""
+        if dependency is None:
+            return "None"
+        if self.catalogues is not None:
+            if hasattr(self.catalogues, "get_dependency_display_name"):
+                return self.catalogues.get_dependency_display_name(dependency)
+            if hasattr(self.catalogues, "get_secret"):
+                sec = self.catalogues.get_secret(dependency)
+                if sec is not None:
+                    return f"'{sec.name}' (ID {dependency})"
+        return f"ID {dependency}"
+
     def _sync_z_indices(self) -> None:
         """Ensure z_index reflects the exact list order."""
         for idx, elem in enumerate(self.elements):
@@ -830,10 +882,10 @@ class Scene:
 
         # Validate scene objects and hardware row limits:
         # - Max 3 enemies per platform row
-        # - Max 4 secrets per stage per platform row
+        # - Max 1 secret per unique Dependency per platform row
         seen_object_ids: set[str] = set()
         row_enemy_counts: dict[int, int] = {}
-        row_secret_stage_counts: dict[int, dict[int, int]] = {}
+        row_secret_deps: dict[int, dict[Optional[int], SceneObjectElement]] = {}
 
         for obj in self.objects:
             obj.validate(scene=self)
@@ -853,14 +905,17 @@ class Scene:
                             f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
                         )
                 elif obj.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    stage = self.get_secret_stage(obj.definition_id)
-                    stage_map = row_secret_stage_counts.setdefault(row_y, {})
-                    stage_map[stage] = stage_map.get(stage, 0) + 1
-                    if stage_map[stage] > MAX_SECRETS_PER_STAGE:
+                    dep = self.get_secret_dependency(obj.definition_id)
+                    deps_map = row_secret_deps.setdefault(row_y, {})
+                    if dep in deps_map:
+                        existing = deps_map[dep]
+                        dep_name = self.get_dependency_display_name(dep)
                         raise ObjectLimitExceededError(
-                            f"Platform row y={row_y} exceeds maximum secret limit for stage {stage} "
-                            f"({stage_map[stage]}/{MAX_SECRETS_PER_STAGE})."
+                            f"Platform row y={row_y} already contains a secret with dependency {dep_name}: "
+                            f"conflict between secret '{existing.id}' and secret '{obj.id}'. "
+                            f"Only one secret per unique dependency is allowed per row."
                         )
+                    deps_map[dep] = obj
 
     def resize(self, new_width: int, new_height: int) -> None:
         """Resize scene canvas dimensions (does not scale or reposition elements)."""
@@ -1063,25 +1118,27 @@ class Scene:
                     f"(hardware limit is {MAX_ENEMIES_PER_ROW} per row)."
                 )
 
-            # Check secret limits per stage
-            moving_secret_stages: dict[int, int] = {}
-            for o in attached_objs:
-                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    st = self.get_secret_stage(o.definition_id)
-                    moving_secret_stages[st] = moving_secret_stages.get(st, 0) + 1
+            # Check secret dependency conflicts on target row
+            moving_secrets = [o for o in attached_objs if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)]
+            target_secrets = [o for o in target_row_objs if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)]
 
-            for st, count in moving_secret_stages.items():
-                target_stage_secrets = sum(
-                    1 for o in target_row_objs
-                    if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)
-                    and self.get_secret_stage(o.definition_id) == st
-                )
-                if target_stage_secrets + count > MAX_SECRETS_PER_STAGE:
+            target_deps: dict[Optional[int], SceneObjectElement] = {}
+            for t in target_secrets:
+                tdep = self.get_secret_dependency(t.definition_id)
+                target_deps[tdep] = t
+
+            for m in moving_secrets:
+                mdep = self.get_secret_dependency(m.definition_id)
+                if mdep in target_deps:
+                    conflicting = target_deps[mdep]
+                    dep_name = self.get_dependency_display_name(mdep)
                     raise ObjectLimitExceededError(
-                        f"Moving platform '{platform_id}' to row y={target_y} exceeds secret limit for stage {st}: "
-                        f"target row would have {target_stage_secrets + count} secrets "
-                        f"(hardware limit is {MAX_SECRETS_PER_STAGE} per stage)."
+                        f"Moving platform '{platform_id}' to row y={target_y} causes a secret dependency conflict: "
+                        f"moving secret '{m.id}' and existing secret '{conflicting.id}' on row y={target_y} "
+                        f"both have dependency {dep_name}. "
+                        f"Only one secret per unique dependency is allowed per row."
                     )
+                target_deps[mdep] = m
 
         colliding = check_platform_collision(
             self.platforms,
@@ -1216,12 +1273,13 @@ class Scene:
         exclude_obj_id: Optional[Any] = None,
         obj_type: Optional[str] = None,
         definition_id: Optional[Any] = None,
+        dependency: Any = ...,
         stage: Optional[int] = None,
         obj: Optional[SceneObjectElement] = None,
     ) -> tuple[bool, str]:
         """Check if adding an object to the specified platform satisfies hardware row limits:
         - Max 3 enemies per row.
-        - Max 4 secrets per stage per row."""
+        - Max 1 secret per unique Dependency per row."""
         eff_exclude = exclude_id if exclude_id is not None else exclude_obj_id
         plat = self.get_platform(platform_id)
         if plat is None:
@@ -1247,18 +1305,22 @@ class Scene:
             return True, ""
 
         if eff_type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-            eff_stage = stage if stage is not None else self.get_secret_stage(definition_id)
-            stage_count = sum(
-                1 for o in row_objs
-                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)
-                and self.get_secret_stage(o.definition_id) == eff_stage
-            )
-            if stage_count >= MAX_SECRETS_PER_STAGE:
-                return (
-                    False,
-                    f"Row y={plat.position.y} already has {stage_count}/{MAX_SECRETS_PER_STAGE} secrets for stage {eff_stage}. "
-                    f"Hardware limit reached for stage {eff_stage} secrets on this platform row.",
-                )
+            if dependency is not ...:
+                eff_dep = dependency
+            else:
+                eff_dep = self.get_secret_dependency(definition_id)
+
+            for o in row_objs:
+                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+                    other_dep = self.get_secret_dependency(o.definition_id)
+                    if other_dep == eff_dep:
+                        dep_name = self.get_dependency_display_name(eff_dep)
+                        return (
+                            False,
+                            f"Platform row y={plat.position.y} already contains secret '{o.id}' "
+                            f"with dependency {dep_name}. "
+                            f"Only one secret per unique dependency is allowed per row.",
+                        )
             return True, ""
 
         # Generic / untyped check (fallback for callers not specifying object type):
@@ -1270,6 +1332,47 @@ class Scene:
                 f"Hardware limit reached for this platform row.",
             )
         return True, ""
+
+    def duplicate_object(
+        self,
+        object_id: Any,
+        new_id: Optional[Any] = None,
+        new_x: Optional[int] = None,
+        new_platform_id: Optional[str] = None,
+    ) -> SceneObjectElement:
+        """Duplicate an existing scene object with new ID and optional position/platform."""
+        obj = self.get_object(object_id)
+        if obj is None:
+            raise KeyError(f"Object '{object_id}' not found.")
+
+        if new_id is None:
+            used_ids = set()
+            for o in self.objects:
+                try:
+                    used_ids.add(int(str(o.id).strip()))
+                except (ValueError, TypeError):
+                    pass
+            cand = 1
+            while cand in used_ids:
+                cand += 1
+            new_id = cand
+
+        plat_id = new_platform_id if new_platform_id is not None else obj.platform_id
+        x_pos = new_x if new_x is not None else obj.x
+
+        copied = SceneObjectElement(
+            id=new_id,
+            type=obj.type,
+            definition_id=obj.definition_id,
+            platform_id=plat_id,
+            x=x_pos,
+            source=obj.source,
+            source_rect=obj.source_rect.clone() if obj.source_rect else None,
+            speed=obj.speed,
+            movement_strategy=obj.movement_strategy,
+        )
+        self.add_object(copied)
+        return copied
 
     def add_object(self, obj: SceneObjectElement) -> None:
         """Add a scene object after validating platform assignment and hardware row limit."""
@@ -1321,6 +1424,7 @@ class Scene:
 
         try:
             obj.validate(scene=self)
+            self.validate()
         except Exception:
             obj.platform_id = old_plat
             obj.x = old_x

@@ -71,9 +71,9 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Intro Font / Text VRAM / DLIST"
         elif start == 0x2A00:
             seg_type = "Intro Display List"
-        elif start == 0x2B00:
+        elif start in (0x2A30, 0x2B00):
             seg_type = "Tileset Metadata & Row Tables"
-        elif start == 0x2D00:
+        elif start in (0x2C30, 0x2D00):
             seg_type = "Scene Definitions & Object Tables"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"

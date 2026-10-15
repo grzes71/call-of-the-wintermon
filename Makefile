@@ -85,7 +85,7 @@ $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 data: $(SCENES_ASM)
 
-$(SCENES_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json scripts/compile_scenes.py
+$(SCENES_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json platform_profiles.json scripts/compile_scenes.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM)
 
@@ -105,10 +105,15 @@ tests: $(TARGET)
 	$(PYTHON) -m pytest -v
 
 # ------------------------------------------------------------------------------
-# 6. Automated memory map verification
+# 6. Automated memory map verification and visual report
 # ------------------------------------------------------------------------------
 check_memory: $(TARGET) scripts/check_memory.py
 	$(PYTHON) scripts/check_memory.py $(TARGET)
+
+memory_map: $(TARGET) scripts/generate_memory_map.py
+	$(PYTHON) scripts/generate_memory_map.py $(TARGET) --pdf memory_map.pdf
+
+map: memory_map
 
 # ------------------------------------------------------------------------------
 # 7. Emulator execution (Altirra)

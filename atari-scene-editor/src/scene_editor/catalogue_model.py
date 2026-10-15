@@ -9,6 +9,13 @@ from pathlib import Path
 import tempfile
 from typing import Any, Optional
 
+from .atari_palette import (
+    atari_color_to_hex_rgb,
+    atari_color_to_rgb,
+    format_atari_color_hex,
+    parse_atari_color_hex,
+)
+
 
 class CatalogueError(Exception):
     """Base exception for catalogue validation and persistence errors."""
@@ -31,6 +38,9 @@ CatalogueValidationError = InvalidDefinitionError
 class DefinitionInUseError(CatalogueError):
     """Raised when trying to delete a definition that is referenced by scene objects."""
     pass
+
+
+ProfileInUseError = DefinitionInUseError
 
 
 class CorruptedCatalogueFileError(CatalogueError):
@@ -206,12 +216,127 @@ class SecretDefinition(CatalogDefinition):
 
 
 @dataclass
+class PlatformColorProfile:
+    """Color and luminance profile for an Atari 8-bit platform (8 scanlines)."""
+    id: int
+    name: str
+    colors: list[int] = field(default_factory=lambda: [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80])
+    description: str = ""
+
+    def validate(self) -> None:
+        """Validate profile integrity."""
+        if isinstance(self.id, str) and self.id.strip().isdigit():
+            self.id = int(self.id.strip())
+        if isinstance(self.id, bool) or not isinstance(self.id, int) or not (1 <= self.id <= 255):
+            raise InvalidDefinitionError(
+                f"Platform color profile 'id' must be an integer between 1 and 255, got {self.id!r}."
+            )
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise InvalidDefinitionError("Platform color profile 'name' must be a non-empty string.")
+        if not isinstance(self.colors, (list, tuple)) or len(self.colors) != 8:
+            raise InvalidDefinitionError(
+                f"Platform color profile must define exactly 8 scanline colors, got {len(self.colors) if isinstance(self.colors, (list, tuple)) else type(self.colors)}."
+            )
+        for idx, c in enumerate(self.colors):
+            if not isinstance(c, int) or isinstance(c, bool) or not (0 <= c <= 255):
+                raise InvalidDefinitionError(
+                    f"Color at scanline {idx + 1} must be an integer between 0x00 and 0xFF ($00-$FF), got {c!r}."
+                )
+            if (c & 1) != 0:
+                raise InvalidDefinitionError(
+                    f"Color at scanline {idx + 1} (0x{c:02X}) has bit 0 set. Atari color registers require even values."
+                )
+        if not isinstance(self.description, str):
+            raise InvalidDefinitionError("Platform color profile 'description' must be a string.")
+
+    def clone(self) -> PlatformColorProfile:
+        return copy.deepcopy(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": int(self.id),
+            "name": self.name,
+            "colors": [format_atari_color_hex(c) for c in self.colors],
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PlatformColorProfile:
+        if not isinstance(data, dict):
+            raise InvalidDefinitionError("PlatformColorProfile data must be a dictionary.")
+        if "id" not in data or "name" not in data:
+            raise InvalidDefinitionError("PlatformColorProfile missing 'id' or 'name'.")
+
+        raw_id = data["id"]
+        if isinstance(raw_id, str) and raw_id.strip().isdigit():
+            prof_id = int(raw_id.strip())
+        elif isinstance(raw_id, int) and not isinstance(raw_id, bool):
+            prof_id = raw_id
+        else:
+            raise InvalidDefinitionError(
+                f"Platform color profile 'id' must be an integer between 1 and 255, got {raw_id!r}."
+            )
+
+        raw_colors = data.get("colors", [])
+        if not isinstance(raw_colors, (list, tuple)) or len(raw_colors) != 8:
+            raise InvalidDefinitionError(
+                f"Profile 'colors' must contain exactly 8 values, got {len(raw_colors) if isinstance(raw_colors, (list, tuple)) else raw_colors}."
+            )
+
+        parsed_colors: list[int] = []
+        for idx, val in enumerate(raw_colors):
+            try:
+                parsed_colors.append(parse_atari_color_hex(val))
+            except Exception as exc:
+                raise InvalidDefinitionError(f"Invalid color at scanline {idx + 1}: {exc}") from exc
+
+        prof = cls(
+            id=prof_id,
+            name=str(data["name"]).strip(),
+            colors=parsed_colors,
+            description=str(data.get("description", "")),
+        )
+        prof.validate()
+        return prof
+
+
+DEFAULT_PLATFORM_PROFILES: list[dict[str, Any]] = [
+    {
+        "id": 1,
+        "name": "Glacial Ice",
+        "description": "Cyan/blue gradient suitable for winter/ice platforms",
+        "colors": ["0x8E", "0x8C", "0x8A", "0x88", "0x86", "0x84", "0x82", "0x80"],
+    },
+    {
+        "id": 2,
+        "name": "Ancient Gold",
+        "description": "Amber/gold gradient for royal platforms and castle trim",
+        "colors": ["0x1E", "0x1C", "0x1A", "0x18", "0x16", "0x14", "0x12", "0x10"],
+    },
+    {
+        "id": 3,
+        "name": "Castle Stone",
+        "description": "Neutral grayscale rock and stone ledges",
+        "colors": ["0x0E", "0x0C", "0x0A", "0x08", "0x06", "0x04", "0x02", "0x00"],
+    },
+    {
+        "id": 4,
+        "name": "Forest Moss",
+        "description": "Verdant green gradient for living branches and roots",
+        "colors": ["0xCE", "0xCC", "0xCA", "0xC8", "0xC6", "0xC4", "0xC2", "0xC0"],
+    },
+]
+
+
+@dataclass
 class ProjectCatalogues:
-    """Project-wide manager for Enemies and Secrets catalogues."""
+    """Project-wide manager for Enemies, Secrets, and Platform Profiles catalogues."""
     enemies: dict[int, EnemyDefinition] = field(default_factory=dict)
     secrets: dict[int, SecretDefinition] = field(default_factory=dict)
+    platform_profiles: dict[int, PlatformColorProfile] = field(default_factory=dict)
     enemies_path: Optional[Path] = None
     secrets_path: Optional[Path] = None
+    platform_profiles_path: Optional[Path] = None
 
     @staticmethod
     def _normalize_id(defn_id: Any) -> int:
@@ -229,6 +354,8 @@ class ProjectCatalogues:
             enemy.validate()
         for secret in self.secrets.values():
             secret.validate()
+        for profile in self.platform_profiles.values():
+            profile.validate()
         self.validate_secrets_chain()
 
     def get_secret_stage(self, defn_id: Any) -> int:
@@ -466,6 +593,81 @@ class ProjectCatalogues:
         except KeyError:
             return None
 
+    def get_secret_dependency(self, defn_id: Any) -> Optional[int]:
+        """Return the dependency secret ID (or None) for the given secret definition ID."""
+        sec = self.get_secret(defn_id)
+        if sec is not None:
+            return sec.dependency
+        return None
+
+    def get_dependency_display_name(self, dependency: Optional[int]) -> str:
+        """Return human-readable representation of a dependency."""
+        if dependency is None:
+            return "None"
+        sec = self.get_secret(dependency)
+        if sec is not None:
+            return f"'{sec.name}' (ID {dependency})"
+        return f"ID {dependency}"
+
+    def check_scene_secret_dependency_conflict(
+        self, scene: Any, target_secret_id: int, new_dependency: Optional[int]
+    ) -> tuple[bool, str]:
+        """Check if changing target_secret_id's dependency to new_dependency causes a row conflict on scene."""
+        if scene is None or not hasattr(scene, "objects") or not hasattr(scene, "get_platform"):
+            return True, ""
+
+        try:
+            target_id_norm = self._normalize_id(target_secret_id)
+        except KeyError:
+            return True, ""
+
+        target_objs = [
+            o for o in scene.objects
+            if getattr(o, "type", None) in ("secret", "treasure")
+            and getattr(o, "definition_id", None) is not None
+            and self._safe_match_id(getattr(o, "definition_id", None), target_id_norm)
+        ]
+        if not target_objs:
+            return True, ""
+
+        for obj in target_objs:
+            plat = scene.get_platform(obj.platform_id)
+            if plat is None:
+                continue
+            row_y = plat.position.y
+            row_secrets = [
+                o for o in scene.get_row_objects(row_y, exclude_id=obj.id)
+                if getattr(o, "type", None) in ("secret", "treasure")
+            ]
+            for other in row_secrets:
+                other_def_raw = getattr(other, "definition_id", None)
+                if self._safe_match_id(other_def_raw, target_id_norm):
+                    other_dep = new_dependency
+                else:
+                    other_dep = self.get_secret_dependency(other_def_raw)
+                if other_dep == new_dependency:
+                    dep_name = self.get_dependency_display_name(new_dependency)
+                    sec_name = self.secrets[target_id_norm].name if target_id_norm in self.secrets else f"ID {target_id_norm}"
+                    return (
+                        False,
+                        f"Changing dependency of secret '{sec_name}' [{target_id_norm}] "
+                        f"to {dep_name} causes a conflict on platform row y={row_y}:\n"
+                        f"Secret '{obj.id}' and secret '{other.id}' would both have dependency {dep_name}.\n"
+                        f"Only one secret per unique dependency is allowed per row.",
+                    )
+        return True, ""
+
+    @staticmethod
+    def _safe_match_id(val: Any, target_id: int) -> bool:
+        if val is None:
+            return False
+        if isinstance(val, int) and not isinstance(val, bool):
+            return val == target_id
+        try:
+            return int(str(val).strip()) == target_id
+        except (ValueError, TypeError):
+            return False
+
     def get_definition(self, kind: str, defn_id: Any) -> Optional[CatalogDefinition]:
         norm_kind = kind.lower()
         if norm_kind == "enemy":
@@ -474,11 +676,111 @@ class ProjectCatalogues:
             return self.get_secret(defn_id)
         return None
 
+    # -------------------------------------------------------------------------
+    # Platform Color Profiles Management
+    # -------------------------------------------------------------------------
+    def add_platform_profile(self, profile: PlatformColorProfile) -> None:
+        """Add a new platform color profile to the catalogue."""
+        profile.validate()
+        norm_id = self._normalize_id(profile.id)
+        if norm_id in self.platform_profiles:
+            raise DuplicateDefinitionIdError(
+                f"Platform color profile with ID '{norm_id}' already exists."
+            )
+        self.platform_profiles[norm_id] = profile.clone()
+
+    def update_platform_profile(self, profile: PlatformColorProfile) -> None:
+        """Update an existing platform color profile."""
+        profile.validate()
+        norm_id = self._normalize_id(profile.id)
+        self.platform_profiles[norm_id] = profile.clone()
+
+    def get_platform_profile(self, profile_id: Optional[Any]) -> Optional[PlatformColorProfile]:
+        """Look up a platform color profile by its ID (integer 1-255)."""
+        if profile_id is None:
+            return None
+        try:
+            norm_id = self._normalize_id(profile_id)
+            return self.platform_profiles.get(norm_id)
+        except (KeyError, ValueError, TypeError):
+            return None
+
+    def get_profile_platform_usage(self, profile_id: Any, scene: Optional[Any] = None) -> list[Any]:
+        """Return all platforms in scene referencing the given profile ID."""
+        if scene is None or not hasattr(scene, "platforms"):
+            return []
+        try:
+            norm_id = self._normalize_id(profile_id)
+        except (KeyError, ValueError, TypeError):
+            return []
+        return [p for p in scene.platforms if getattr(p, "color_profile_id", None) == norm_id]
+
+    def remove_platform_profile(
+        self,
+        profile_id: Any,
+        scene: Optional[Any] = None,
+        force: bool = False,
+    ) -> PlatformColorProfile:
+        """Remove a platform color profile from the catalogue.
+
+        If force=False and platforms in scene reference this profile, raises ProfileInUseError.
+        If force=True, unassigns the profile from all referencing platforms and deletes it.
+        """
+        norm_id = self._normalize_id(profile_id)
+        if norm_id not in self.platform_profiles:
+            raise KeyError(f"Platform profile '{profile_id}' not found.")
+
+        used = self.get_profile_platform_usage(norm_id, scene)
+        if used and not force:
+            plat_ids = ", ".join(getattr(p, "id", str(p)) for p in used)
+            raise ProfileInUseError(
+                f"Cannot delete profile '{self.platform_profiles[norm_id].name}' [{norm_id}]: "
+                f"it is currently assigned to {len(used)} platform(s): {plat_ids}."
+            )
+
+        if used and force:
+            for p in used:
+                p.color_profile_id = None
+
+        return self.platform_profiles.pop(norm_id)
+
+    def duplicate_platform_profile(
+        self,
+        profile_id: Any,
+        new_id: Optional[Any] = None,
+        new_name: Optional[str] = None,
+    ) -> PlatformColorProfile:
+        """Create a duplicate / variant of an existing platform profile."""
+        norm_id = self._normalize_id(profile_id)
+        if norm_id not in self.platform_profiles:
+            raise KeyError(f"Platform profile '{profile_id}' not found.")
+
+        src = self.platform_profiles[norm_id]
+        if new_id is None:
+            avail_ids = [i for i in range(1, 256) if i not in self.platform_profiles]
+            if not avail_ids:
+                raise InvalidDefinitionError("Cannot duplicate profile: all profile IDs (1-255) are in use.")
+            target_id = avail_ids[0]
+        else:
+            target_id = self._normalize_id(new_id)
+
+        if not new_name:
+            new_name = f"{src.name} (Copy)"
+
+        copied = PlatformColorProfile(
+            id=target_id,
+            name=new_name,
+            colors=list(src.colors),
+            description=src.description,
+        )
+        self.add_platform_profile(copied)
+        return copied
+
     def clone(self) -> ProjectCatalogues:
         return copy.deepcopy(self)
 
     # -------------------------------------------------------------------------
-    # Persistence: enemies.json & secrets.json
+    # Persistence: enemies.json, secrets.json & platform_profiles.json
     # -------------------------------------------------------------------------
     @classmethod
     def find_catalogue_paths(cls, base_dir: Path | str) -> tuple[Path, Path]:
@@ -493,33 +795,55 @@ class ProjectCatalogues:
             return data_dir / "enemies.json", data_dir / "secrets.json"
         return base / "enemies.json", base / "secrets.json"
 
+    @classmethod
+    def find_platform_profiles_path(cls, base_dir: Path | str) -> Path:
+        """Locate platform_profiles.json in base_dir or base_dir/data."""
+        base = Path(base_dir).resolve()
+        data_dir = base / "data"
+        if (data_dir / "platform_profiles.json").is_file():
+            return data_dir / "platform_profiles.json"
+        if (base / "platform_profiles.json").is_file():
+            return base / "platform_profiles.json"
+        if data_dir.is_dir():
+            return data_dir / "platform_profiles.json"
+        return base / "platform_profiles.json"
+
     def set_paths(
         self,
         enemies_path: Optional[Path | str],
         secrets_path: Optional[Path | str],
+        platform_profiles_path: Optional[Path | str] = None,
     ) -> None:
-        """Set explicit file paths for enemies.json and secrets.json."""
+        """Set explicit file paths for catalogues."""
         self.enemies_path = Path(enemies_path).resolve() if enemies_path else None
         self.secrets_path = Path(secrets_path).resolve() if secrets_path else None
+        self.platform_profiles_path = Path(platform_profiles_path).resolve() if platform_profiles_path else None
 
     def get_effective_paths(self, base_dir: Path | str | None = None) -> tuple[Path, Path]:
-        """Return the effective (enemies_path, secrets_path).
-        If custom paths were set, use them. Otherwise, locate them relative to base_dir."""
+        """Return the effective (enemies_path, secrets_path)."""
         default_enemies, default_secrets = self.find_catalogue_paths(base_dir or Path.cwd())
         eff_enemies = self.enemies_path if self.enemies_path is not None else default_enemies
         eff_secrets = self.secrets_path if self.secrets_path is not None else default_secrets
         return eff_enemies, eff_secrets
+
+    def get_effective_platform_profiles_path(self, base_dir: Path | str | None = None) -> Path:
+        """Return the effective platform_profiles_path."""
+        if self.platform_profiles_path is not None:
+            return self.platform_profiles_path
+        return self.find_platform_profiles_path(base_dir or Path.cwd())
 
     @classmethod
     def load_from_paths(
         cls,
         enemies_path: Optional[Path | str] = None,
         secrets_path: Optional[Path | str] = None,
+        platform_profiles_path: Optional[Path | str] = None,
     ) -> ProjectCatalogues:
         """Load catalogues from specific file paths."""
         e_path = Path(enemies_path).resolve() if enemies_path else None
         s_path = Path(secrets_path).resolve() if secrets_path else None
-        catalogues = cls(enemies_path=e_path, secrets_path=s_path)
+        p_path = Path(platform_profiles_path).resolve() if platform_profiles_path else None
+        catalogues = cls(enemies_path=e_path, secrets_path=s_path, platform_profiles_path=p_path)
 
         # Load enemies
         if e_path and e_path.is_file():
@@ -590,20 +914,58 @@ class ProjectCatalogues:
                     f"Invalid secret dependency chain in {s_path.name}: {err}"
                 ) from err
 
+        # Load platform profiles
+        if p_path and p_path.is_file():
+            try:
+                with open(p_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if not content:
+                    raise CorruptedCatalogueFileError(f"Platform profiles catalogue file is empty: {p_path}")
+                data = json.loads(content)
+            except json.JSONDecodeError as err:
+                raise CorruptedCatalogueFileError(f"Invalid JSON in {p_path.name}: {err}") from err
+
+            if not isinstance(data, dict):
+                raise CorruptedCatalogueFileError(f"Top-level JSON in {p_path.name} must be an object.")
+
+            profiles_list = data.get("profiles", [])
+            if not isinstance(profiles_list, list):
+                raise CorruptedCatalogueFileError(f"'profiles' key in {p_path.name} must be a list.")
+
+            for idx, item in enumerate(profiles_list):
+                try:
+                    prof = PlatformColorProfile.from_dict(item)
+                    if prof.id in catalogues.platform_profiles:
+                        raise DuplicateDefinitionIdError(
+                            f"Duplicate platform profile ID '{prof.id}' in {p_path.name}."
+                        )
+                    catalogues.platform_profiles[prof.id] = prof
+                except Exception as err:
+                    raise CorruptedCatalogueFileError(
+                        f"Error in {p_path.name} at entry {idx}: {err}"
+                    ) from err
+        else:
+            # Populate with built-in default platform profiles
+            for def_item in DEFAULT_PLATFORM_PROFILES:
+                prof = PlatformColorProfile.from_dict(def_item)
+                catalogues.platform_profiles[prof.id] = prof
+
         return catalogues
 
     @classmethod
     def load_from_dir(cls, base_dir: Path | str) -> ProjectCatalogues:
-        """Load catalogues from directory. If files do not exist, return empty catalogues.
-        If file exists but is corrupted, raise CorruptedCatalogueFileError without overwriting."""
+        """Load catalogues from directory."""
         enemies_path, secrets_path = cls.find_catalogue_paths(base_dir)
-        return cls.load_from_paths(enemies_path, secrets_path)
+        profiles_path = cls.find_platform_profiles_path(base_dir)
+        return cls.load_from_paths(enemies_path, secrets_path, profiles_path)
 
     def save_to_dir(self, base_dir: Path | str | None = None) -> None:
-        """Atomically save both catalogues into enemies.json and secrets.json."""
+        """Atomically save all catalogues into enemies.json, secrets.json, and platform_profiles.json."""
         enemies_path, secrets_path = self.get_effective_paths(base_dir)
+        profiles_path = self.get_effective_platform_profiles_path(base_dir)
         enemies_path.parent.mkdir(parents=True, exist_ok=True)
         secrets_path.parent.mkdir(parents=True, exist_ok=True)
+        profiles_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 1. Save enemies.json
         enemies_data = {
@@ -619,10 +981,18 @@ class ProjectCatalogues:
         }
         self._atomic_save_json(secrets_path, secrets_data)
 
+        # 3. Save platform_profiles.json
+        profiles_data = {
+            "version": 1,
+            "profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
+        }
+        self._atomic_save_json(profiles_path, profiles_data)
+
     def save_to_paths(
         self,
         enemies_path: Optional[Path | str] = None,
         secrets_path: Optional[Path | str] = None,
+        platform_profiles_path: Optional[Path | str] = None,
     ) -> None:
         """Atomically save catalogues to specific file paths if provided."""
         if enemies_path is not None:
@@ -641,7 +1011,14 @@ class ProjectCatalogues:
                 "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
             }
             self._atomic_save_json(s_p, secrets_data)
-
+        if platform_profiles_path is not None:
+            p_p = Path(platform_profiles_path).resolve()
+            p_p.parent.mkdir(parents=True, exist_ok=True)
+            profiles_data = {
+                "version": 1,
+                "profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
+            }
+            self._atomic_save_json(p_p, profiles_data)
 
     @staticmethod
     def _atomic_save_json(target_path: Path, data: dict[str, Any]) -> None:

@@ -75,7 +75,7 @@ def test_parse_01_forest_scene():
     assert scene.height == 96
     assert scene.primary_tileset_id == 3  # trees
     assert len(scene.elements) == 5
-    assert len(scene.platforms) == 12
+    assert len(scene.platforms) == 11
     assert len(scene.objects) == 6
 
     # Verify enemy 1

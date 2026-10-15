@@ -129,6 +129,7 @@ class SceneSerializer:
         data: dict[str, Any],
         base_dir: Path | str | None = None,
         validate_source_exists: bool = False,
+        catalogues: Optional[Any] = None,
     ) -> Scene:
         """Construct and validate a Scene object from a dictionary."""
         if not isinstance(data, dict):
@@ -216,6 +217,14 @@ class SceneSerializer:
                 raise CorruptedFileError(f"Error parsing object at index {idx}: {exc}") from exc
             objects.append(obj)
 
+        if catalogues is None:
+            eff_dir = Path(base_dir).resolve() if base_dir else Path.cwd()
+            try:
+                from .catalogue_model import ProjectCatalogues
+                catalogues = ProjectCatalogues.load_from_dir(eff_dir)
+            except Exception:
+                catalogues = None
+
         scene = Scene(
             name=name,
             schema_version=version,
@@ -225,6 +234,7 @@ class SceneSerializer:
             elements=elements,
             platforms=platforms,
             objects=objects,
+            catalogues=catalogues,
         )
         try:
             scene.validate()
@@ -238,6 +248,7 @@ class SceneSerializer:
         json_str: str,
         base_dir: Path | str | None = None,
         validate_source_exists: bool = False,
+        catalogues: Optional[Any] = None,
     ) -> Scene:
         """Parse JSON string into a Scene object."""
         try:
@@ -249,6 +260,7 @@ class SceneSerializer:
             data,
             base_dir=base_dir,
             validate_source_exists=validate_source_exists,
+            catalogues=catalogues,
         )
 
     @classmethod
@@ -295,6 +307,7 @@ class SceneSerializer:
         file_path: Path | str,
         base_dir: Path | str | None = None,
         validate_source_exists: bool = False,
+        catalogues: Optional[Any] = None,
     ) -> Scene:
         """Load a scene from a JSON file."""
         target_path = Path(file_path).resolve()
@@ -314,4 +327,5 @@ class SceneSerializer:
             content,
             base_dir=base_dir,
             validate_source_exists=validate_source_exists,
+            catalogues=catalogues,
         )

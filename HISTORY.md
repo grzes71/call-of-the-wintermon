@@ -2,6 +2,87 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-15] - Platform Profile ID Range Constraint (Integer 1-255) & QPainter Import Fix
+
+- **Platform Profile ID Integer Constraint (1-255)**:
+  - Updated `PlatformColorProfile.id` to `int` in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py), enforcing integer range 1-255 in `.validate()` and `.from_dict()` (rejecting 0, negative values, values > 255, booleans, and non-numeric strings, while parsing numeric strings).
+  - Updated `DEFAULT_PLATFORM_PROFILES` with integer IDs: `1` (Glacial Ice), `2` (Ancient Gold), `3` (Castle Stone), and `4` (Forest Moss).
+  - Updated `ProjectCatalogues.platform_profiles` mapping from `dict[str, PlatformColorProfile]` to `dict[int, PlatformColorProfile]`, normalizing profile IDs with `_normalize_id()` in `add_platform_profile`, `update_platform_profile`, `get_platform_profile`, `remove_platform_profile`, `get_profile_platform_usage`, and `duplicate_platform_profile`.
+  - Updated `PlatformElement.color_profile_id` in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py) to `Optional[int] = None`, with integer 1-255 range validation in `.validate()` and `.from_dict()`.
+  - Updated `ChangePlatformColorProfileCommand` in [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py) to use `Optional[int]` for old and new profile IDs.
+  - Updated `CataloguesDialog` profile management UI in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) to use `QSpinBox` with range 1-255 (`self.prof_id_spin`) instead of `QLineEdit`, allocating next available integer in `_on_new_profile_clicked()` and validating `1 <= new_id <= 255` in `_on_save_profile_clicked()`.
+  - Updated `load_platform_profiles()` and platform parsing in [scripts/compile_scenes.py](scripts/compile_scenes.py) to load integer IDs and map `color_profile_id: int | None`.
+- **Fixed QPainter paintEvent NameError**:
+  - Imported `QPainter` from `PySide6.QtGui` in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py), resolving `NameError: name 'QPainter' is not defined` inside `PlatformPreviewBar.paintEvent`.
+- **Updated Test Suite**:
+  - Updated and extended [tests/test_platform_profiles.py](tests/test_platform_profiles.py) to test integer profile IDs (1-255), including boundary tests (1, 255), numeric string conversion, rejection of 0, negative, >255, non-numeric strings, and booleans for both `PlatformColorProfile` and `PlatformElement`. All 313 tests passing clean.
+
+- **Updated Hardware Secret Row Limit Constraint** in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py):
+  - Enforced rule: on each platform row (`row_y`), at most one secret per unique `Dependency` value is allowed (including `Dependency = None`). Multiple secrets on the same row are permitted if and only if each has a distinct dependency.
+  - Removed and replaced the previous 4-secrets-per-stage restriction (`MAX_SECRETS_PER_STAGE`).
+  - Added helper methods `Scene.get_secret_dependency(definition_id)` and `Scene.get_dependency_display_name(dependency)`.
+  - Added `Scene.duplicate_object()` with integrated validation against row constraints.
+  - Updated `Scene.validate()` to group row secrets by `dep = self.get_secret_dependency(definition_id)` and raise `ObjectLimitExceededError` with descriptive conflict details if duplicate dependencies are found.
+  - Updated `Scene.can_add_object_to_platform()` to block adding secrets whose resolved dependency matches an existing secret on the target platform row.
+  - Updated `Scene.move_platform()` and `Scene.move_object()` to validate target row dependencies and prevent secret collision across platforms moving to the same row.
+  - Updated `Scene.update_object_props()` to guarantee scene validity and roll back on dependency collision.
+- **Enhanced Catalogue Model & Secret Dependency Conflict Detection** in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py) and [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py):
+  - Added `ProjectCatalogues.get_secret_dependency()`, `ProjectCatalogues.get_dependency_display_name()`, and `ProjectCatalogues.check_scene_secret_dependency_conflict()`.
+  - In `CataloguesDialog._on_save_secret_clicked()`, validated whether editing a secret's dependency introduces a row conflict on any existing scene secret instance, blocking the update and presenting a user warning if violated.
+- **Integrated Validation in UI and Serialization** in [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py) and [atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py):
+  - Added row dependency collision pre-checks in `_on_obj_prop_definition_changed` and `_on_obj_prop_type_changed`.
+  - Updated `SceneSerializer.from_dict()`, `from_json()`, and `load_from_file()` to support catalogues resolution and detect row dependency violations during project import and scene loading, raising `CorruptedFileError`.
+- **Enforced Build-Time Export Validation** in [scripts/compile_scenes.py](scripts/compile_scenes.py):
+  - Added `dependency: Optional[int] = None` to `CatalogueItem` and loaded secret dependencies in `load_catalogues()`.
+  - Added validation in `parse_scene_json()` ensuring no platform row contains duplicate secret dependencies prior to assembly generation.
+- **Updated Project Data & Catalogues** in [secrets.json](secrets.json):
+  - Set `dependency: 1` on Exit Door (id 2) to establish the linear chain (Gold Key -> Exit Door), ensuring compatibility for existing multi-secret rows in `scenes/01-forest.json` and `scenes/02-forest-castle.json`.
+- **Created Comprehensive Acceptance Test Suite** in [tests/test_secret_row_constraints.py](tests/test_secret_row_constraints.py) and updated [tests/test_scene_objects.py](tests/test_scene_objects.py):
+  - Verified all 9 acceptance criteria: multiple distinct dependencies per row allowed (Examples A & D), duplicate `None` rejected (Example B), duplicate parent dependencies rejected across different secret types (Example C), same dependency across different rows allowed, horizontal/vertical platform and object moves blocked on collision, catalogue dependency changes protected against scene conflicts, duplicate secret creation safeguarded, import/export corruption detection, and existing scene stability. All 312 tests passing clean.
+
+- **Implemented Atari GTIA Color/Luminance Palette & Validation Engine** in [atari-scene-editor/src/scene_editor/atari_palette.py](atari-scene-editor/src/scene_editor/atari_palette.py):
+  - Provided 256-color composite Atari GTIA RGB palette table `ATARI_GTIA_PALETTE`.
+  - Added conversion helpers `atari_color_to_rgb`, `atari_color_to_hex_rgb`, and `format_atari_color_hex` (`0x{:02X}`).
+  - Enforced hardware-accurate Atari GTIA color register validation in `parse_atari_color_hex` and `is_valid_atari_color_string`: checks range `0x00`-`0xFE` and requires bit 0 to be 0 (strictly even byte values).
+- **Added Platform Color Profiles Model & Catalogue Management** in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py):
+  - Created `PlatformColorProfile` dataclass containing `id`, `name`, `colors` (strictly 8 integers corresponding to the 8 scanlines of a 4-pixel ANTIC Mode D platform), and optional `description`.
+  - Added starter presets (`profile_ice`, `profile_gold`, `profile_stone`, `profile_forest`) in `DEFAULT_PLATFORM_PROFILES` and standalone `platform_profiles.json`.
+  - Added CRUD operations to `ProjectCatalogues`: `add_platform_profile`, `update_platform_profile`, `get_platform_profile`, `duplicate_platform_profile`, `get_profile_platform_usage`, and safe deletion in `remove_platform_profile` (raises `ProfileInUseError` unless `force=True`, safely unlinking references from platforms).
+  - Integrated persistence paths and directory auto-save/load (`platform_profiles.json`).
+- **Extended Scene Model, Item Rendering & Commands** in [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py), and [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py):
+  - Added `color_profile_id: Optional[str] = None` to `PlatformElement` with full backwards compatibility for legacy scene files.
+  - Implemented `ChangePlatformColorProfileCommand` for undo/redo support.
+  - Updated `PlatformGraphicsItem` and `SceneView`: renders 4 Mode D pixel rows where each row displays the color corresponding to scanlines `r*2` from the assigned profile.
+- **Added Platform Profiles UI Tab & Platform Property Inspector Combo** in [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) and [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py):
+  - Added "Platform Profiles" tab to `CataloguesDialog` with vertical 8-scanline gradient preview bar (`PlatformPreviewBar`), 8 editable hex fields with real-time swatch previews and `#RRGGBB` labels, new, duplicate, delete, and revert buttons.
+  - Added color profile dropdown to platform creator bar and platform property panel, enabling individual assignment per platform.
+- **Updated Scene Exporter and Build Tooling** in [scripts/compile_scenes.py](scripts/compile_scenes.py), [main.asm](main.asm), [Makefile](Makefile), [scripts/check_memory.py](scripts/check_memory.py), and [scripts/generate_memory_map.py](scripts/generate_memory_map.py):
+  - Added `--profiles` argument to `compile_scenes.py` to resolve 8-scanline colors per platform into `PlatformData`.
+  - Generated Structure-of-Arrays (SoA) tables `scene_{symbol}_plat_color_sl1` through `scene_{symbol}_plat_color_sl8` and master index pointer tables `scene_plat_color_sl1_lo`/`hi` .. `scene_plat_color_sl8_lo`/`hi` in [gen/scenes_data.asm](gen/scenes_data.asm).
+  - Repositioned `TILES_META` to `$2A30` and `SCENES_DATA` to `$2C30`, preventing overlap with `GAME_VRAM` ($3000) while keeping all `org` addresses strictly ascending.
+- **Added Comprehensive Test Suite** in [tests/test_platform_profiles.py](tests/test_platform_profiles.py):
+  - Added 11 automated pytest tests verifying all acceptance criteria: creation, hex/even validation, RGB conversion, editing/cloning, multi-platform sharing, independent assignments, reactive updates, safe deletion with usage guards, save/reload roundtrip, exact-order 8-scanline assembly export, and backwards compatibility.
+
+
+## [2026-10-15] - Memory Map Reporting Tool and Graphical Vector PDF Generator
+
+- **Created Memory Map Generator Tool** in [scripts/generate_memory_map.py](scripts/generate_memory_map.py):
+  - Parses Atari DOS XEX binary segments and calculates continuous memory ranges from `$2000` to `$BFFF`.
+  - Computes exact addresses, sizes in bytes, and categorization for all allocated segments (Code, Graphics VRAM, Tileset Bitmaps, Display Lists, Audio, PMG, Metadata).
+  - Identifies and ranks all unallocated free memory gaps (headroom) across user RAM.
+  - Formats detailed Zero Page allocation breakdown (`$00-$FF`) highlighting the 72 free bytes (`$B8-$FF`).
+  - Outputs a color-coded terminal report with summary statistics and headroom metrics.
+  - Generates high-resolution graphical vector PDF diagram (`memory_map.pdf`) using Matplotlib:
+    - Left column: Full 64 KB memory space overview (`$0000-$FFFF`) with system RAM, DOS, User area, OS ROM, and hardware I/O.
+    - Center column: Zoomed User RAM diagram (`$2000-$BFFF`) with color-coded segments and highlighted free gaps.
+    - Right sidebar: Memory utilization statistics card, category legend, top free memory regions table, and Zero Page layout card.
+- **Added Build Integration** in [Makefile](Makefile):
+  - Added `make memory_map` and `make map` targets to regenerate `memory_map.pdf` directly from the compiled binary.
+- **Added Automated Pytest Test Suite** in [tests/test_memory_map.py](tests/test_memory_map.py):
+  - Tests XEX segment parsing, segment identification, address continuity, and PDF file generation.
+  - Verified all 292 tests pass and memory validation passes with 3,984 bytes headroom.
+
+
 ## [2026-10-15] - Scene Title Card Screen with Centered ANTIC 2 Display List & Fade Sequence
 
 - **Generated 40-Character Centered Screen Codes in Scene Compiler** in [scripts/compile_scenes.py](scripts/compile_scenes.py):

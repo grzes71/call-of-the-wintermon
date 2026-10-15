@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
 )
 
 from .asset_manager import AssetManager
-from .catalogue_model import ProjectCatalogues
+from .atari_palette import atari_color_to_rgb
+from .catalogue_model import PlatformColorProfile, ProjectCatalogues
 from .scene_model import (
     OBJECT_TYPE_ENEMY,
     OBJECT_TYPE_SECRET,
@@ -208,9 +209,11 @@ class PlatformGraphicsItem(QGraphicsItem):
         platform: PlatformElement,
         on_move_committed: Optional[Callable[[str, tuple[int, int], tuple[int, int]], None]] = None,
         on_selection_changed: Optional[Callable[[str, bool], None]] = None,
+        color_profile: Optional[PlatformColorProfile] = None,
     ) -> None:
         super().__init__()
         self.platform = platform
+        self.color_profile = color_profile
         self.on_move_committed = on_move_committed
         self.on_selection_changed = on_selection_changed
 
@@ -223,14 +226,20 @@ class PlatformGraphicsItem(QGraphicsItem):
 
         self._drag_start_pos: Optional[tuple[int, int]] = None
         self.setZValue(1000)  # Render platforms on top of standard background tiles
-        self.update_from_platform(platform)
+        self.update_from_platform(platform, color_profile=color_profile)
 
     @property
     def platform_id(self) -> str:
         return self.platform.id
 
-    def update_from_platform(self, platform: PlatformElement) -> None:
+    def update_from_platform(
+        self,
+        platform: PlatformElement,
+        color_profile: Optional[PlatformColorProfile] = None,
+    ) -> None:
         self.platform = platform
+        if color_profile is not None:
+            self.color_profile = color_profile
         self.setPos(QPointF(platform.position.x, platform.position.y))
         self.prepareGeometryChange()
         self.update()
@@ -247,11 +256,11 @@ class PlatformGraphicsItem(QGraphicsItem):
         widget: Optional[QWidget] = None,
     ) -> None:
         w = self.platform.width
-        h = self.platform.height  # always 8
+        h = self.platform.height  # always 4
 
         is_sprite = self.platform.type == PLATFORM_TYPE_SPRITE
 
-        # Color theme: Cyan/Blue for Sprite, Amber/Orange for Missile
+        # Color theme fallback: Cyan/Blue for Sprite, Amber/Orange for Missile
         if is_sprite:
             base_col = QColor(41, 128, 185, 230)       # Atari player cyan-blue
             highlight_col = QColor(85, 239, 196, 255)  # Top edge highlight
@@ -268,7 +277,14 @@ class PlatformGraphicsItem(QGraphicsItem):
             tag = f"M:{w}"
 
         # Draw main platform body
-        painter.fillRect(QRectF(0, 0, w, h), base_col)
+        # In ANTIC Mode D, 4 pixel lines correspond to 8 scanlines (2 scanlines per mode line).
+        # We render 4 pixel lines using the 8-scanline color profile (row 0..3 -> scanlines 0, 2, 4, 6).
+        if self.color_profile and self.color_profile.colors and len(self.color_profile.colors) == 8:
+            for row in range(min(h, 4)):
+                rgb = atari_color_to_rgb(self.color_profile.colors[row * 2])
+                painter.fillRect(QRectF(0, row, w, 1), QColor(*rgb))
+        else:
+            painter.fillRect(QRectF(0, 0, w, h), base_col)
 
         # Draw 4px tick marks (hardware ×4 pixel bits)
         painter.setPen(QPen(tick_col, 1))

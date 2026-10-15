@@ -48,6 +48,7 @@ from .catalogue_model import (
     CorruptedCatalogueFileError,
     DuplicateDefinitionIdError,
     EnemyDefinition,
+    PlatformColorProfile,
     ProjectCatalogues,
     SecretDefinition,
 )
@@ -55,6 +56,7 @@ from .commands import (
     AddElementCommand,
     AddPlatformCommand,
     AddSceneObjectCommand,
+    ChangePlatformColorProfileCommand,
     ChangePlatformTypeCommand,
     ChangeSceneObjectIdCommand,
     FlipElementCommand,
@@ -469,6 +471,9 @@ class MainWindow(QMainWindow):
         self.new_plat_row_combo = QComboBox()
         pc_layout.addRow("Target Row:", self.new_plat_row_combo)
 
+        self.new_plat_color_profile_combo = QComboBox()
+        pc_layout.addRow("Color Profile:", self.new_plat_color_profile_combo)
+
         self.new_plat_x_spin = QSpinBox()
         self.new_plat_x_spin.setRange(-500, 500)
         self.new_plat_x_spin.setValue(20)
@@ -500,6 +505,10 @@ class MainWindow(QMainWindow):
         self.plat_prop_row_combo = QComboBox()
         self.plat_prop_row_combo.currentIndexChanged.connect(self._on_plat_prop_row_changed)
         pe_layout.addRow("Row (y % 16 == 8):", self.plat_prop_row_combo)
+
+        self.plat_prop_color_profile_combo = QComboBox()
+        self.plat_prop_color_profile_combo.currentIndexChanged.connect(self._on_plat_prop_color_profile_changed)
+        pe_layout.addRow("Color Profile:", self.plat_prop_color_profile_combo)
 
         self.plat_prop_x_spin = QSpinBox()
         self.plat_prop_x_spin.setRange(-500, 500)
@@ -653,6 +662,7 @@ class MainWindow(QMainWindow):
         self.prop_tabs.currentChanged.connect(self._on_prop_tab_changed)
 
         self.right_dock.setWidget(self.prop_tabs)
+        self._refresh_platform_creator_profiles()
         self._on_new_plat_type_changed()
         self._on_new_obj_type_changed()
         self._update_property_panel(None)
@@ -1120,6 +1130,7 @@ class MainWindow(QMainWindow):
         self._refresh_object_list(selected_obj_id)
         self._refresh_object_creator_platforms()
         self._refresh_object_creator_definitions()
+        self._refresh_platform_creator_profiles()
 
         selected_elem = self.scene_model.get_element(selected_elem_id) if selected_elem_id else None
         self._update_property_panel(selected_elem)
@@ -1440,12 +1451,14 @@ class MainWindow(QMainWindow):
         plat_id = f"platform-{self._next_platform_num:03d}"
         self._next_platform_num += 1
 
+        prof_id = self.new_plat_color_profile_combo.currentData()
         plat = PlatformElement(
             id=plat_id,
             type=p_type,
             position=Position(x, y),
             width=width,
             height=PLATFORM_HEIGHT,
+            color_profile_id=prof_id,
         )
 
         cmd = AddPlatformCommand(
@@ -1702,6 +1715,9 @@ class MainWindow(QMainWindow):
             self.plat_prop_row_combo.blockSignals(True)
             self.plat_prop_row_combo.clear()
             self.plat_prop_row_combo.blockSignals(False)
+            self.plat_prop_color_profile_combo.blockSignals(True)
+            self.plat_prop_color_profile_combo.clear()
+            self.plat_prop_color_profile_combo.blockSignals(False)
             self.plat_prop_x_spin.blockSignals(True)
             self.plat_prop_x_spin.setValue(0)
             self.plat_prop_x_spin.blockSignals(False)
@@ -1750,6 +1766,19 @@ class MainWindow(QMainWindow):
             self.plat_prop_row_combo.setCurrentIndex(r_idx)
         self.plat_prop_row_combo.blockSignals(False)
 
+        # Color profile combo
+        self.plat_prop_color_profile_combo.blockSignals(True)
+        self.plat_prop_color_profile_combo.clear()
+        self.plat_prop_color_profile_combo.addItem("(None / Default)", None)
+        for prof in sorted(self.catalogues.platform_profiles.values(), key=lambda p: p.name):
+            self.plat_prop_color_profile_combo.addItem(f"{prof.name} [{prof.id}]", prof.id)
+        p_idx = self.plat_prop_color_profile_combo.findData(plat.color_profile_id)
+        if p_idx >= 0:
+            self.plat_prop_color_profile_combo.setCurrentIndex(p_idx)
+        else:
+            self.plat_prop_color_profile_combo.setCurrentIndex(0)
+        self.plat_prop_color_profile_combo.blockSignals(False)
+
         # X spinbox
         self.plat_prop_x_spin.blockSignals(True)
         self.plat_prop_x_spin.setValue(plat.position.x)
@@ -1761,6 +1790,43 @@ class MainWindow(QMainWindow):
             f"Row {plat.row_index} (y={plat.position.y}): <b>Sprite: {s_used}/{MAX_SPRITES_PER_ROW}</b>, "
             f"<b>Missile: {m_used}/{MAX_MISSILES_PER_ROW}</b>"
         )
+
+    def _on_plat_prop_color_profile_changed(self) -> None:
+        selected_id = self.scene_view.get_selected_platform_id()
+        if not selected_id:
+            return
+        plat = self.scene_model.get_platform(selected_id)
+        if not plat:
+            return
+
+        new_prof_id = self.plat_prop_color_profile_combo.currentData()
+        if plat.color_profile_id == new_prof_id:
+            return
+
+        cmd = ChangePlatformColorProfileCommand(
+            self.scene_model,
+            selected_id,
+            plat.color_profile_id,
+            new_prof_id,
+            callback=self._sync_all,
+        )
+        self.undo_stack.push(cmd)
+
+    def _refresh_platform_creator_profiles(self) -> None:
+        if not hasattr(self, "new_plat_color_profile_combo"):
+            return
+        cur_data = self.new_plat_color_profile_combo.currentData()
+        self.new_plat_color_profile_combo.blockSignals(True)
+        self.new_plat_color_profile_combo.clear()
+        self.new_plat_color_profile_combo.addItem("(None / Default)", None)
+        for prof in sorted(self.catalogues.platform_profiles.values(), key=lambda p: p.name):
+            self.new_plat_color_profile_combo.addItem(f"{prof.name} [{prof.id}]", prof.id)
+        idx = self.new_plat_color_profile_combo.findData(cur_data)
+        if idx >= 0:
+            self.new_plat_color_profile_combo.setCurrentIndex(idx)
+        else:
+            self.new_plat_color_profile_combo.setCurrentIndex(0)
+        self.new_plat_color_profile_combo.blockSignals(False)
 
     def _on_prop_pos_changed(self) -> None:
         selected_id = self.scene_view.get_selected_element_id()
@@ -1887,6 +1953,7 @@ class MainWindow(QMainWindow):
 
         enemies_count = 0
         secrets_count = 0
+        profiles_count = 0
         try:
             if isinstance(data, dict):
                 if "enemies" in data and isinstance(data["enemies"], list):
@@ -1899,12 +1966,22 @@ class MainWindow(QMainWindow):
                         defn = SecretDefinition.from_dict(item)
                         self.catalogues.secrets[defn.id] = defn
                         secrets_count += 1
-                if "enemies" not in data and "secrets" not in data:
+                raw_profiles = data.get("profiles") or data.get("platform_profiles")
+                if raw_profiles and isinstance(raw_profiles, list):
+                    for item in raw_profiles:
+                        defn = PlatformColorProfile.from_dict(item)
+                        self.catalogues.platform_profiles[defn.id] = defn
+                        profiles_count += 1
+                if "enemies" not in data and "secrets" not in data and "platform_profiles" not in data and "profiles" not in data:
                     if "id" in data and "name" in data:
                         if "enemy" in target_path.name.lower():
                             defn = EnemyDefinition.from_dict(data)
                             self.catalogues.enemies[defn.id] = defn
                             enemies_count += 1
+                        elif "profile" in target_path.name.lower():
+                            defn = PlatformColorProfile.from_dict(data)
+                            self.catalogues.platform_profiles[defn.id] = defn
+                            profiles_count += 1
                         else:
                             defn = SecretDefinition.from_dict(data)
                             self.catalogues.secrets[defn.id] = defn
@@ -1915,6 +1992,11 @@ class MainWindow(QMainWindow):
                         defn = SecretDefinition.from_dict(item)
                         self.catalogues.secrets[defn.id] = defn
                         secrets_count += 1
+                elif "profile" in target_path.name.lower():
+                    for item in data:
+                        defn = PlatformColorProfile.from_dict(item)
+                        self.catalogues.platform_profiles[defn.id] = defn
+                        profiles_count += 1
                 else:
                     for item in data:
                         defn = EnemyDefinition.from_dict(item)
@@ -1930,7 +2012,8 @@ class MainWindow(QMainWindow):
                 "Catalogues Loaded",
                 f"Successfully loaded definitions from:\n{target_path.name}\n\n"
                 f"Enemies loaded: {enemies_count}\n"
-                f"Secrets loaded: {secrets_count}",
+                f"Secrets loaded: {secrets_count}\n"
+                f"Platform profiles loaded: {profiles_count}",
             )
             return True
         except Exception as err:
@@ -2252,6 +2335,22 @@ class MainWindow(QMainWindow):
         defs = self.catalogues.enemies if new_type == OBJECT_TYPE_ENEMY else self.catalogues.secrets
         new_def_id = next(iter(defs.keys())) if defs else ""
 
+        if new_type in (OBJECT_TYPE_SECRET, "treasure"):
+            can_add, reason = self.scene_model.can_add_object_to_platform(
+                obj.platform_id,
+                obj_type=new_type,
+                definition_id=new_def_id,
+                exclude_id=selected_id,
+            )
+            if not can_add:
+                QMessageBox.warning(
+                    self,
+                    "Secret Dependency Conflict",
+                    f"Cannot change object type to Secret:\n{reason}",
+                )
+                self._update_object_property_panel(obj)
+                return
+
         cmd = UpdateSceneObjectPropsCommand(
             self.scene_model,
             selected_id,
@@ -2273,6 +2372,23 @@ class MainWindow(QMainWindow):
         new_def_id = self.obj_prop_definition_combo.currentData()
         if not new_def_id or new_def_id == obj.definition_id:
             return
+
+        if obj.type in (OBJECT_TYPE_SECRET, "treasure"):
+            can_add, reason = self.scene_model.can_add_object_to_platform(
+                obj.platform_id,
+                obj_type=obj.type,
+                definition_id=new_def_id,
+                exclude_id=selected_id,
+            )
+            if not can_add:
+                QMessageBox.warning(
+                    self,
+                    "Secret Dependency Conflict",
+                    f"Cannot change secret definition:\n{reason}",
+                )
+                self._update_object_property_panel(obj)
+                return
+
         cmd = UpdateSceneObjectPropsCommand(
             self.scene_model,
             selected_id,

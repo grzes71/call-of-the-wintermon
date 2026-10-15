@@ -218,10 +218,16 @@ class SceneView(QGraphicsView):
 
         # Add hardware platforms
         for plat in scene_model.platforms:
+            prof = (
+                catalogues.get_platform_profile(plat.color_profile_id)
+                if (catalogues and plat.color_profile_id)
+                else None
+            )
             p_item = PlatformGraphicsItem(
                 platform=plat,
                 on_move_committed=self._on_platform_moved,
                 on_selection_changed=self._on_platform_selected,
+                color_profile=prof,
             )
             self.canvas.addItem(p_item)
             self._platform_items_by_id[plat.id] = p_item
@@ -250,10 +256,19 @@ class SceneView(QGraphicsView):
         if element.id in self._items_by_id:
             self._items_by_id[element.id].update_from_element(element)
 
-    def update_platform_item(self, platform: PlatformElement) -> None:
+    def update_platform_item(
+        self,
+        platform: PlatformElement,
+        catalogues: Optional[ProjectCatalogues] = None,
+    ) -> None:
         """Update graphics item for an existing platform."""
         if platform.id in self._platform_items_by_id:
-            self._platform_items_by_id[platform.id].update_from_platform(platform)
+            prof = (
+                catalogues.get_platform_profile(platform.color_profile_id)
+                if (catalogues and platform.color_profile_id)
+                else None
+            )
+            self._platform_items_by_id[platform.id].update_from_platform(platform, color_profile=prof)
 
     def update_object_item(
         self,

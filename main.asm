@@ -13,8 +13,8 @@ CODE_ADDR   = $2000
 FONT_ADDR   = $2400     ; 1 KB aligned font (1024 bytes: $2400-$27FF)
 INTRO_VRAM  = $2800     ; Intro text VRAM (400 bytes: $2800-$298F)
 INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
-TILES_META  = $2B00     ; Tileset SoA metadata & row offset tables (~486 bytes: $2B00-$2CE5)
-SCENES_DATA = $2D00     ; Scene definitions, platforms & objects SoA tables (~350 bytes: $2D00-$2E60)
+TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: $2A30-$2C1D)
+SCENES_DATA = $2C30     ; Scene definitions, platforms & objects SoA tables (~832 bytes: $2C30-$2F6F)
 GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 VRAM_SEG1   = $4000     ; Title VRAM Segment 1
@@ -197,13 +197,13 @@ dlist_intro
     .word dlist_intro
 
 ; ==============================================================================
-; TILESET METADATA & ROW OFFSET TABLES ($2B00)
+; TILESET METADATA & ROW OFFSET TABLES ($2A30)
 ; ==============================================================================
     org TILES_META
     icl 'gen/tiles_data.asm'
 
 ; ==============================================================================
-; SCENE DEFINITIONS & OBJECT TABLES ($2D00)
+; SCENE DEFINITIONS & OBJECT TABLES ($2C30)
 ; ==============================================================================
     org SCENES_DATA
     icl 'gen/scenes_data.asm'

@@ -1104,98 +1104,93 @@ class TestSecretChainSceneValidationAndRuntime:
         cats.add_secret(SecretDefinition(id=3, name="Artifact", dependency=2))
         return cats
 
-    def test_four_secrets_of_same_stage_on_row_allowed(self, empty_scene: Scene, catalogue_with_chain):
-        """Criterion 8: 4 secrets of the same stage in a row are allowed."""
-        empty_scene.catalogues = catalogue_with_chain
-        for i in range(4):
-            can_add, reason = empty_scene.can_add_object_to_platform(
-                "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=1
-            )
-            assert can_add, f"Failed at secret {i}: {reason}"
-            empty_scene.add_object(
-                SceneObjectElement(
-                    id=i + 1,
-                    type=OBJECT_TYPE_TREASURE,
-                    definition_id=1,
-                    platform_id="plat-01",
-                    x=10 + i * 4,
-                )
-            )
-        assert len(empty_scene.get_row_objects(24)) == 4
-        empty_scene.validate()
-
-    def test_five_secrets_of_same_stage_on_row_rejected(self, empty_scene: Scene, catalogue_with_chain):
-        """Criterion 9: 5 secrets of the same stage in a row are rejected."""
-        empty_scene.catalogues = catalogue_with_chain
-        for i in range(4):
-            empty_scene.add_object(
-                SceneObjectElement(
-                    id=i + 1,
-                    type=OBJECT_TYPE_TREASURE,
-                    definition_id=1,
-                    platform_id="plat-01",
-                    x=10 + i * 4,
-                )
-            )
-
-        # 5th secret of stage 1 must be rejected by can_add_object_to_platform
-        can_add, reason = empty_scene.can_add_object_to_platform(
-            "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=1
-        )
-        assert can_add is False
-        assert "stage 1" in reason and "limit" in reason.lower()
-
-        # Directly adding and validating must raise ObjectLimitExceededError
-        fifth = SceneObjectElement(
-            id=5,
-            type=OBJECT_TYPE_TREASURE,
-            definition_id=1,
-            platform_id="plat-01",
-            x=28,
-        )
-        with pytest.raises(ObjectLimitExceededError):
-            empty_scene.add_object(fifth)
-
-    def test_secrets_of_different_stages_sharing_row_and_positions_allowed(
+    def test_secrets_with_different_dependencies_on_same_row_allowed(
         self, empty_scene: Scene, catalogue_with_chain
     ):
-        """Criterion 10: Secrets belonging to different stages can share the same row and positions (e.g. 4 Stage 1 + 4 Stage 2 = 8 secrets)."""
+        """Examples A & D: Secrets with different dependencies can share the same row."""
+        empty_scene.catalogues = catalogue_with_chain
+        # Stage 1: Key (id=1, dep=None)
+        # Stage 2: CD (id=2, dep=1)
+        # Stage 3: Artifact (id=3, dep=2)
+        can_add1, _ = empty_scene.can_add_object_to_platform(
+            "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=1
+        )
+        assert can_add1 is True
+        empty_scene.add_object(
+            SceneObjectElement(id=1, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="plat-01", x=10)
+        )
+
+        can_add2, _ = empty_scene.can_add_object_to_platform(
+            "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=2
+        )
+        assert can_add2 is True
+        empty_scene.add_object(
+            SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=2, platform_id="plat-01", x=20)
+        )
+
+        can_add3, _ = empty_scene.can_add_object_to_platform(
+            "plat-02", obj_type=OBJECT_TYPE_TREASURE, definition_id=3
+        )
+        assert can_add3 is True
+        empty_scene.add_object(
+            SceneObjectElement(id=3, type=OBJECT_TYPE_TREASURE, definition_id=3, platform_id="plat-02", x=40)
+        )
+
+        # Row 24 contains 3 secrets, all with unique dependencies (None, 1, 2)
+        assert len(empty_scene.get_row_objects(24)) == 3
+        empty_scene.validate()
+
+    def test_two_secrets_with_none_dependency_on_same_row_rejected(
+        self, empty_scene: Scene, catalogue_with_chain
+    ):
+        """Example B: Two secrets with Dependency = None cannot share the same row."""
+        # Add another secret with Dependency = None (e.g. Silver Key)
+        catalogue_with_chain.secrets[10] = SecretDefinition(id=10, name="Silver Key", dependency=None)
         empty_scene.catalogues = catalogue_with_chain
 
-        # Add 4 Stage 1 secrets (Keys)
-        for i in range(4):
+        empty_scene.add_object(
+            SceneObjectElement(id=1, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="plat-01", x=10)
+        )
+
+        # Second secret with dep=None (either same or different definition) must be rejected on same row
+        can_add, reason = empty_scene.can_add_object_to_platform(
+            "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=10
+        )
+        assert can_add is False
+        assert "already contains secret '1' with dependency None" in reason
+
+        with pytest.raises(ObjectLimitExceededError) as exc_info:
             empty_scene.add_object(
-                SceneObjectElement(
-                    id=10 + i,
-                    type=OBJECT_TYPE_TREASURE,
-                    definition_id=1,  # Stage 1
-                    platform_id="plat-01",
-                    x=10 + i * 4,
-                )
+                SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=10, platform_id="plat-02", x=40)
             )
+        assert "already contains secret '1' with dependency None" in str(exc_info.value)
 
-        # Add 4 Stage 2 secrets (CDs) at the exact same positions
-        for i in range(4):
-            can_add, reason = empty_scene.can_add_object_to_platform(
-                "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=2
-            )
-            assert can_add, f"Failed to add Stage 2 secret {i}: {reason}"
+    def test_two_secrets_with_same_dependency_on_same_row_rejected(
+        self, empty_scene: Scene
+    ):
+        """Example C: Two secrets with the same Dependency (e.g. Gold Key) cannot share the same row."""
+        cats = ProjectCatalogues()
+        cats.secrets[1] = SecretDefinition(id=1, name="Gold Key", dependency=None)
+        cats.secrets[2] = SecretDefinition(id=2, name="Door A", dependency=1)
+        # Note: in catalogue chain, branching is forbidden for strict chain validation,
+        # but two secrets depending on the same parent is rejected on the row:
+        empty_scene.catalogues = cats
+
+        empty_scene.add_object(
+            SceneObjectElement(id=1, type=OBJECT_TYPE_TREASURE, definition_id=2, platform_id="plat-01", x=10)
+        )
+
+        can_add, reason = empty_scene.can_add_object_to_platform(
+            "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=2
+        )
+        assert can_add is False
+        assert "already contains secret '1' with dependency 'Gold Key' (ID 1)" in reason
+
+        with pytest.raises(ObjectLimitExceededError) as exc_info:
             empty_scene.add_object(
-                SceneObjectElement(
-                    id=20 + i,
-                    type=OBJECT_TYPE_TREASURE,
-                    definition_id=2,  # Stage 2
-                    platform_id="plat-01",
-                    x=10 + i * 4,
-                )
+                SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=2, platform_id="plat-02", x=40)
             )
-
-        # Total secrets in row is 8
-        row_objs = empty_scene.get_row_objects(24)
-        assert len(row_objs) == 8
-
-        # Scene validation passes because neither stage exceeds 4
-        empty_scene.validate()
+        assert "already contains secret '1' with dependency 'Gold Key' (ID 1)" in str(exc_info.value)
 
     def test_runtime_stage_progression_mechanics(self, empty_scene: Scene, catalogue_with_chain):
         """Criteria 2, 3, 4, 5, 6, 7:
@@ -1210,12 +1205,12 @@ class TestSecretChainSceneValidationAndRuntime:
 
         empty_scene.catalogues = catalogue_with_chain
 
-        # Place 2 Stage 1 keys (id=1, 2)
+        # Place 2 Stage 1 keys (id=1, 2) on different rows (plat-01 y=24, plat-03 y=40)
         empty_scene.add_object(
             SceneObjectElement(id=1, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="plat-01", x=10)
         )
         empty_scene.add_object(
-            SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="plat-01", x=20)
+            SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="plat-03", x=10)
         )
 
         # Place 1 Stage 2 CD (id=3)
@@ -1397,16 +1392,20 @@ class TestSecretChainSceneValidationAndRuntime:
         from scene_editor.scene_model import SceneSecretRuntime
 
         scene = Scene(name="multi_key_scene", width=160, height=96)
-        plat = PlatformElement(id="p1", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 24))
-        scene.add_platform(plat)
+        plat1 = PlatformElement(id="p1", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 24))
+        plat2 = PlatformElement(id="p2", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 40))
+        plat3 = PlatformElement(id="p3", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 56))
+        scene.add_platform(plat1)
+        scene.add_platform(plat2)
+        scene.add_platform(plat3)
         scene.catalogues = catalogue_with_chain
 
-        # Place 3 Keys (definition_id=1)
+        # Place 3 Keys (definition_id=1, dep=None) across 3 different rows
         scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="p1", x=10))
-        scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="p1", x=14))
-        scene.add_object(SceneObjectElement(id=3, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="p1", x=18))
+        scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="p2", x=10))
+        scene.add_object(SceneObjectElement(id=3, type=OBJECT_TYPE_TREASURE, definition_id=1, platform_id="p3", x=10))
 
-        # Place 1 CD (definition_id=2, depends on Key)
+        # Place 1 CD (definition_id=2, dep=1) on p1 (allowed because key has dep=None and CD has dep=1)
         scene.add_object(SceneObjectElement(id=4, type=OBJECT_TYPE_TREASURE, definition_id=2, platform_id="p1", x=22))
 
         runtime = SceneSecretRuntime(scene)
