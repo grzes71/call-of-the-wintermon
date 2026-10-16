@@ -188,7 +188,7 @@ def test_dli_init_execution():
             assert mem[pmg_p1 + curr_sl] == 0xFF, f"Player 1 pas row {curr_sl} must be $FF"
             assert mem[pmg_p2 + curr_sl] == 0xFF, f"Player 2 pas row {curr_sl} must be $FF"
             assert mem[pmg_p3 + curr_sl] == 0xFF, f"Player 3 pas row {curr_sl} must be $FF"
-            assert mem[pmg_m + curr_sl] == 0xFC, f"Missiles pas row {curr_sl} must be $FC"
+            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas row {curr_sl} must be $FF"
 
     # Guard lines (e.g. scanline 15, 24, 47, 56) must remain 0
     guard_lines = [15, 24, 47, 56, 79, 88, 111, 120, 143, 152, 175, 184]

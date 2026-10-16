@@ -106,7 +106,7 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
         return "Player-Missile & Audio", "PMG", COLORS["PMG"], "2 KB PMG buffer ($6800) + CMC Audio Player & Music ($7000)"
     if start == 0x7000:
         return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], "CMC Player engine & Call of the Wintermoon track"
-    if start == 0x7A00:
+    if start in (0x79D0, 0x7A00):
         return "Render Tables & Engine", "CODE", COLORS["CODE"], "2bpp horizontal flip table + Playfield blitter engine"
     if start == 0x8000:
         return "ANTIC Mode E Tilesets", "BITMAPS", COLORS["BITMAPS"], "Bitmapped sheets: Castles, Depths, Hell, Trees (16.2 KB)"

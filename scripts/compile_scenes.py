@@ -152,17 +152,33 @@ TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
 }
 
 
+SUPPORTED_SPRITE_WIDTHS: dict[int, list[tuple[int, int]]] = {
+    8: [(8, 0)],
+    16: [(16, 1)],
+    24: [(16, 1), (8, 0)],
+    32: [(32, 3)],
+    48: [(32, 3), (16, 1)],
+    64: [(32, 3), (32, 3)],
+    96: [(32, 3), (32, 3), (32, 3)],
+}
+
+
 @dataclass
 class SceneDliCompiledData:
-    """Compiled DLI table data for a single scene (285 bytes)."""
+    """Compiled DLI table data for a single scene (315 bytes)."""
 
-    # 45 tables x 6 bytes = 270 bytes
+    # 50 tables x 6 bytes = 300 bytes
     hpos_p1: list[int]          # 6 bytes (pasy 0..5)
     hpos_p2: list[int]          # 6 bytes
     hpos_p3: list[int]          # 6 bytes
+    hpos_m0: list[int]          # 6 bytes
     hpos_m1: list[int]          # 6 bytes
     hpos_m2: list[int]          # 6 bytes
     hpos_m3: list[int]          # 6 bytes
+    sizep1: list[int]           # 6 bytes
+    sizep2: list[int]           # 6 bytes
+    sizep3: list[int]           # 6 bytes
+    sizem: list[int]            # 6 bytes
     bg_colpf0: list[int]        # 6 bytes
     bg_colpf1: list[int]        # 6 bytes
     bg_colpf2: list[int]        # 6 bytes
@@ -199,11 +215,136 @@ class SceneDliCompiledData:
     z0_colpf2: int
 
 
+def validate_scene_dli_platforms(
+    platforms: list[PlatformData],
+    dli_data: SceneDliCompiledData,
+    scene_name: str = "",
+) -> None:
+    """Validate that compiled platform positions, widths, and sizes satisfy hardware constraints."""
+    for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
+        pas_plats = [p for p in platforms if p.y == pas_y]
+        if not pas_plats:
+            continue
+
+        # 1. Total width in pas does not exceed 128 px
+        total_width = sum(p.width for p in pas_plats)
+        if total_width > 128:
+            raise ValueError(
+                f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                f"total platform width ({total_width} px) exceeds maximum limit of 128 px."
+            )
+
+        # 2. Number of active channels in pas does not exceed 4 (P1, P2, P3, 5P)
+        p1_active = 1 if dli_data.hpos_p1[pas_idx] > 0 else 0
+        p2_active = 1 if dli_data.hpos_p2[pas_idx] > 0 else 0
+        p3_active = 1 if dli_data.hpos_p3[pas_idx] > 0 else 0
+        m_active = 1 if any(
+            h[pas_idx] > 0 for h in (dli_data.hpos_m0, dli_data.hpos_m1, dli_data.hpos_m2, dli_data.hpos_m3)
+        ) else 0
+        active_channels = p1_active + p2_active + p3_active + m_active
+        if active_channels > 4:
+            raise ValueError(
+                f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                f"active channels count ({active_channels}) exceeds maximum limit of 4."
+            )
+
+        # 3. Platform width validation
+        for p in pas_plats:
+            if p.type_code == 0:
+                if p.width not in SUPPORTED_SPRITE_WIDTHS:
+                    raise ValueError(
+                        f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                        f"platform '{p.id}' has unsupported width {p.width} px (supported: 8, 16, 24, 32, 48, 64, 96)."
+                    )
+            elif p.type_code == 1:
+                if p.width not in (8, 32):
+                    raise ValueError(
+                        f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                        f"missile platform '{p.id}' has unsupported width {p.width} px (supported: 8, 32)."
+                    )
+
+        # 4. Multi-segment platforms: verify consecutive channels without skips
+        hpos_p_vals = [dli_data.hpos_p1[pas_idx], dli_data.hpos_p2[pas_idx], dli_data.hpos_p3[pas_idx]]
+        sizep_vals = [dli_data.sizep1[pas_idx], dli_data.sizep2[pas_idx], dli_data.sizep3[pas_idx]]
+        sprite_plats = sorted([p for p in pas_plats if p.type_code == 0], key=lambda p: p.x)
+        missile_plats = sorted([p for p in pas_plats if p.type_code == 1], key=lambda p: p.x)
+
+        for p in sprite_plats:
+            if len(SUPPORTED_SPRITE_WIDTHS[p.width]) > 1:
+                seg_offset = 0
+                exp_hpos_list = []
+                for seg_w, exp_sz in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                    exp_hpos_list.append((48 + p.x + seg_offset, exp_sz))
+                    seg_offset += seg_w
+
+                first_hpos = exp_hpos_list[0][0]
+                if first_hpos not in hpos_p_vals:
+                    raise ValueError(
+                        f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                        f"platform '{p.id}' (x={p.x}, width={p.width}) start segment not found in player channels."
+                    )
+                start_ch = hpos_p_vals.index(first_hpos)
+                for s_idx, (exp_h, exp_sz) in enumerate(exp_hpos_list):
+                    target_ch = start_ch + s_idx
+                    if target_ch >= len(hpos_p_vals) or hpos_p_vals[target_ch] != exp_h:
+                        raise ValueError(
+                            f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                            f"platform '{p.id}' (width={p.width}) segments do not occupy consecutive channels without skips: "
+                            f"expected HPOS {exp_h} at channel {target_ch}, found {hpos_p_vals[target_ch] if target_ch < len(hpos_p_vals) else 'out of range'}."
+                        )
+
+        # 5. SIZEP matches platform widths
+        ch_p_check = 0
+        for p in sprite_plats:
+            for seg_w, exp_sz in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                if ch_p_check < 3:
+                    if sizep_vals[ch_p_check] != exp_sz:
+                        raise ValueError(
+                            f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                            f"platform '{p.id}' segment width {seg_w} requires SIZEP={exp_sz}, got {sizep_vals[ch_p_check]}."
+                        )
+                    ch_p_check += 1
+
+        # 6. SIZEM matches missile platforms
+        if missile_plats:
+            has_32 = any(p.width == 32 for p in missile_plats)
+            if has_32 and dli_data.sizem[pas_idx] != 0xFF:
+                raise ValueError(
+                    f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                    f"missile platform width 32 px requires SIZEM=$FF, got ${dli_data.sizem[pas_idx]:02X}."
+                )
+        else:
+            if dli_data.sizem[pas_idx] != 0:
+                raise ValueError(
+                    f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                    f"no missile platforms in pas, expected SIZEM=$00, got ${dli_data.sizem[pas_idx]:02X}."
+                )
+
+        # 7. Every platform from JSON has matching start HPOS
+        all_hpos = [
+            dli_data.hpos_p1[pas_idx],
+            dli_data.hpos_p2[pas_idx],
+            dli_data.hpos_p3[pas_idx],
+            dli_data.hpos_m0[pas_idx],
+            dli_data.hpos_m1[pas_idx],
+            dli_data.hpos_m2[pas_idx],
+            dli_data.hpos_m3[pas_idx],
+        ]
+        for p in pas_plats:
+            expected_hpos = 48 + p.x
+            if expected_hpos not in all_hpos:
+                raise ValueError(
+                    f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                    f"platform '{p.id}' (x={p.x}, expected HPOS={expected_hpos}) has no corresponding HPOS in generated data: {all_hpos}."
+                )
+
+
 def compile_scene_dli_data(
     elements: list[SceneElementData],
     platforms: list[PlatformData],
     objects: list[SceneObjectData],
     primary_tileset_id: int,
+    scene_name: str = "",
 ) -> SceneDliCompiledData:
     """Compile platform channels, profiles, palettes, and zones for unified DLI."""
     # 1. Determine background palettes
@@ -230,51 +371,69 @@ def compile_scene_dli_data(
     hpos_p1 = [0] * 6
     hpos_p2 = [0] * 6
     hpos_p3 = [0] * 6
+    hpos_m0 = [0] * 6
     hpos_m1 = [0] * 6
     hpos_m2 = [0] * 6
     hpos_m3 = [0] * 6
+
+    sizep1 = [0] * 6
+    sizep2 = [0] * 6
+    sizep3 = [0] * 6
+    sizem = [0] * 6
 
     pas_c1_sl = [[0] * 6 for _ in range(8)]
     pas_c2_sl = [[0] * 6 for _ in range(8)]
     pas_c3_sl = [[0] * 6 for _ in range(8)]
 
+    hpos_p_all = [hpos_p1, hpos_p2, hpos_p3]
+    hpos_m_all = [hpos_m0, hpos_m1, hpos_m2, hpos_m3]
+    sizep_all = [sizep1, sizep2, sizep3]
+    pas_c_all = [pas_c1_sl, pas_c2_sl, pas_c3_sl]
+
     for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
         pas_platforms = [p for p in platforms if p.y == pas_y]
-        channels: list[list[PlatformData]] = []
-        profile_map: dict[Any, list[PlatformData]] = {}
-        for p in pas_platforms:
-            prof_key = p.color_profile_id if p.color_profile_id is not None else id(p)
-            profile_map.setdefault(prof_key, []).append(p)
-        for prof_plats in profile_map.values():
-            if len(channels) < 3:
-                channels.append(prof_plats)
 
-        for ch_idx, ch_plats in enumerate(channels):
-            ch_colors = ch_plats[0].colors if ch_plats else [0] * 8
-            if ch_idx == 0:
-                for sl in range(8):
-                    pas_c1_sl[sl][pas_idx] = ch_colors[sl]
-                for p in ch_plats:
-                    if p.type_code == 1 or p.width <= 8:
-                        hpos_m1[pas_idx] = min(255, max(0, 48 + p.x))
-                    else:
-                        hpos_p1[pas_idx] = min(255, max(0, 48 + p.x))
-            elif ch_idx == 1:
-                for sl in range(8):
-                    pas_c2_sl[sl][pas_idx] = ch_colors[sl]
-                for p in ch_plats:
-                    if p.type_code == 1 or p.width <= 8:
-                        hpos_m2[pas_idx] = min(255, max(0, 48 + p.x))
-                    else:
-                        hpos_p2[pas_idx] = min(255, max(0, 48 + p.x))
-            elif ch_idx == 2:
-                for sl in range(8):
-                    pas_c3_sl[sl][pas_idx] = ch_colors[sl]
-                for p in ch_plats:
-                    if p.type_code == 1 or p.width <= 8:
-                        hpos_m3[pas_idx] = min(255, max(0, 48 + p.x))
-                    else:
-                        hpos_p3[pas_idx] = min(255, max(0, 48 + p.x))
+        sprite_plats = sorted([p for p in pas_platforms if p.type_code == 0], key=lambda p: p.x)
+        missile_plats = sorted([p for p in pas_platforms if p.type_code == 1], key=lambda p: p.x)
+
+        ch_p = 0
+        ch_m = 0
+
+        # Assign sprite platforms
+        for p in sprite_plats:
+            if p.width not in SUPPORTED_SPRITE_WIDTHS:
+                raise ValueError(
+                    f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                    f"platform '{p.id}' has unsupported width {p.width} px (supported: 8, 16, 24, 32, 48, 64, 96)."
+                )
+            seg_offset = 0
+            for seg_w, p_sizep in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                if ch_p < 3:
+                    hpos_p_all[ch_p][pas_idx] = min(255, max(0, 48 + p.x + seg_offset))
+                    sizep_all[ch_p][pas_idx] = p_sizep
+                    for sl in range(8):
+                        pas_c_all[ch_p][sl][pas_idx] = p.colors[sl]
+                    ch_p += 1
+                seg_offset += seg_w
+
+        # Assign missile platforms
+        for p in missile_plats:
+            if p.width == 32:
+                for ms in range(4):
+                    if ch_m < 4:
+                        hpos_m_all[ch_m][pas_idx] = min(255, max(0, 48 + p.x + ms * 8))
+                        ch_m += 1
+                sizem[pas_idx] = 0xFF
+            elif p.width == 8:
+                if ch_m < 4:
+                    hpos_m_all[ch_m][pas_idx] = min(255, max(0, 48 + p.x))
+                    sizem[pas_idx] |= (3 << (ch_m * 2))
+                    ch_m += 1
+            else:
+                raise ValueError(
+                    f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                    f"missile platform '{p.id}' has unsupported width {p.width} px (supported: 8, 32)."
+                )
 
     # 3. Compile enemies and secrets for 7 zones
     def get_zone_idx(y: int) -> int:
@@ -368,13 +527,18 @@ def compile_scene_dli_data(
         else:
             zone_prior[z_idx] = 0x01
 
-    return SceneDliCompiledData(
+    compiled_dli = SceneDliCompiledData(
         hpos_p1=hpos_p1,
         hpos_p2=hpos_p2,
         hpos_p3=hpos_p3,
+        hpos_m0=hpos_m0,
         hpos_m1=hpos_m1,
         hpos_m2=hpos_m2,
         hpos_m3=hpos_m3,
+        sizep1=sizep1,
+        sizep2=sizep2,
+        sizep3=sizep3,
+        sizem=sizem,
         bg_colpf0=bg_colpf0,
         bg_colpf1=bg_colpf1,
         bg_colpf2=bg_colpf2,
@@ -409,6 +573,9 @@ def compile_scene_dli_data(
         z0_colpf1=upper_palette[1],
         z0_colpf2=upper_palette[2],
     )
+
+    validate_scene_dli_platforms(platforms, compiled_dli, scene_name)
+    return compiled_dli
 
 
 @dataclass
@@ -450,7 +617,49 @@ def load_catalogues(
     enemies_file: Path, secrets_file: Path
 ) -> tuple[dict[int, CatalogueItem], dict[int, CatalogueItem]]:
     """Load enemies and secrets definitions for attribute and color resolution."""
+    # Check if enemies_file is or points to unified definitions.json
+    def_file: Optional[Path] = None
+    if enemies_file.name == "definitions.json" and enemies_file.is_file():
+        def_file = enemies_file
+    elif (enemies_file.parent / "definitions.json").is_file() and not enemies_file.is_file():
+        def_file = enemies_file.parent / "definitions.json"
+    elif (Path("scenes") / "definitions.json").is_file() and not enemies_file.is_file():
+        def_file = Path("scenes") / "definitions.json"
+
     enemies: dict[int, CatalogueItem] = {}
+    secrets: dict[int, CatalogueItem] = {}
+
+    if def_file and def_file.is_file():
+        try:
+            data = json.loads(def_file.read_text(encoding="utf-8"))
+            for item in data.get("enemies", []):
+                enemies[item["id"]] = CatalogueItem(
+                    id=item["id"],
+                    name=item.get("name", f"Enemy {item['id']}"),
+                    atari_color=item.get("atari_color", 0x42),
+                    blink=bool(item.get("blink", False)),
+                )
+            for item in data.get("secrets", []):
+                raw_dep = item.get("dependency")
+                dep = int(raw_dep) if (raw_dep is not None and str(raw_dep).strip() != "") else None
+                secrets[item["id"]] = CatalogueItem(
+                    id=item["id"],
+                    name=item.get("name", f"Secret {item['id']}"),
+                    atari_color=item.get("atari_color", 0x1A),
+                    blink=bool(item.get("blink", False)),
+                    dependency=dep,
+                )
+            return enemies, secrets
+        except Exception as exc:
+            print(f"Warning: Failed loading definitions catalog ({exc})", file=sys.stderr)
+
+    if not enemies_file.is_file():
+        alt_e = enemies_file.parent / "scenes" / enemies_file.name
+        if alt_e.is_file():
+            enemies_file = alt_e
+        elif (Path("scenes") / enemies_file.name).is_file():
+            enemies_file = Path("scenes") / enemies_file.name
+
     if enemies_file.is_file():
         try:
             data = json.loads(enemies_file.read_text(encoding="utf-8"))
@@ -464,7 +673,13 @@ def load_catalogues(
         except Exception as exc:
             print(f"Warning: Failed loading enemies catalog ({exc})", file=sys.stderr)
 
-    secrets: dict[int, CatalogueItem] = {}
+    if not secrets_file.is_file():
+        alt_s = secrets_file.parent / "scenes" / secrets_file.name
+        if alt_s.is_file():
+            secrets_file = alt_s
+        elif (Path("scenes") / secrets_file.name).is_file():
+            secrets_file = Path("scenes") / secrets_file.name
+
     if secrets_file.is_file():
         try:
             data = json.loads(secrets_file.read_text(encoding="utf-8"))
@@ -489,10 +704,23 @@ DEFAULT_PLATFORM_COLORS: list[int] = [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 
 
 def load_platform_profiles(profiles_file: Path) -> dict[int, list[int]]:
     """Load platform color profiles (8 scanline GTIA color bytes each)."""
+    target_file = profiles_file
+    if not target_file.is_file():
+        if (profiles_file.parent / "definitions.json").is_file():
+            target_file = profiles_file.parent / "definitions.json"
+        elif (Path("scenes") / "definitions.json").is_file():
+            target_file = Path("scenes") / "definitions.json"
+        else:
+            alt_p = target_file.parent / "scenes" / target_file.name
+            if alt_p.is_file():
+                target_file = alt_p
+            elif (Path("scenes") / target_file.name).is_file():
+                target_file = Path("scenes") / target_file.name
+
     profiles: dict[int, list[int]] = {}
-    if profiles_file.is_file():
+    if target_file.is_file():
         try:
-            data = json.loads(profiles_file.read_text(encoding="utf-8"))
+            data = json.loads(target_file.read_text(encoding="utf-8"))
             items = []
             if isinstance(data, dict):
                 items = data.get("profiles") or data.get("platform_profiles", [])
@@ -701,7 +929,7 @@ def parse_scene_json(
             )
         )
 
-    dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id)
+    dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id, scene_name=name)
 
     return SceneCompiledData(
         file_stem=stem,
@@ -1031,8 +1259,8 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
         "; ==============================================================================",
         "; SCENES DLI DATA — CALL OF THE WINTERMON (Auto-generated by compile_scenes.py)",
         "; Target: Atari 800XL / 65XE (MOS 6502, ANTIC Mode D 160x96 2bpp)",
-        "; Format: 285 bytes per scene (45 tables x 6 bytes + 15 bytes Zone 0)",
-        "; Segment: Loaded under RENDER_TABLES segment ($7A00)",
+        "; Format: 315 bytes per scene (50 tables x 6 bytes + 15 bytes Zone 0)",
+        "; Segment: Loaded under RENDER_TABLES segment ($79D0)",
         "; ==============================================================================",
         "",
     ]
@@ -1040,35 +1268,42 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
     for sc in scenes:
         sym = sc.symbol_name
         dli = sc.dli_data
-        lines.append(f"; --- DLI Data for {sc.name} (285 bytes) ---")
+        lines.append(f"; --- DLI Data for {sc.name} (315 bytes) ---")
         lines.append(f"scene_{sym}_dli_data")
         if dli:
-            lines.append("    ; 1..6: Platform HPOSP1..3 and HPOSM1..3 (6 bytes each)")
+            lines.append("    ; 1..7: Platform HPOSP1..3 and HPOSM0..3 (6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p2))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_p3))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m0))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m2))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.hpos_m3))
 
-            lines.append("    ; 7..9: Background Palettes COLPF0..2 (6 bytes each)")
+            lines.append("    ; 8..11: Platform SIZEP1..3 and SIZEM (6 bytes each)")
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.sizep1))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.sizep2))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.sizep3))
+            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.sizem))
+
+            lines.append("    ; 12..14: Background Palettes COLPF0..2 (6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf0))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf2))
 
-            lines.append("    ; 10..17: Platform Channel 1 Scanlines 0..7 (6 bytes each)")
+            lines.append("    ; 15..22: Platform Channel 1 Scanlines 0..7 (6 bytes each)")
             for sl in range(8):
                 lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c1_sl[sl]))
 
-            lines.append("    ; 18..25: Platform Channel 2 Scanlines 0..7 (6 bytes each)")
+            lines.append("    ; 23..30: Platform Channel 2 Scanlines 0..7 (6 bytes each)")
             for sl in range(8):
                 lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c2_sl[sl]))
 
-            lines.append("    ; 26..33: Platform Channel 3 Scanlines 0..7 (6 bytes each)")
+            lines.append("    ; 31..38: Platform Channel 3 Scanlines 0..7 (6 bytes each)")
             for sl in range(8):
                 lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c3_sl[sl]))
 
-            lines.append("    ; 34..39: Zone Enemies HPOS and Color (P1..P3, 6 bytes each)")
+            lines.append("    ; 39..44: Zone Enemies HPOS and Color (P1..P3, 6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p2))
@@ -1076,7 +1311,7 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p3))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p3))
 
-            lines.append("    ; 40..45: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
+            lines.append("    ; 45..50: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m0))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m2))
@@ -1092,7 +1327,7 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             ]
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in z0_vals))
         else:
-            lines.append("    :285 .byte 0")
+            lines.append("    :315 .byte 0")
         lines.append("")
 
     lines.extend([
@@ -1116,6 +1351,7 @@ def compile_scenes(
     enemies_path: Path | None = None,
     secrets_path: Path | None = None,
     profiles_path: Path | None = None,
+    definitions_path: Path | None = None,
 ) -> int:
     """Main compilation pipeline: parse manifest, compile scene JSONs, emit ASM."""
     if not manifest_path.is_file():
@@ -1123,11 +1359,33 @@ def compile_scenes(
         return 1
 
     sdir = scenes_dir or manifest_path.parent
-    efile = enemies_path or (manifest_path.parent.parent / "enemies.json")
-    sfile = secrets_path or (manifest_path.parent.parent / "secrets.json")
-    pfile = profiles_path or (manifest_path.parent.parent / "platform_profiles.json")
+    dfile = definitions_path or (sdir / "definitions.json")
+    if not dfile.is_file():
+        if (manifest_path.parent.parent / "scenes" / "definitions.json").is_file():
+            dfile = manifest_path.parent.parent / "scenes" / "definitions.json"
+        elif Path("scenes/definitions.json").is_file():
+            dfile = Path("scenes/definitions.json")
+
+    efile = enemies_path or (dfile if dfile.is_file() else (sdir / "enemies.json"))
+    if not efile.is_file():
+        if (manifest_path.parent.parent / "scenes" / "enemies.json").is_file():
+            efile = manifest_path.parent.parent / "scenes" / "enemies.json"
+        elif Path("scenes/enemies.json").is_file():
+            efile = Path("scenes/enemies.json")
+
+    sfile = secrets_path or (dfile if dfile.is_file() else (sdir / "secrets.json"))
+    if not sfile.is_file():
+        if (manifest_path.parent.parent / "scenes" / "secrets.json").is_file():
+            sfile = manifest_path.parent.parent / "scenes" / "secrets.json"
+        elif Path("scenes/secrets.json").is_file():
+            sfile = Path("scenes/secrets.json")
+
+    pfile = profiles_path or (dfile if dfile.is_file() else (sdir / "platform_profiles.json"))
     if not pfile.is_file():
-        pfile = Path("platform_profiles.json")
+        if (manifest_path.parent.parent / "scenes" / "platform_profiles.json").is_file():
+            pfile = manifest_path.parent.parent / "scenes" / "platform_profiles.json"
+        elif Path("scenes/platform_profiles.json").is_file():
+            pfile = Path("scenes/platform_profiles.json")
 
     enemies, secrets = load_catalogues(efile, sfile)
     profiles = load_platform_profiles(pfile)
@@ -1196,23 +1454,30 @@ def main() -> int:
         help="Directory containing scene JSON files (defaults to manifest parent)",
     )
     parser.add_argument(
+        "--definitions",
+        "-d",
+        type=Path,
+        default=Path("scenes/definitions.json"),
+        help="Path to unified definitions.json catalogue",
+    )
+    parser.add_argument(
         "--enemies",
         type=Path,
-        default=Path("enemies.json"),
-        help="Path to enemies.json catalogue",
+        default=None,
+        help="Path to legacy enemies.json catalogue",
     )
     parser.add_argument(
         "--secrets",
         type=Path,
-        default=Path("secrets.json"),
-        help="Path to secrets.json catalogue",
+        default=None,
+        help="Path to legacy secrets.json catalogue",
     )
     parser.add_argument(
         "--profiles",
         "-p",
         type=Path,
-        default=Path("platform_profiles.json"),
-        help="Path to platform_profiles.json catalogue",
+        default=None,
+        help="Path to legacy platform_profiles.json catalogue",
     )
 
     args = parser.parse_args()
@@ -1223,6 +1488,7 @@ def main() -> int:
         enemies_path=args.enemies,
         secrets_path=args.secrets,
         profiles_path=args.profiles,
+        definitions_path=args.definitions,
     )
 
 

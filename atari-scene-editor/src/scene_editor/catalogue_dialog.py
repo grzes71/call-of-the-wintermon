@@ -908,52 +908,52 @@ class CataloguesDialog(QDialog):
     def _on_save_json_clicked(self) -> None:
         try:
             self.catalogues.save_to_dir(self.base_dir)
-            enemies_path, secrets_path = self.catalogues.get_effective_paths(self.base_dir)
-            profiles_path = self.catalogues.get_effective_platform_profiles_path(self.base_dir)
+            def_path = self.catalogues.get_effective_definitions_path(self.base_dir)
             QMessageBox.information(
                 self,
                 "Catalogues Saved",
-                f"Catalogues saved successfully to:\n• {enemies_path}\n• {secrets_path}\n• {profiles_path}",
+                f"Catalogues saved successfully to:\n• {def_path}",
             )
         except Exception as err:
             QMessageBox.critical(self, "Save Error", f"Failed to save catalogues:\n{err}")
 
     def _on_configure_paths_clicked(self) -> None:
-        cur_e, cur_s = self.catalogues.get_effective_paths(self.base_dir)
+        cur_def = self.catalogues.get_effective_definitions_path(self.base_dir)
         dlg = CataloguePathsDialog(
             base_dir=self.base_dir or Path.cwd(),
-            current_enemies_path=cur_e,
-            current_secrets_path=cur_s,
+            current_definitions_path=cur_def,
             parent=self,
         )
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            enemies_path, secrets_path, reload_now = dlg.get_paths()
-            self.catalogues.set_paths(enemies_path, secrets_path)
+            def_path, reload_now = dlg.get_definitions_path()
+            self.catalogues.set_paths(definitions_path=def_path)
             if reload_now:
                 try:
-                    reloaded = ProjectCatalogues.load_from_paths(enemies_path, secrets_path)
+                    reloaded = ProjectCatalogues.load_from_paths(definitions_path=def_path)
                     self.catalogues.enemies = reloaded.enemies
                     self.catalogues.secrets = reloaded.secrets
+                    self.catalogues.platform_profiles = reloaded.platform_profiles
                     self._refresh_enemies_list()
                     self._refresh_secrets_list()
+                    self._refresh_profiles_list()
                     self.catalogues_changed.emit()
                     QMessageBox.information(
                         self,
-                        "Catalogue Paths Updated",
-                        f"Catalogue paths updated successfully:\n• Enemies: {enemies_path}\n• Secrets: {secrets_path}\n\nDefinitions reloaded.",
+                        "Catalogue Path Updated",
+                        f"Catalogue definitions path updated successfully:\n• {def_path}\n\nDefinitions reloaded.",
                     )
                 except Exception as err:
                     QMessageBox.warning(
                         self,
-                        "Catalogue Paths Updated",
-                        f"Catalogue paths updated to:\n• {enemies_path}\n• {secrets_path}\n\n"
+                        "Catalogue Path Updated",
+                        f"Catalogue path updated to:\n• {def_path}\n\n"
                         f"Notice during reload: {err}",
                     )
             else:
                 QMessageBox.information(
                     self,
-                    "Catalogue Paths Updated",
-                    f"Catalogue paths updated successfully:\n• Enemies: {enemies_path}\n• Secrets: {secrets_path}",
+                    "Catalogue Path Updated",
+                    f"Catalogue path updated successfully:\n• {def_path}",
                 )
 
     # -------------------------------------------------------------------------
@@ -1276,6 +1276,8 @@ class CataloguesDialog(QDialog):
         )
         self.catalogues.add_platform_profile(new_prof)
         self._refresh_profiles_list(select_id=new_id)
+        if self.base_dir:
+            self.catalogues.save_to_dir(self.base_dir)
         self.catalogues_changed.emit()
 
     def _on_duplicate_profile_clicked(self) -> None:
@@ -1285,6 +1287,8 @@ class CataloguesDialog(QDialog):
         prof_id = cur_item.data(Qt.ItemDataRole.UserRole)
         copied = self.catalogues.duplicate_platform_profile(prof_id)
         self._refresh_profiles_list(select_id=copied.id)
+        if self.base_dir:
+            self.catalogues.save_to_dir(self.base_dir)
         self.catalogues_changed.emit()
 
     def _on_delete_profile_clicked(self) -> None:
@@ -1325,6 +1329,8 @@ class CataloguesDialog(QDialog):
             self.catalogues.remove_platform_profile(prof_id)
 
         self._refresh_profiles_list()
+        if self.base_dir:
+            self.catalogues.save_to_dir(self.base_dir)
         self.catalogues_changed.emit()
 
     def _on_revert_profile_clicked(self) -> None:
@@ -1379,37 +1385,40 @@ class CataloguesDialog(QDialog):
         )
         self.catalogues.platform_profiles[new_id] = updated_prof
         self._refresh_profiles_list(select_id=new_id)
+        if self.base_dir:
+            self.catalogues.save_to_dir(self.base_dir)
         self.catalogues_changed.emit()
 
 
 class CataloguePathsDialog(QDialog):
-    """Dialog allowing users to configure custom file paths for enemies.json and secrets.json."""
+    """Dialog allowing users to configure file path for definitions.json."""
 
     def __init__(
         self,
         base_dir: Path | str,
+        current_definitions_path: Optional[Path | str] = None,
+        parent: Optional[QWidget] = None,
         current_enemies_path: Optional[Path | str] = None,
         current_secrets_path: Optional[Path | str] = None,
-        parent: Optional[QWidget] = None,
+        current_profiles_path: Optional[Path | str] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Configure Catalogue Paths")
-        self.resize(600, 220)
+        self.setWindowTitle("Configure Catalogue Definitions Path")
+        self.resize(600, 180)
         self.setModal(True)
 
         self.base_dir = Path(base_dir).resolve()
-        default_enemies, default_secrets = ProjectCatalogues.find_catalogue_paths(self.base_dir)
-        self.default_enemies = default_enemies
-        self.default_secrets = default_secrets
+        default_def = ProjectCatalogues.find_definitions_path(self.base_dir)
+        self.default_definitions = default_def
 
-        cur_e = Path(current_enemies_path).resolve() if current_enemies_path else default_enemies
-        cur_s = Path(current_secrets_path).resolve() if current_secrets_path else default_secrets
+        cur_def = current_definitions_path or current_enemies_path or default_def
+        self.cur_def = Path(cur_def).resolve() if cur_def else default_def
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
         desc_lbl = QLabel(
-            "Configure default JSON file paths for Enemies and Secrets definitions.\n"
+            "Configure default JSON file path for game definitions (enemies, secrets, and platform profiles).\n"
             "Relative paths will be resolved relative to the project root directory."
         )
         desc_lbl.setWordWrap(True)
@@ -1418,39 +1427,32 @@ class CataloguePathsDialog(QDialog):
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        # Enemies Path
-        enemies_row = QWidget()
-        er_layout = QHBoxLayout(enemies_row)
-        er_layout.setContentsMargins(0, 0, 0, 0)
-        self.edit_enemies = QLineEdit(str(cur_e))
-        btn_browse_enemies = QPushButton("Browse...")
-        btn_browse_enemies.clicked.connect(self._browse_enemies)
-        er_layout.addWidget(self.edit_enemies, stretch=1)
-        er_layout.addWidget(btn_browse_enemies)
-        form_layout.addRow("Enemies JSON Path:", enemies_row)
+        # Definitions Path
+        def_row = QWidget()
+        dr_layout = QHBoxLayout(def_row)
+        dr_layout.setContentsMargins(0, 0, 0, 0)
+        self.edit_definitions = QLineEdit(str(self.cur_def))
+        self.edit_enemies = self.edit_definitions
+        self.edit_secrets = self.edit_definitions
+        self.edit_profiles = self.edit_definitions
 
-        # Secrets Path
-        secrets_row = QWidget()
-        sr_layout = QHBoxLayout(secrets_row)
-        sr_layout.setContentsMargins(0, 0, 0, 0)
-        self.edit_secrets = QLineEdit(str(cur_s))
-        btn_browse_secrets = QPushButton("Browse...")
-        btn_browse_secrets.clicked.connect(self._browse_secrets)
-        sr_layout.addWidget(self.edit_secrets, stretch=1)
-        sr_layout.addWidget(btn_browse_secrets)
-        form_layout.addRow("Secrets JSON Path:", secrets_row)
+        btn_browse_definitions = QPushButton("Browse...")
+        btn_browse_definitions.clicked.connect(self._browse_definitions)
+        dr_layout.addWidget(self.edit_definitions, stretch=1)
+        dr_layout.addWidget(btn_browse_definitions)
+        form_layout.addRow("Definitions JSON Path:", def_row)
 
         layout.addLayout(form_layout)
 
         # Reload option
-        self.chk_reload = QCheckBox("Reload definitions from these paths immediately")
+        self.chk_reload = QCheckBox("Reload definitions immediately")
         self.chk_reload.setChecked(True)
         layout.addWidget(self.chk_reload)
 
         # Bottom buttons
         btn_layout = QHBoxLayout()
-        btn_reset = QPushButton("Reset to Defaults")
-        btn_reset.setToolTip("Reset paths to standard project location")
+        btn_reset = QPushButton("Reset to Default")
+        btn_reset.setToolTip("Reset path to standard project location (scenes/definitions.json)")
         btn_reset.clicked.connect(self._reset_defaults)
         btn_layout.addWidget(btn_reset)
 
@@ -1465,45 +1467,33 @@ class CataloguePathsDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    def _browse_enemies(self) -> None:
-        start = self.edit_enemies.text().strip() or str(self.default_enemies)
+    def _browse_definitions(self) -> None:
+        start = self.edit_definitions.text().strip() or str(self.default_definitions)
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Select Enemies JSON File",
+            "Select Definitions JSON File",
             start,
             "JSON Files (*.json);;All Files (*)",
         )
         if path:
-            self.edit_enemies.setText(path)
-
-    def _browse_secrets(self) -> None:
-        start = self.edit_secrets.text().strip() or str(self.default_secrets)
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Select Secrets JSON File",
-            start,
-            "JSON Files (*.json);;All Files (*)",
-        )
-        if path:
-            self.edit_secrets.setText(path)
+            self.edit_definitions.setText(path)
 
     def _reset_defaults(self) -> None:
-        self.edit_enemies.setText(str(self.default_enemies))
-        self.edit_secrets.setText(str(self.default_secrets))
+        self.edit_definitions.setText(str(self.default_definitions))
 
     def _on_accept(self) -> None:
-        e_text = self.edit_enemies.text().strip()
-        s_text = self.edit_secrets.text().strip()
-        if not e_text or not s_text:
-            QMessageBox.warning(self, "Invalid Path", "Both file paths must be specified.")
+        d_text = self.edit_definitions.text().strip()
+        if not d_text:
+            QMessageBox.warning(self, "Invalid Path", "File path must be specified.")
             return
         self.accept()
 
-    def get_paths(self) -> tuple[Path, Path, bool]:
-        e_path = Path(self.edit_enemies.text().strip())
-        s_path = Path(self.edit_secrets.text().strip())
-        if not e_path.is_absolute():
-            e_path = (self.base_dir / e_path).resolve()
-        if not s_path.is_absolute():
-            s_path = (self.base_dir / s_path).resolve()
-        return e_path, s_path, self.chk_reload.isChecked()
+    def get_definitions_path(self) -> tuple[Path, bool]:
+        d_path = Path(self.edit_definitions.text().strip())
+        if not d_path.is_absolute():
+            d_path = (self.base_dir / d_path).resolve()
+        return d_path, self.chk_reload.isChecked()
+
+    def get_paths(self) -> tuple[Path, Path, Path, bool]:
+        d_path, reload_now = self.get_definitions_path()
+        return d_path, d_path, d_path, reload_now

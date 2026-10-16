@@ -334,6 +334,7 @@ class ProjectCatalogues:
     enemies: dict[int, EnemyDefinition] = field(default_factory=dict)
     secrets: dict[int, SecretDefinition] = field(default_factory=dict)
     platform_profiles: dict[int, PlatformColorProfile] = field(default_factory=dict)
+    definitions_path: Optional[Path] = None
     enemies_path: Optional[Path] = None
     secrets_path: Optional[Path] = None
     platform_profiles_path: Optional[Path] = None
@@ -783,44 +784,82 @@ class ProjectCatalogues:
     # Persistence: enemies.json, secrets.json & platform_profiles.json
     # -------------------------------------------------------------------------
     @classmethod
-    def find_catalogue_paths(cls, base_dir: Path | str) -> tuple[Path, Path]:
-        """Locate enemies.json and secrets.json in base_dir or base_dir/data."""
+    def find_definitions_path(cls, base_dir: Path | str) -> Path:
+        """Locate definitions.json in base_dir/scenes, base_dir, or base_dir/data."""
         base = Path(base_dir).resolve()
+        scenes_dir = base / "scenes"
         data_dir = base / "data"
-        if (data_dir / "enemies.json").is_file() or (data_dir / "secrets.json").is_file():
-            return data_dir / "enemies.json", data_dir / "secrets.json"
+        if (scenes_dir / "definitions.json").is_file():
+            return scenes_dir / "definitions.json"
+        if (base / "definitions.json").is_file():
+            return base / "definitions.json"
+        if (data_dir / "definitions.json").is_file():
+            return data_dir / "definitions.json"
+        if scenes_dir.is_dir():
+            return scenes_dir / "definitions.json"
+        if data_dir.is_dir():
+            return data_dir / "definitions.json"
+        return scenes_dir / "definitions.json"
+
+    @classmethod
+    def find_catalogue_paths(cls, base_dir: Path | str) -> tuple[Path, Path]:
+        """Locate definitions or legacy enemies.json and secrets.json."""
+        base = Path(base_dir).resolve()
+        scenes_dir = base / "scenes"
+        data_dir = base / "data"
+        def_path = cls.find_definitions_path(base)
+        if def_path.is_file():
+            return def_path, def_path
+        if (scenes_dir / "enemies.json").is_file() or (scenes_dir / "secrets.json").is_file():
+            return scenes_dir / "enemies.json", scenes_dir / "secrets.json"
         if (base / "enemies.json").is_file() or (base / "secrets.json").is_file():
             return base / "enemies.json", base / "secrets.json"
-        if data_dir.is_dir():
+        if (data_dir / "enemies.json").is_file() or (data_dir / "secrets.json").is_file():
             return data_dir / "enemies.json", data_dir / "secrets.json"
-        return base / "enemies.json", base / "secrets.json"
+        return def_path, def_path
 
     @classmethod
     def find_platform_profiles_path(cls, base_dir: Path | str) -> Path:
-        """Locate platform_profiles.json in base_dir or base_dir/data."""
+        """Locate definitions or legacy platform_profiles.json."""
         base = Path(base_dir).resolve()
+        scenes_dir = base / "scenes"
         data_dir = base / "data"
-        if (data_dir / "platform_profiles.json").is_file():
-            return data_dir / "platform_profiles.json"
+        def_path = cls.find_definitions_path(base)
+        if def_path.is_file():
+            return def_path
+        if (scenes_dir / "platform_profiles.json").is_file():
+            return scenes_dir / "platform_profiles.json"
         if (base / "platform_profiles.json").is_file():
             return base / "platform_profiles.json"
-        if data_dir.is_dir():
+        if (data_dir / "platform_profiles.json").is_file():
             return data_dir / "platform_profiles.json"
-        return base / "platform_profiles.json"
+        return def_path
 
     def set_paths(
         self,
-        enemies_path: Optional[Path | str],
-        secrets_path: Optional[Path | str],
+        enemies_path: Optional[Path | str] = None,
+        secrets_path: Optional[Path | str] = None,
         platform_profiles_path: Optional[Path | str] = None,
+        definitions_path: Optional[Path | str] = None,
     ) -> None:
         """Set explicit file paths for catalogues."""
+        self.definitions_path = Path(definitions_path).resolve() if definitions_path else None
         self.enemies_path = Path(enemies_path).resolve() if enemies_path else None
         self.secrets_path = Path(secrets_path).resolve() if secrets_path else None
         self.platform_profiles_path = Path(platform_profiles_path).resolve() if platform_profiles_path else None
+        if self.definitions_path is None and self.enemies_path and self.enemies_path == self.secrets_path:
+            self.definitions_path = self.enemies_path
+
+    def get_effective_definitions_path(self, base_dir: Path | str | None = None) -> Path:
+        """Return the effective definitions_path."""
+        if self.definitions_path is not None:
+            return self.definitions_path
+        return self.find_definitions_path(base_dir or Path.cwd())
 
     def get_effective_paths(self, base_dir: Path | str | None = None) -> tuple[Path, Path]:
         """Return the effective (enemies_path, secrets_path)."""
+        if self.definitions_path is not None:
+            return self.definitions_path, self.definitions_path
         default_enemies, default_secrets = self.find_catalogue_paths(base_dir or Path.cwd())
         eff_enemies = self.enemies_path if self.enemies_path is not None else default_enemies
         eff_secrets = self.secrets_path if self.secrets_path is not None else default_secrets
@@ -828,6 +867,8 @@ class ProjectCatalogues:
 
     def get_effective_platform_profiles_path(self, base_dir: Path | str | None = None) -> Path:
         """Return the effective platform_profiles_path."""
+        if self.definitions_path is not None:
+            return self.definitions_path
         if self.platform_profiles_path is not None:
             return self.platform_profiles_path
         return self.find_platform_profiles_path(base_dir or Path.cwd())
@@ -838,13 +879,82 @@ class ProjectCatalogues:
         enemies_path: Optional[Path | str] = None,
         secrets_path: Optional[Path | str] = None,
         platform_profiles_path: Optional[Path | str] = None,
+        definitions_path: Optional[Path | str] = None,
     ) -> ProjectCatalogues:
-        """Load catalogues from specific file paths."""
+        """Load catalogues from specific file path(s)."""
+        d_path = Path(definitions_path).resolve() if definitions_path else None
         e_path = Path(enemies_path).resolve() if enemies_path else None
         s_path = Path(secrets_path).resolve() if secrets_path else None
         p_path = Path(platform_profiles_path).resolve() if platform_profiles_path else None
-        catalogues = cls(enemies_path=e_path, secrets_path=s_path, platform_profiles_path=p_path)
 
+        if d_path is None and e_path and e_path == s_path:
+            d_path = e_path
+
+        catalogues = cls(
+            definitions_path=d_path,
+            enemies_path=e_path,
+            secrets_path=s_path,
+            platform_profiles_path=p_path,
+        )
+
+        # 1. Load from unified definitions.json if present
+        if d_path and d_path.is_file():
+            try:
+                with open(d_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if not content:
+                    raise CorruptedCatalogueFileError(f"Definitions file is empty: {d_path}")
+                data = json.loads(content)
+            except json.JSONDecodeError as err:
+                raise CorruptedCatalogueFileError(f"Invalid JSON in {d_path.name}: {err}") from err
+
+            if not isinstance(data, dict):
+                raise CorruptedCatalogueFileError(f"Top-level JSON in {d_path.name} must be an object.")
+
+            # Load enemies
+            for idx, item in enumerate(data.get("enemies", [])):
+                try:
+                    defn = EnemyDefinition.from_dict(item)
+                    if defn.id in catalogues.enemies:
+                        raise DuplicateDefinitionIdError(f"Duplicate enemy ID '{defn.id}' in {d_path.name}.")
+                    catalogues.enemies[defn.id] = defn
+                except Exception as err:
+                    raise CorruptedCatalogueFileError(f"Error in {d_path.name} enemies at entry {idx}: {err}") from err
+
+            # Load secrets
+            for idx, item in enumerate(data.get("secrets", [])):
+                try:
+                    defn = SecretDefinition.from_dict(item)
+                    if defn.id in catalogues.secrets:
+                        raise DuplicateDefinitionIdError(f"Duplicate secret ID '{defn.id}' in {d_path.name}.")
+                    catalogues.secrets[defn.id] = defn
+                except Exception as err:
+                    raise CorruptedCatalogueFileError(f"Error in {d_path.name} secrets at entry {idx}: {err}") from err
+
+            try:
+                catalogues.validate_secrets_chain()
+            except Exception as err:
+                raise CorruptedCatalogueFileError(f"Invalid secret dependency chain in {d_path.name}: {err}") from err
+
+            # Load platform profiles
+            raw_profiles = data.get("platform_profiles") or data.get("profiles", [])
+            for idx, item in enumerate(raw_profiles):
+                try:
+                    prof = PlatformColorProfile.from_dict(item)
+                    if prof.id in catalogues.platform_profiles:
+                        raise DuplicateDefinitionIdError(f"Duplicate platform profile ID '{prof.id}' in {d_path.name}.")
+                    catalogues.platform_profiles[prof.id] = prof
+                except Exception as err:
+                    raise CorruptedCatalogueFileError(f"Error in {d_path.name} profiles at entry {idx}: {err}") from err
+
+            if not catalogues.platform_profiles:
+                for def_item in DEFAULT_PLATFORM_PROFILES:
+                    prof = PlatformColorProfile.from_dict(def_item)
+                    catalogues.platform_profiles[prof.id] = prof
+
+            return catalogues
+
+        # 2. Legacy fallback: separate individual files
         # Load enemies
         if e_path and e_path.is_file():
             try:
@@ -928,7 +1038,7 @@ class ProjectCatalogues:
             if not isinstance(data, dict):
                 raise CorruptedCatalogueFileError(f"Top-level JSON in {p_path.name} must be an object.")
 
-            profiles_list = data.get("profiles", [])
+            profiles_list = data.get("profiles") or data.get("platform_profiles", [])
             if not isinstance(profiles_list, list):
                 raise CorruptedCatalogueFileError(f"'profiles' key in {p_path.name} must be a list.")
 
@@ -945,7 +1055,6 @@ class ProjectCatalogues:
                         f"Error in {p_path.name} at entry {idx}: {err}"
                     ) from err
         else:
-            # Populate with built-in default platform profiles
             for def_item in DEFAULT_PLATFORM_PROFILES:
                 prof = PlatformColorProfile.from_dict(def_item)
                 catalogues.platform_profiles[prof.id] = prof
@@ -954,47 +1063,55 @@ class ProjectCatalogues:
 
     @classmethod
     def load_from_dir(cls, base_dir: Path | str) -> ProjectCatalogues:
-        """Load catalogues from directory."""
+        """Load catalogues from directory, preferring definitions.json."""
+        def_path = cls.find_definitions_path(base_dir)
+        if def_path.is_file():
+            return cls.load_from_paths(definitions_path=def_path)
         enemies_path, secrets_path = cls.find_catalogue_paths(base_dir)
         profiles_path = cls.find_platform_profiles_path(base_dir)
         return cls.load_from_paths(enemies_path, secrets_path, profiles_path)
 
     def save_to_dir(self, base_dir: Path | str | None = None) -> None:
-        """Atomically save all catalogues into enemies.json, secrets.json, and platform_profiles.json."""
-        enemies_path, secrets_path = self.get_effective_paths(base_dir)
-        profiles_path = self.get_effective_platform_profiles_path(base_dir)
-        enemies_path.parent.mkdir(parents=True, exist_ok=True)
-        secrets_path.parent.mkdir(parents=True, exist_ok=True)
-        profiles_path.parent.mkdir(parents=True, exist_ok=True)
+        """Atomically save all catalogues. If custom individual paths were set, save to those paths; otherwise save to definitions.json."""
+        if self.definitions_path is None and (self.enemies_path is not None or self.secrets_path is not None or self.platform_profiles_path is not None):
+            self.save_to_paths(
+                enemies_path=self.enemies_path,
+                secrets_path=self.secrets_path,
+                platform_profiles_path=self.platform_profiles_path,
+            )
+            return
 
-        # 1. Save enemies.json
-        enemies_data = {
+        def_path = self.get_effective_definitions_path(base_dir)
+        def_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
             "version": 1,
             "enemies": [e.to_dict() for e in sorted(self.enemies.values(), key=lambda e: e.id)],
-        }
-        self._atomic_save_json(enemies_path, enemies_data)
-
-        # 2. Save secrets.json
-        secrets_data = {
-            "version": 1,
             "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
+            "platform_profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
         }
-        self._atomic_save_json(secrets_path, secrets_data)
-
-        # 3. Save platform_profiles.json
-        profiles_data = {
-            "version": 1,
-            "profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
-        }
-        self._atomic_save_json(profiles_path, profiles_data)
+        self._atomic_save_json(def_path, data)
 
     def save_to_paths(
         self,
         enemies_path: Optional[Path | str] = None,
         secrets_path: Optional[Path | str] = None,
         platform_profiles_path: Optional[Path | str] = None,
+        definitions_path: Optional[Path | str] = None,
     ) -> None:
         """Atomically save catalogues to specific file paths if provided."""
+        if definitions_path is not None:
+            d_p = Path(definitions_path).resolve()
+            d_p.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "version": 1,
+                "enemies": [e.to_dict() for e in sorted(self.enemies.values(), key=lambda e: e.id)],
+                "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
+                "platform_profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
+            }
+            self._atomic_save_json(d_p, data)
+            return
+
+        # Legacy separate files save
         if enemies_path is not None:
             e_p = Path(enemies_path).resolve()
             e_p.parent.mkdir(parents=True, exist_ok=True)

@@ -2,6 +2,87 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-16] - Integration of Catalogues into Unified scenes/definitions.json
+
+- **Unified Catalogue Schema and File**:
+  - Combined `platform_profiles.json`, `enemies.json`, and `secrets.json` into a single file [scenes/definitions.json](scenes/definitions.json) containing `version`, `enemies`, `secrets`, and `platform_profiles`.
+  - Removed obsolete individual files (`enemies.json`, `secrets.json`, and `platform_profiles.json`).
+- **Atari Scene Editor Architecture**:
+  - In [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py), added `definitions_path` to `ProjectCatalogues`, updated `find_definitions_path()`, `load_from_paths()`, `load_from_dir()`, `save_to_dir()`, and `save_to_paths()` to default to and atomically persist [scenes/definitions.json](scenes/definitions.json) (while preserving fallback for legacy separate paths if explicitly supplied).
+  - In [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py), updated `CataloguePathsDialog` to configure the unified `definitions.json` path while providing backwards-compatible properties for existing consumers and tests.
+  - In [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), updated `save_catalogues_to_json()`, `save_catalogues_as()`, and `configure_catalogue_paths()` to read, write, and configure [scenes/definitions.json](scenes/definitions.json).
+- **Scene Compiler & Build Pipeline Integration**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), updated `load_catalogues()` and `load_platform_profiles()` to parse unified [scenes/definitions.json](scenes/definitions.json) directly.
+  - Added `--definitions` / `-d` argument (defaulting to `scenes/definitions.json`) to `compile_scenes()` CLI.
+  - In [Makefile](Makefile), updated `SCENES_DEFINITIONS := scenes/definitions.json` as prerequisite and parameter for `compile_scenes.py`.
+- **Test Suite Updates**:
+  - Updated [tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_secret_row_constraints.py](tests/test_secret_row_constraints.py), [tests/test_platform_profiles.py](tests/test_platform_profiles.py), and [tests/test_catalogues.py](tests/test_catalogues.py) to assert and load against `scenes/definitions.json`.
+  - Full test suite passed (325/325 tests) and clean build via `make all`.
+
+- **Platform Profiles Auto-Save Fix in Atari Scene Editor**:
+  - In [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py), added missing persistence calls `self.catalogues.save_to_dir(self.base_dir)` to `_on_new_profile_clicked`, `_on_duplicate_profile_clicked`, `_on_delete_profile_clicked`, and `_on_save_profile_clicked`.
+  - Platform color profile changes are now immediately and atomically written to `platform_profiles.json` on disk.
+- **Relocated Catalogues to `scenes/` as Default Directory**:
+  - Moved `enemies.json`, `secrets.json`, and `platform_profiles.json` into [scenes/](scenes/).
+  - Updated `ProjectCatalogues.find_catalogue_paths()` and `find_platform_profiles_path()` in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py) to check `scenes/` first and default to `scenes/`.
+  - Updated [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) `CataloguePathsDialog` and [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py) `save_catalogues_to_json()`, `save_catalogues_as()`, and `configure_catalogue_paths()` to configure and persist `platform_profiles.json` alongside enemies and secrets.
+- **Scene Compiler & Build Pipeline Updates**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), updated `load_catalogues()`, `load_platform_profiles()`, and `compile_scenes()` to resolve catalogue files from `scenes/` by default with fallback to parent/scenes directories.
+  - Updated CLI argument defaults for `--enemies`, `--secrets`, and `--profiles` to `scenes/enemies.json`, `scenes/secrets.json`, and `scenes/platform_profiles.json`.
+  - Updated [Makefile](Makefile) target dependency for `scenes_data.asm` and `scenes_dli_data.asm` to use `scenes/enemies.json`, `scenes/secrets.json`, and `scenes/platform_profiles.json`.
+- **Test Suite Updates**:
+  - Updated [tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_secret_row_constraints.py](tests/test_secret_row_constraints.py), and [tests/test_catalogues.py](tests/test_catalogues.py) to expect catalogues in `scenes/` and support 3-path configuration dialog.
+  - Added new integration tests in [tests/test_platform_profiles.py](tests/test_platform_profiles.py): `test_catalogues_dialog_profile_auto_save_to_scenes_dir` and `test_default_catalogue_paths_point_to_scenes_dir`.
+  - All 325 tests passing, `make all` clean build with memory verification.
+
+
+## [2026-10-16] - Platform Widths via Dynamic SIZEP and SIZEM per Pas
+
+- **Per-Pas Dynamic SIZEP and SIZEM**:
+  - Replaced hardcoded `#3` and `#$FF` in Faza A of `dli_handler` in [engine/dli.asm](engine/dli.asm) with dynamic loads from `dli_sizep1,y`, `dli_sizep2,y`, `dli_sizep3,y`, and `dli_sizem,y`.
+  - Configured hardware sizes according to GTIA specification: 32 px $\rightarrow$ `SIZEP=3` (quadruple width, 32 color clocks), 16 px $\rightarrow$ `SIZEP=1` (double width, 16 color clocks), 8 px $\rightarrow$ `SIZEP=0` (normal width, 8 color clocks), inactive $\rightarrow$ 0.
+  - Configured missile platform size: 32 px (4 $\times$ 8 px) $\rightarrow$ `SIZEM=$FF` (%11111111, 4 quadruple-width missiles spaced by 8 color clocks).
+- **PMG Missile Pre-Fill Pattern Correction**:
+  - Corrected PMG missiles pre-fill pattern in `dli_init` in [engine/dli.asm](engine/dli.asm) from `$FC` to `$FF` so all 4 missiles (M0..M3) are solid 8-scanline bars in 5th player (5P) mode.
+  - Updated [tests/test_dli_system.py](tests/test_dli_system.py) line 191 to assert `$FF`.
+- **50-Table DLI Data Expansion (315 Bytes/Scene)**:
+  - Added 4 new tables (`sizep1`, `sizep2`, `sizep3`, `sizem`) of 6 bytes each:
+    - [engine/dli.asm](engine/dli.asm): allocated double buffers `dli_sizep1..3`, `dli_sizem` (`:16 .byte 0`), updated `DLI_TABLE_COUNT = 50`, and registered table pointers in `dli_table_ptrs_lo` / `hi`.
+    - [scripts/compile_scenes.py](scripts/compile_scenes.py): added `sizep1..3` and `sizem` to `SceneDliCompiledData`, updated `compile_scene_dli_data()` to decompose sprite platforms into segments based on `SUPPORTED_SPRITE_WIDTHS` (e.g. 48 px $\rightarrow$ 32 px with SIZEP=2 + 16 px with SIZEP=1) and calculate missile `SIZEM`, updated `generate_scenes_dli_asm()` to output the 4 tables in order matching table pointers.
+- **Relocated RENDER_TABLES to $79D0**:
+  - Relocated `RENDER_TABLES = $79D0` in [main.asm](main.asm) into the 49-byte gap between Audio (`$79CE`) and `$7A00`, preventing the expanded 634-byte `scenes_dli_data` segment from exceeding `$8000` (`TILES_ADDR`). Segment ends at `$7FD5` with 42 bytes headroom.
+  - Updated [scripts/check_memory.py](scripts/check_memory.py) and [scripts/generate_memory_map.py](scripts/generate_memory_map.py) to recognize `0x79D0`.
+- **Exporter Validation & Tests**:
+  - Added build-time validation in `validate_scene_dli_platforms()` in [scripts/compile_scenes.py](scripts/compile_scenes.py): checks `SIZEP` matches platform width, `SIZEM` matches missile platform, and rejects unsupported widths.
+  - Added `test_sizep_matches_platform_width` and `test_sizem_for_missile_platforms` in [tests/test_compile_scenes.py](tests/test_compile_scenes.py).
+  - All 323 automated unit and integration tests passed; memory map validated cleanly via `make all`.
+
+
+## [2026-10-15] - Fix Scene Exporter Platform Allocation & DLI Rendering (Bugs 1-3)
+
+- **Bug 1: Platform Profile Collision in Exporter**:
+  - Replaced `color_profile_id` grouping in `compile_scene_dli_data()` in [scripts/compile_scenes.py](scripts/compile_scenes.py) with sequential channel allocation.
+  - Platforms in each pas are now sorted by X ascending and assigned to channels sequentially, ensuring platforms sharing the same profile (e.g. `platform-010` and `platform-011` in Pas 1) do not overwrite each other. Color profiles are assigned per occupied channel.
+- **Bug 2: Multi-Segment Wide Platform Rendering**:
+  - Implemented multi-segment chunking for platforms wider than 32 px in [scripts/compile_scenes.py](scripts/compile_scenes.py): sprite platforms $> 32$ px are split into 32 px segments across consecutive player channels (P1 $\rightarrow$ P2 $\rightarrow$ P3), with any remainder width mapped to missile channels (8 px per missile).
+  - Missile platforms are segmented into 8 px chunks across M0..M3.
+  - In Scene 1 (`01-forest`) Pas 5 ($y=88$), `platform-002` (96 px sprite) now allocates P1=$61, P2=$81, P3=$A1, while `platform-014` (32 px missile) allocates M0=$40, M1=$48, M2=$50, M3=$58 (total 128 px across 4 active channels).
+- **Bug 3: Missing HPOSM0 in DLI Faza A & 46-Table Format Expansion**:
+  - Added `lda dli_hpos_m0,y; sta HPOSM0` before `HPOSM1` in Faza A of `dli_handler` in [engine/dli.asm](engine/dli.asm).
+  - Expanded DLI table format from 45 to 46 tables (291 bytes per scene: $46 \times 6 + 15$ bytes Zone 0):
+    - Added `dli_hpos_m0 :16 .byte 0` to double-buffered tables in [engine/dli.asm](engine/dli.asm).
+    - Updated `DLI_TABLE_COUNT = 46` and updated `dli_table_ptrs_lo` / `dli_table_ptrs_hi`.
+    - Added `hpos_m0` to `SceneDliCompiledData` and updated `generate_scenes_dli_asm()` in [scripts/compile_scenes.py](scripts/compile_scenes.py).
+- **Build-Time Hardware Validation**:
+  - Added `validate_scene_dli_platforms()` in [scripts/compile_scenes.py](scripts/compile_scenes.py) enforcing:
+    1. Every platform from JSON has a matching HPOS in generated data.
+    2. Sum of platform widths in each pas does not exceed 128 px.
+    3. Active channels per pas do not exceed 4 (P1, P2, P3, 5P).
+    4. Platforms $> 32$ px occupy consecutive player channels P1 $\rightarrow$ P2 $\rightarrow$ P3 without skips.
+- **Automated Verification**:
+  - Added `test_scene_dli_data_matches_json` and `test_validate_scene_dli_platforms_rejects_invalid` in [tests/test_compile_scenes.py](tests/test_compile_scenes.py).
+  - Full test suite passed (321 tests), `check_memory` passed with 1,487 bytes headroom below `$C000`, and `make all` clean.
+
 ## [2026-10-15] - Shared Display List & Unified DLI Architecture
 
 - **Unified Display List (`dlist_game`) & DLI Triggers**:

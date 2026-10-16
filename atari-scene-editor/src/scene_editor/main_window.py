@@ -2021,15 +2021,15 @@ class MainWindow(QMainWindow):
             return False
 
     def save_catalogues_to_json(self) -> bool:
-        """Save project catalogues to default or configured JSON files."""
+        """Save project catalogues to default or configured definitions JSON file."""
         try:
             self.catalogues.save_to_dir(self.base_dir)
-            enemies_path, secrets_path = self.catalogues.get_effective_paths(self.base_dir)
-            self.statusBar().showMessage(f"Catalogues saved to {enemies_path.parent}", 3000)
+            def_path = self.catalogues.get_effective_definitions_path(self.base_dir)
+            self.statusBar().showMessage(f"Catalogues saved to {def_path}", 3000)
             QMessageBox.information(
                 self,
                 "Catalogues Saved",
-                f"Catalogues successfully saved to:\n• {enemies_path}\n• {secrets_path}",
+                f"Catalogues successfully saved to:\n• {def_path}",
             )
             return True
         except Exception as err:
@@ -2037,23 +2037,24 @@ class MainWindow(QMainWindow):
             return False
 
     def save_catalogues_as(self) -> bool:
-        """Save project catalogues to a chosen directory."""
-        dir_str = QFileDialog.getExistingDirectory(
+        """Save project catalogues to a chosen definitions file."""
+        file_str, _ = QFileDialog.getSaveFileName(
             self,
-            "Select Directory to Save Catalogues (enemies.json & secrets.json)",
-            str(self.base_dir),
+            "Save Definitions JSON",
+            str(self.catalogues.get_effective_definitions_path(self.base_dir)),
+            "JSON Files (*.json);;All Files (*)",
         )
-        if not dir_str:
+        if not file_str:
             return False
-        target_dir = Path(dir_str)
+        target_file = Path(file_str)
         try:
-            self.catalogues.set_paths(target_dir / "enemies.json", target_dir / "secrets.json")
-            self.catalogues.save_to_dir(target_dir)
-            self.statusBar().showMessage(f"Catalogues saved to {target_dir}", 3000)
+            self.catalogues.set_paths(definitions_path=target_file)
+            self.catalogues.save_to_paths(definitions_path=target_file)
+            self.statusBar().showMessage(f"Catalogues saved to {target_file}", 3000)
             QMessageBox.information(
                 self,
                 "Catalogues Saved",
-                f"Catalogues successfully saved to:\n• {target_dir / 'enemies.json'}\n• {target_dir / 'secrets.json'}",
+                f"Catalogues successfully saved to:\n• {target_file}",
             )
             return True
         except Exception as err:
@@ -2061,46 +2062,46 @@ class MainWindow(QMainWindow):
             return False
 
     def configure_catalogue_paths(self) -> None:
-        """Open dialog to configure custom file paths for enemies.json and secrets.json."""
-        cur_enemies, cur_secrets = self.catalogues.get_effective_paths(self.base_dir)
+        """Open dialog to configure custom file path for definitions.json."""
+        cur_def = self.catalogues.get_effective_definitions_path(self.base_dir)
         dlg = CataloguePathsDialog(
             base_dir=self.base_dir,
-            current_enemies_path=cur_enemies,
-            current_secrets_path=cur_secrets,
+            current_definitions_path=cur_def,
             parent=self,
         )
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            enemies_path, secrets_path, reload_now = dlg.get_paths()
-            self.catalogues.set_paths(enemies_path, secrets_path)
+            def_path, _, _, reload_now = dlg.get_paths()
+            self.catalogues.set_paths(definitions_path=def_path)
 
             if reload_now:
                 try:
-                    reloaded = ProjectCatalogues.load_from_paths(enemies_path, secrets_path)
+                    reloaded = ProjectCatalogues.load_from_paths(definitions_path=def_path)
                     self.catalogues.enemies = reloaded.enemies
                     self.catalogues.secrets = reloaded.secrets
+                    self.catalogues.platform_profiles = reloaded.platform_profiles
                     self._refresh_object_creator_definitions()
                     self._sync_all()
                     self.statusBar().showMessage(
-                        f"Catalogue paths configured to {enemies_path.parent}", 4000
+                        f"Catalogue path configured to {def_path}", 4000
                     )
                     QMessageBox.information(
                         self,
-                        "Catalogue Paths Updated",
-                        f"Catalogue paths updated successfully:\n• Enemies: {enemies_path}\n• Secrets: {secrets_path}\n\nDefinitions reloaded.",
+                        "Catalogue Path Updated",
+                        f"Catalogue path updated successfully:\n• Definitions: {def_path}\n\nDefinitions reloaded.",
                     )
                 except Exception as err:
                     QMessageBox.warning(
                         self,
-                        "Catalogue Paths Updated",
-                        f"Catalogue paths updated to:\n• {enemies_path}\n• {secrets_path}\n\n"
+                        "Catalogue Path Updated",
+                        f"Catalogue path updated to:\n• {def_path}\n\n"
                         f"Notice during reload: {err}",
                     )
             else:
-                self.statusBar().showMessage("Catalogue paths updated.", 3000)
+                self.statusBar().showMessage("Catalogue path updated.", 3000)
                 QMessageBox.information(
                     self,
-                    "Catalogue Paths Updated",
-                    f"Catalogue paths updated successfully:\n• Enemies: {enemies_path}\n• Secrets: {secrets_path}",
+                    "Catalogue Path Updated",
+                    f"Catalogue path updated successfully:\n• Definitions: {def_path}",
                 )
 
     def _on_new_obj_type_changed(self) -> None:

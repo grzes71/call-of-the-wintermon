@@ -23,7 +23,7 @@ DLIST_ADDR  = $6000     ; Title Display List
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$676F)
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
 AUDIO_ADDR    = $7000     ; Audio Player & Music Buffers
-RENDER_TABLES = $7A00     ; Render Lookup Tables: Flip byte (256 B) + Playfield row offsets (192 B)
+RENDER_TABLES = $79D0     ; Render Lookup Tables: Flip byte (256 B) + Playfield row offsets (192 B)
 TILES_ADDR    = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
 
 ; --- Gameplay Buffer Equates ---
@@ -337,7 +337,7 @@ pmg_memory
     icl 'gen/title_music.asm'
 
 ; ==============================================================================
-; RENDER LOOKUP TABLES SEGMENT ($7A00)
+; RENDER LOOKUP TABLES SEGMENT ($79D0)
 ; ==============================================================================
     org RENDER_TABLES
     icl 'engine/render_tables.asm'

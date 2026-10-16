@@ -36,11 +36,12 @@ TILES_ARTIFACTS  := $(TILES_BIN_CAST) $(TILES_BIN_DEP) $(TILES_BIN_HELL) $(TILES
 MUSIC_TITLE_JSON := music/title.json
 MUSIC_TITLE_ASM  := $(GEN_DIR)/title_music.asm
 
-SCENES_MANIFEST  := scenes/scenes.json
-SCENES_DIR       := scenes
-SCENES_SRCS      := $(wildcard $(SCENES_DIR)/*.json)
-SCENES_ASM       := $(GEN_DIR)/scenes_data.asm
-SCENES_DLI_ASM   := $(GEN_DIR)/scenes_dli_data.asm
+SCENES_MANIFEST    := scenes/scenes.json
+SCENES_DIR         := scenes
+SCENES_DEFINITIONS := scenes/definitions.json
+SCENES_SRCS        := $(wildcard $(SCENES_DIR)/*.json)
+SCENES_ASM         := $(GEN_DIR)/scenes_data.asm
+SCENES_DLI_ASM     := $(GEN_DIR)/scenes_dli_data.asm
 
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
                     engine/dli.asm engine/render.asm engine/render_tables.asm \
@@ -86,9 +87,9 @@ $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 data: $(SCENES_ASM) $(SCENES_DLI_ASM)
 
-$(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) enemies.json secrets.json platform_profiles.json scripts/compile_scenes.py
+$(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFINITIONS) scripts/compile_scenes.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM)
+	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM) --definitions $(SCENES_DEFINITIONS)
 
 # ------------------------------------------------------------------------------
 # 5. Binary assembly (MADS)

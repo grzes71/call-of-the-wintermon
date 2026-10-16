@@ -251,8 +251,9 @@ class TestSecretRowConstraints:
 
         # Both compile cleanly with compile_scenes
         from scripts.compile_scenes import load_platform_profiles
-        enemies, secrets = load_catalogues(repo_root / "enemies.json", repo_root / "secrets.json")
-        profiles = load_platform_profiles(repo_root / "platform_profiles.json")
+        def_file = repo_root / "scenes" / "definitions.json"
+        enemies, secrets = load_catalogues(def_file, def_file)
+        profiles = load_platform_profiles(def_file)
         data1 = parse_scene_json(forest1_path, enemies=enemies, secrets=secrets, profiles=profiles)
         assert data1.name != ""
 

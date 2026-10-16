@@ -89,7 +89,7 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Player-Missile Graphics (PMG 2 KB) + Audio"
         elif start == 0x7000:
             seg_type = "Audio Player & Music Buffers"
-        elif start == 0x7A00:
+        elif start in (0x79D0, 0x7A00):
             seg_type = "Render Lookup Tables (Flip & Row Pointers)"
         elif start == 0x8000:
             seg_type = "ANTIC Mode E Tileset Bitmaps"

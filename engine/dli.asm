@@ -23,9 +23,15 @@ DLI_SEGMENT_ADDR = $6100
 dli_hpos_p1         :16 .byte 0
 dli_hpos_p2         :16 .byte 0
 dli_hpos_p3         :16 .byte 0
+dli_hpos_m0         :16 .byte 0
 dli_hpos_m1         :16 .byte 0
 dli_hpos_m2         :16 .byte 0
 dli_hpos_m3         :16 .byte 0
+
+dli_sizep1          :16 .byte 0
+dli_sizep2          :16 .byte 0
+dli_sizep3          :16 .byte 0
+dli_sizem           :16 .byte 0
 
 dli_bg_colpf0       :16 .byte 0
 dli_bg_colpf1       :16 .byte 0
@@ -89,11 +95,12 @@ dli_z0_colpf0       :2 .byte 0
 dli_z0_colpf1       :2 .byte 0
 dli_z0_colpf2       :2 .byte 0
 
-; Table base pointers for 45 tables (used by dli_stage_scene)
-DLI_TABLE_COUNT = 45
+; Table base pointers for 50 tables (used by dli_stage_scene)
+DLI_TABLE_COUNT = 50
 dli_table_ptrs_lo
     .byte <dli_hpos_p1, <dli_hpos_p2, <dli_hpos_p3
-    .byte <dli_hpos_m1, <dli_hpos_m2, <dli_hpos_m3
+    .byte <dli_hpos_m0, <dli_hpos_m1, <dli_hpos_m2, <dli_hpos_m3
+    .byte <dli_sizep1, <dli_sizep2, <dli_sizep3, <dli_sizem
     .byte <dli_bg_colpf0, <dli_bg_colpf1, <dli_bg_colpf2
     .byte <dli_pas_c1_sl0, <dli_pas_c1_sl1, <dli_pas_c1_sl2, <dli_pas_c1_sl3
     .byte <dli_pas_c1_sl4, <dli_pas_c1_sl5, <dli_pas_c1_sl6, <dli_pas_c1_sl7
@@ -109,7 +116,8 @@ dli_table_ptrs_lo
 
 dli_table_ptrs_hi
     .byte >dli_hpos_p1, >dli_hpos_p2, >dli_hpos_p3
-    .byte >dli_hpos_m1, >dli_hpos_m2, >dli_hpos_m3
+    .byte >dli_hpos_m0, >dli_hpos_m1, >dli_hpos_m2, >dli_hpos_m3
+    .byte >dli_sizep1, >dli_sizep2, >dli_sizep3, >dli_sizem
     .byte >dli_bg_colpf0, >dli_bg_colpf1, >dli_bg_colpf2
     .byte >dli_pas_c1_sl0, >dli_pas_c1_sl1, >dli_pas_c1_sl2, >dli_pas_c1_sl3
     .byte >dli_pas_c1_sl4, >dli_pas_c1_sl5, >dli_pas_c1_sl6, >dli_pas_c1_sl7
@@ -181,7 +189,7 @@ dli_table_ptrs_hi
     sta PMG_PLAYER3 + 144,x
     sta PMG_PLAYER3 + 176,x
 
-    lda #$FC            ; Missiles 1, 2, 3 bits (bits 2..7)
+    lda #$FF            ; All 4 missiles solid
     sta PMG_MISSILES + 16,x
     sta PMG_MISSILES + 48,x
     sta PMG_MISSILES + 80,x
@@ -206,7 +214,7 @@ dli_table_ptrs_hi
 
 ; ==============================================================================
 ; DLI STAGE SCENE
-; Copies 285 bytes of compiled scene DLI data into the inactive buffer
+; Copies 315 bytes of compiled scene DLI data into the inactive buffer
 ; Parameters: A = scene_id (0..SCENE_COUNT-1)
 ; Safe to call anytime outside DLI; does not affect active rendering
 ; ==============================================================================
@@ -431,11 +439,13 @@ dli_table_ptrs_hi
     ; FAZA A: Last scanline before pas (pre-WSYNC setup)
     ; Set PMG widths (x4), positions for 3 channels, PRIOR (bit 4 cleared)
     ; --------------------------------------------------------------------------
-    lda #3                 ; [2] Normal x4 width for platform players
+    lda dli_sizep1,y      ; [4] Size for platform player 1
     sta SIZEP1            ; [4]
+    lda dli_sizep2,y      ; [4] Size for platform player 2
     sta SIZEP2            ; [4]
+    lda dli_sizep3,y      ; [4] Size for platform player 3
     sta SIZEP3            ; [4]
-    lda #$FF               ; [2] Normal x4 width for platform missiles
+    lda dli_sizem,y       ; [4] Size for platform missiles
     sta SIZEM             ; [4]
 
     lda dli_hpos_p1,y      ; [4] Platform player positions
@@ -445,7 +455,9 @@ dli_table_ptrs_hi
     lda dli_hpos_p3,y      ; [4]
     sta HPOSP3            ; [4]
 
-    lda dli_hpos_m1,y      ; [4] Platform missile positions
+    lda dli_hpos_m0,y      ; [4] Platform missile positions
+    sta HPOSM0            ; [4]
+    lda dli_hpos_m1,y      ; [4]
     sta HPOSM1            ; [4]
     lda dli_hpos_m2,y      ; [4]
     sta HPOSM2            ; [4]

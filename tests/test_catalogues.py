@@ -220,24 +220,19 @@ class TestCatalogueFilePersistence:
 
         cats.save_to_dir(tmp_path)
 
-        enemies_file = tmp_path / "enemies.json"
-        secrets_file = tmp_path / "secrets.json"
-        assert enemies_file.is_file()
-        assert secrets_file.is_file()
+        definitions_file = tmp_path / "scenes" / "definitions.json"
+        assert definitions_file.is_file()
 
-        # Check enemies.json structure
-        with open(enemies_file, "r", encoding="utf-8") as f:
-            e_data = json.load(f)
-        assert "enemies" in e_data
-        assert len(e_data["enemies"]) == 1
-        assert e_data["enemies"][0]["id"] == 1
+        # Check definitions.json structure
+        with open(definitions_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert "enemies" in data
+        assert len(data["enemies"]) == 1
+        assert data["enemies"][0]["id"] == 1
 
-        # Check secrets.json structure
-        with open(secrets_file, "r", encoding="utf-8") as f:
-            s_data = json.load(f)
-        assert "secrets" in s_data
-        assert len(s_data["secrets"]) == 1
-        assert s_data["secrets"][0]["id"] == 2
+        assert "secrets" in data
+        assert len(data["secrets"]) == 1
+        assert data["secrets"][0]["id"] == 2
 
         # Load back in a fresh instance
         loaded = ProjectCatalogues.load_from_dir(tmp_path)
@@ -252,15 +247,16 @@ class TestCatalogueFilePersistence:
         assert len(loaded.secrets) == 0
 
     def test_corrupted_json_raises_error_and_preserves_file(self, tmp_path: Path):
-        enemies_file = tmp_path / "enemies.json"
+        (tmp_path / "scenes").mkdir(parents=True, exist_ok=True)
+        definitions_file = tmp_path / "scenes" / "definitions.json"
         corrupt_content = '{"enemies": [ { "id": 1, '  # broken JSON
-        enemies_file.write_text(corrupt_content, encoding="utf-8")
+        definitions_file.write_text(corrupt_content, encoding="utf-8")
 
         with pytest.raises(CorruptedCatalogueFileError, match="Invalid JSON"):
             ProjectCatalogues.load_from_dir(tmp_path)
 
         # Ensure corrupted file was NOT silently overwritten or deleted
-        assert enemies_file.read_text(encoding="utf-8") == corrupt_content
+        assert definitions_file.read_text(encoding="utf-8") == corrupt_content
 
     def test_rename_definition_preserves_id_and_instance_bindings(self, tmp_path: Path):
         cats = ProjectCatalogues()
@@ -515,15 +511,14 @@ class TestGUIIntegrationCatalogues:
         # Test save
         success = window.save_catalogues_to_json()
         assert success is True
-        assert (tmp_path / "enemies.json").is_file()
-        assert (tmp_path / "secrets.json").is_file()
+        assert (tmp_path / "scenes" / "definitions.json").is_file()
 
         # Create a fresh window and load from the saved JSON
         window2 = MainWindow(base_dir=tmp_path)
         window2.catalogues.enemies.clear()
         window2.catalogues.secrets.clear()
 
-        loaded_success = window2.load_catalogues_from_json(tmp_path / "enemies.json")
+        loaded_success = window2.load_catalogues_from_json(tmp_path / "scenes" / "definitions.json")
         assert loaded_success is True
         assert 15 in window2.catalogues.enemies
         assert window2.catalogues.enemies[15].name == "Hydra"
@@ -554,24 +549,19 @@ class TestGUIIntegrationCatalogues:
 
     def test_catalogue_paths_dialog(self, qapp, tmp_path: Path):
         dialog = CataloguePathsDialog(base_dir=tmp_path)
-        default_e, default_s = ProjectCatalogues.find_catalogue_paths(tmp_path)
+        default_def = ProjectCatalogues.find_definitions_path(tmp_path)
 
-        assert Path(dialog.edit_enemies.text()) == default_e
-        assert Path(dialog.edit_secrets.text()) == default_s
+        assert Path(dialog.edit_definitions.text()) == default_def
 
-        custom_e = tmp_path / "test_enemies.json"
-        custom_s = tmp_path / "test_secrets.json"
-        dialog.edit_enemies.setText(str(custom_e))
-        dialog.edit_secrets.setText(str(custom_s))
+        custom_def = tmp_path / "test_definitions.json"
+        dialog.edit_definitions.setText(str(custom_def))
 
-        e_res, s_res, reload_now = dialog.get_paths()
-        assert e_res == custom_e
-        assert s_res == custom_s
+        def_res, _, _, reload_now = dialog.get_paths()
+        assert def_res == custom_def
         assert reload_now is True
 
         dialog._reset_defaults()
-        assert Path(dialog.edit_enemies.text()) == default_e
-        assert Path(dialog.edit_secrets.text()) == default_s
+        assert Path(dialog.edit_definitions.text()) == default_def
 
 
 # =============================================================================

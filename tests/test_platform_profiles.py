@@ -445,3 +445,72 @@ def test_backwards_compatibility_legacy_scenes(tmp_path: Path):
     # Serialization does not crash, to_dict gracefully handles None
     d = SceneSerializer.to_dict(scene)
     assert "color_profile_id" not in d["platforms"][0]
+
+
+# ------------------------------------------------------------------------------
+# Criterion 13: CataloguesDialog auto-saves platform_profiles.json to scenes/
+# ------------------------------------------------------------------------------
+def test_catalogues_dialog_profile_auto_save_to_scenes_dir(tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    from scene_editor.catalogue_dialog import CataloguesDialog
+
+    monkeypatch.setattr(
+        "scene_editor.catalogue_dialog.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    app = QApplication.instance() or QApplication([])
+
+    scenes_dir = tmp_path / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+
+    catalogues = ProjectCatalogues()
+    dialog = CataloguesDialog(
+        catalogues=catalogues,
+        base_dir=tmp_path,
+        initial_tab="profiles",
+    )
+
+    # 1. New profile action -> auto-saves to scenes/definitions.json
+    dialog._on_new_profile_clicked()
+    prof_file = scenes_dir / "definitions.json"
+    assert prof_file.is_file(), "definitions.json must be created in scenes/"
+
+    saved_data = json.loads(prof_file.read_text(encoding="utf-8"))
+    profiles_key = "platform_profiles" if "platform_profiles" in saved_data else "profiles"
+    assert profiles_key in saved_data
+    created_id = dialog.prof_id_spin.value()
+    assert any(p["id"] == created_id for p in saved_data[profiles_key])
+
+    # 2. Edit profile and save -> auto-saves changes to scenes/definitions.json
+    dialog.prof_name_edit.setText("Updated Auto-Save Profile")
+    dialog._on_save_profile_clicked()
+    saved_data2 = json.loads(prof_file.read_text(encoding="utf-8"))
+    target = next(p for p in saved_data2[profiles_key] if p["id"] == created_id)
+    assert target["name"] == "Updated Auto-Save Profile"
+
+    # 3. Duplicate profile -> auto-saves duplicated profile to scenes/definitions.json
+    dialog._on_duplicate_profile_clicked()
+    saved_data3 = json.loads(prof_file.read_text(encoding="utf-8"))
+    assert len(saved_data3[profiles_key]) == len(saved_data2[profiles_key]) + 1
+
+    # 4. Delete profile -> auto-saves deletion to scenes/definitions.json
+    cur_item = dialog.profiles_list.currentItem()
+    del_id = cur_item.data(256)  # Qt.ItemDataRole.UserRole
+    dialog._on_delete_profile_clicked()
+    saved_data4 = json.loads(prof_file.read_text(encoding="utf-8"))
+    assert not any(p["id"] == del_id for p in saved_data4[profiles_key])
+
+
+def test_default_catalogue_paths_point_to_scenes_dir(tmp_path: Path):
+    """Verify that default catalogue paths resolve to scenes/definitions.json when base_dir is given."""
+    def_path = ProjectCatalogues.find_definitions_path(tmp_path)
+    e_path, s_path = ProjectCatalogues.find_catalogue_paths(tmp_path)
+    p_path = ProjectCatalogues.find_platform_profiles_path(tmp_path)
+
+    expected = tmp_path / "scenes" / "definitions.json"
+    assert def_path == expected
+    assert e_path == expected
+    assert s_path == expected
+    assert p_path == expected
+
