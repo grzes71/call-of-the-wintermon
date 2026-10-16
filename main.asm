@@ -14,22 +14,22 @@ FONT_ADDR   = $2400     ; 1 KB aligned font (1024 bytes: $2400-$27FF)
 INTRO_VRAM  = $2800     ; Intro text VRAM (400 bytes: $2800-$298F)
 INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
 TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: $2A30-$2C1D)
-SCENES_DATA = $2C30     ; Scene definitions, platforms & objects SoA tables (~832 bytes: $2C30-$2F6F)
 GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
-VRAM_SEG1   = $4000     ; Title VRAM Segment 1
-VRAM_SEG2   = $5000     ; Title VRAM Segment 2
-DLIST_ADDR  = $6000     ; Title Display List
-DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$676F)
+TITLE_VRAM  = $4000     ; Title VRAM: ANTIC Mode D 160x95 2bpp (3,800 bytes: $4000-$4ED7, 4 KB aligned)
+SCENES_DATA = $5000     ; Scene definitions, platforms, objects & DLI data SoA tables (~1,500 bytes: $5000-$5600)
+DLIST_ADDR  = $6000     ; Title Display List (~105 bytes: $6000-$6068)
+DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$67F4)
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
-AUDIO_ADDR    = $7000     ; Audio Player & Music Buffers
-RENDER_TABLES = $79D0     ; Render Lookup Tables: Flip byte (256 B) + Playfield row offsets (192 B)
-TILES_ADDR    = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
+AUDIO_ADDR  = $7000     ; Audio Player & Music Buffers
+RENDER_TABLES = $7A00   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) + blitter
+TILES_ADDR  = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
 
-; --- Gameplay Buffer Equates ---
-GAME_VRAM_SIZE  = 3840  ; 40 bytes/line * 96 lines
-GAME_VRAM_LINES = 96
-GAME_VRAM_PITCH = 40
+; --- Gameplay & Title Buffer Equates ---
+GAME_VRAM_SIZE        = 3840  ; 40 bytes/line * 96 lines
+GAME_VRAM_LINES       = 96
+GAME_VRAM_PITCH       = 40
+TITLE_SCROLL_VRAM_LEN = 48    ; ANTIC normal width fetches 48 bytes with DL_HSCROL
 
 ; --- PMG Equates (2 KB Single-Line Resolution at $6800, PMBASE=$68) ---
 PMG_SIZE        = 2048
@@ -118,9 +118,8 @@ main_loop
     jmp main_loop
 
 ; ==============================================================================
-; SCENE MODULES
+; SCENE MODULES (Intro, Game, Game Over)
 ; ==============================================================================
-    icl 'scenes/title.asm'
     icl 'scenes/intro.asm'
     icl 'scenes/game.asm'
     icl 'scenes/gameover.asm'
@@ -204,12 +203,6 @@ dlist_intro
     icl 'gen/tiles_data.asm'
 
 ; ==============================================================================
-; SCENE DEFINITIONS & OBJECT TABLES ($2C30)
-; ==============================================================================
-    org SCENES_DATA
-    icl 'gen/scenes_data.asm'
-
-; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
 ; ANTIC Mode D ($0D, 160x96 2bpp, 2 scanlines/line, 40 bytes/line * 96 lines = 3,840 bytes)
 ; 4 KB aligned: strictly within $3000-$3FFF (never crosses 4 KB boundary)
@@ -232,19 +225,19 @@ dlist_game
     ; Line 0 with LMS (starts at $3000, 3840 bytes -> ends at $3EFF, never wraps)
     .byte DL_MODE_D | DL_LMS
     .word GAME_VRAM
-    :6 .byte DL_MODE_D          ; Lines 1-6
-    .byte DL_MODE_D | DL_DLI    ; Line 7 (DLI 1: setup Pas 1 at line 8)
-    :15 .byte DL_MODE_D         ; Lines 8-22
-    .byte DL_MODE_D | DL_DLI    ; Line 23 (DLI 2: setup Pas 2 at line 24)
-    :15 .byte DL_MODE_D         ; Lines 24-38
-    .byte DL_MODE_D | DL_DLI    ; Line 39 (DLI 3: setup Pas 3 at line 40)
-    :15 .byte DL_MODE_D         ; Lines 40-54
-    .byte DL_MODE_D | DL_DLI    ; Line 55 (DLI 4: setup Pas 4 at line 56)
-    :15 .byte DL_MODE_D         ; Lines 56-70
-    .byte DL_MODE_D | DL_DLI    ; Line 71 (DLI 5: setup Pas 5 at line 72)
-    :15 .byte DL_MODE_D         ; Lines 72-86
-    .byte DL_MODE_D | DL_DLI    ; Line 87 (DLI 6: setup Pas 6 at line 88)
-    :8 .byte DL_MODE_D          ; Lines 88-95
+    :5 .byte DL_MODE_D          ; Lines 1-5
+    .byte DL_MODE_D | DL_DLI    ; Line 6 (DLI 1: setup Pas 0 at line 8)
+    :15 .byte DL_MODE_D         ; Lines 7-21
+    .byte DL_MODE_D | DL_DLI    ; Line 22 (DLI 2: setup Pas 1 at line 24)
+    :15 .byte DL_MODE_D         ; Lines 23-37
+    .byte DL_MODE_D | DL_DLI    ; Line 38 (DLI 3: setup Pas 2 at line 40)
+    :15 .byte DL_MODE_D         ; Lines 39-53
+    .byte DL_MODE_D | DL_DLI    ; Line 54 (DLI 4: setup Pas 3 at line 56)
+    :15 .byte DL_MODE_D         ; Lines 55-69
+    .byte DL_MODE_D | DL_DLI    ; Line 70 (DLI 5: setup Pas 4 at line 72)
+    :15 .byte DL_MODE_D         ; Lines 71-85
+    .byte DL_MODE_D | DL_DLI    ; Line 86 (DLI 6: setup Pas 5 at line 88)
+    :9 .byte DL_MODE_D          ; Lines 87-95
 
     .byte DL_BLANK8
     .byte DL_BLANK8
@@ -277,31 +270,64 @@ dlist_scene_title_addr
 
 ; ==============================================================================
 ; TITLE GRAPHICS DATA SEGMENT ($4000)
-; Segment 1: $4000..$4FEF (4080 bytes) + 16 bytes pad -> $5000
-; Segment 2: $5000..$5E0F (3600 bytes)
-; Total: 7696 bytes
+; ANTIC Mode D (160x95 2bpp, 40 bytes/line * 96 lines = 3,840 bytes: $4000-$4EFF)
+; Followed by 48-byte Mode 2 scrolling VRAM line buffer ($4F00-$4F2F)
+; and marquee scroll text data ($4F30-$4FC6).
+; 4 KB aligned: strictly within $4000-$4FFF (never crosses 4 KB boundary)
 ; ==============================================================================
-    org VRAM_SEG1
+    org TITLE_VRAM
+title_vram_buf
     ins 'gen/title.bin'
+
+; 48-byte ANTIC Mode 2 scroll VRAM buffer (wide width fetch with DL_HSCROL)
+title_scroll_vram
+    :TITLE_SCROLL_VRAM_LEN .byte 0
+
+; Compiled marquee scroll text data (internal screen codes)
+    icl 'gen/title_scroll_text.asm'
+
+; ==============================================================================
+; SCENE DEFINITIONS, PLATFORMS, OBJECTS & DLI DATA SEGMENT ($5000)
+; Relocated from $2C30 and $79D0 into the expanded $5000 block
+; ==============================================================================
+    org SCENES_DATA
+    icl 'gen/scenes_data.asm'
+    icl 'gen/scenes_dli_data.asm'
+
+; Title scene handler placed in expanded $5000 block
+    icl 'scenes/title.asm'
+
+; Intro music data placed in expanded $5000 block
+    icl 'gen/intro_music.asm'
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)
+; ANTIC Mode D (160x95 2bpp, 96 lines = 192 scanlines) + 1 line ANTIC Mode 2 (8 scanlines)
+; Centered vertically: 16 blank scanlines top, 96 lines Mode D,
+; 4 blank scanlines spacing, 1 blank scanline with DLI,
+; 1 line ANTIC Mode 2 with LMS & HSCROL, 8 blank scanlines bottom = 229 scanlines total
 ; ==============================================================================
     org DLIST_ADDR
 dlist_title
     .byte DL_BLANK8
     .byte DL_BLANK8
+
+    ; Title graphics: 96 lines of ANTIC Mode D (192 scanlines)
+    .byte DL_MODE_D | DL_LMS    ; Line 0 with LMS (starts at $4000, 3840 bytes -> ends at $4EFF)
+    .word TITLE_VRAM
+    :95 .byte DL_MODE_D         ; Lines 1-95 (96 lines total)
+
+    ; Blank spacing lines between Mode D graphics and scroll line
+    .byte DL_BLANK4
+
+    ; 1 blank scanline with DLI right before ANTIC Mode 2 scroll line
+    .byte DL_BLANK1 | DL_DLI
+
+    ; 1 line ANTIC Mode 2 (40 chars visible, 48 fetched with DL_HSCROL)
+    .byte DL_MODE_2 | DL_LMS | DL_HSCROL
+    .word title_scroll_vram
+
     .byte DL_BLANK8
-
-    ; Segment 1: scanlines 0..101 (102 scanlines)
-    .byte DL_MODE_F | DL_LMS
-    .word VRAM_SEG1
-    :101 .byte DL_MODE_F
-
-    ; Segment 2: scanlines 102..191 (90 scanlines)
-    .byte DL_MODE_F | DL_LMS
-    .word VRAM_SEG2
-    :89 .byte DL_MODE_F
 
     ; End of display list: Jump and wait for vertical blank
     .byte DL_JVB
@@ -337,12 +363,11 @@ pmg_memory
     icl 'gen/title_music.asm'
 
 ; ==============================================================================
-; RENDER LOOKUP TABLES SEGMENT ($79D0)
+; RENDER LOOKUP TABLES SEGMENT ($7A00)
 ; ==============================================================================
     org RENDER_TABLES
     icl 'engine/render_tables.asm'
     icl 'engine/render.asm'
-    icl 'gen/scenes_dli_data.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader

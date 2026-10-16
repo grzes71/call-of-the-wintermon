@@ -5,6 +5,14 @@
     "width": 160,
     "height": 96
   },
+  "row_color_profiles": [
+    1,
+    2,
+    3,
+    2,
+    2,
+    1
+  ],
   "elements": [
     {
       "id": "element-001",

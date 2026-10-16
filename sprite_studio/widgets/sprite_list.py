@@ -47,7 +47,8 @@ class SpriteListWidget(QWidget):
         
         if self.project:
             for sprite in self.project.sprites:
-                item = QListWidgetItem(sprite.id)
+                label = f"{sprite.id}: {sprite.description}" if sprite.description else str(sprite.id)
+                item = QListWidgetItem(label)
                 item.setData(100, sprite)
                 self.list_widget.addItem(item)
                 
@@ -63,6 +64,14 @@ class SpriteListWidget(QWidget):
                 self.sprite_selected.emit(self.list_widget.currentItem().data(100))
             else:
                 self.sprite_selected.emit(None)
+
+    def update_sprite_display(self, sprite: Sprite):
+        label = f"{sprite.id}: {sprite.description}" if sprite.description else str(sprite.id)
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.data(100) == sprite:
+                item.setText(label)
+                break
 
     def _on_item_changed(self, current: QListWidgetItem, previous: QListWidgetItem):
         if current:

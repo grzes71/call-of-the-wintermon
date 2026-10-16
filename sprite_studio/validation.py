@@ -9,17 +9,21 @@ def validate_project(project: Project) -> List[str]:
         errors.append(f"Root: version must be 1, got {project.version}")
         
     seen_ids = set()
-    id_regex = re.compile(r"^[A-Z0-9_]{1,64}$")
     
     for s_idx, sprite in enumerate(project.sprites):
         path = f"sprites[{s_idx}]"
         
-        if not id_regex.match(sprite.id):
-            errors.append(f"{path}: invalid_sprite_id '{sprite.id}'")
-            
-        if sprite.id in seen_ids:
+        if isinstance(sprite.id, bool) or not isinstance(sprite.id, int) or not (1 <= sprite.id <= 255):
+            errors.append(f"{path}: invalid_sprite_id (must be integer 1..255, got {sprite.id!r})")
+        elif sprite.id in seen_ids:
             errors.append(f"{path}: duplicate_sprite_id '{sprite.id}'")
-        seen_ids.add(sprite.id)
+        else:
+            seen_ids.add(sprite.id)
+
+        if not isinstance(sprite.description, str):
+            errors.append(f"{path}: invalid_description (must be string, got {type(sprite.description).__name__})")
+        elif len(sprite.description) > 40:
+            errors.append(f"{path}: invalid_description (max 40 characters, got {len(sprite.description)})")
         
         if sprite.width != 8:
             errors.append(f"{path}: invalid_width (must be 8, got {sprite.width})")

@@ -375,8 +375,34 @@ class ChangePlatformTypeCommand(SceneBaseCommand):
         self.notify()
 
 
+class ChangeRowColorProfileCommand(SceneBaseCommand):
+    """Command to change the assigned color profile of an entire platform row."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        row_index: int,
+        old_profile_id: Optional[int],
+        new_profile_id: Optional[int],
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(f"Change row {row_index} color profile", callback)
+        self.scene = scene
+        self.row_index = int(row_index)
+        self.old_profile_id = old_profile_id
+        self.new_profile_id = new_profile_id
+
+    def redo(self) -> None:
+        self.scene.set_row_color_profile_id(self.row_index, self.new_profile_id)
+        self.notify()
+
+    def undo(self) -> None:
+        self.scene.set_row_color_profile_id(self.row_index, self.old_profile_id)
+        self.notify()
+
+
 class ChangePlatformColorProfileCommand(SceneBaseCommand):
-    """Command to change the assigned color profile of a platform."""
+    """Command to change the assigned color profile of a platform (and its row)."""
 
     def __init__(
         self,
@@ -389,21 +415,21 @@ class ChangePlatformColorProfileCommand(SceneBaseCommand):
         super().__init__(f"Change platform {platform_id} color profile", callback)
         self.scene = scene
         self.platform_id = platform_id
+        plat = scene.get_platform(platform_id)
+        self.row_index = plat.row_index if plat else 0
         self.old_profile_id = old_profile_id
         self.new_profile_id = new_profile_id
 
     def redo(self) -> None:
         plat = self.scene.get_platform(self.platform_id)
-        if plat:
-            plat.color_profile_id = self.new_profile_id
-            plat.validate(self.scene.height)
+        row_idx = plat.row_index if plat else self.row_index
+        self.scene.set_row_color_profile_id(row_idx, self.new_profile_id)
         self.notify()
 
     def undo(self) -> None:
         plat = self.scene.get_platform(self.platform_id)
-        if plat:
-            plat.color_profile_id = self.old_profile_id
-            plat.validate(self.scene.height)
+        row_idx = plat.row_index if plat else self.row_index
+        self.scene.set_row_color_profile_id(row_idx, self.old_profile_id)
         self.notify()
 
 
@@ -504,6 +530,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         new_source_rect: Optional[Rect] = None,
         new_speed: Optional[str] = None,
         new_strategy: Optional[str] = None,
+        new_sprite_id: Optional[int | str] = None,
         old_type: Optional[str] = None,
         old_definition_id: Optional[str] = None,
         old_platform_id: Optional[str] = None,
@@ -511,6 +538,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         old_source_rect: Optional[Rect] = None,
         old_speed: Optional[str] = None,
         old_strategy: Optional[str] = None,
+        old_sprite_id: Optional[int | str] = None,
         callback: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(f"Update properties of {object_id}", callback)
@@ -542,6 +570,9 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         self.old_strategy = old_strategy if old_strategy is not None else obj.movement_strategy
         self.new_strategy = new_strategy if new_strategy is not None else self.old_strategy
 
+        self.old_sprite_id = old_sprite_id if old_sprite_id is not None else obj.sprite_id
+        self.new_sprite_id = new_sprite_id if new_sprite_id is not None else self.old_sprite_id
+
     def redo(self) -> None:
         self.scene.update_object_props(
             self.object_id,
@@ -552,6 +583,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
             new_source_rect=self.new_rect,
             new_speed=self.new_speed,
             new_strategy=self.new_strategy,
+            new_sprite_id=self.new_sprite_id,
         )
         self.notify()
 
@@ -565,6 +597,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
             new_source_rect=self.old_rect,
             new_speed=self.old_speed,
             new_strategy=self.old_strategy,
+            new_sprite_id=self.old_sprite_id,
         )
         self.notify()
 

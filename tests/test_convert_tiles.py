@@ -306,8 +306,8 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
     lms_target = mem[dl_addr + 4] | (mem[dl_addr + 5] << 8)
     assert lms_target == 0x3000
 
-    # Remaining 95 lines of mode D ($0D), with DL_DLI ($8D) on lines 7, 23, 39, 55, 71, 87 (i in 6, 22, 38, 54, 70, 86)
-    dli_indices = {6, 22, 38, 54, 70, 86}
+    # Remaining 95 lines of mode D ($0D), with DL_DLI ($8D) on lines 6, 22, 38, 54, 70, 86 (i in 5, 21, 37, 53, 69, 85)
+    dli_indices = {5, 21, 37, 53, 69, 85}
     for i in range(95):
         expected = 0x8D if i in dli_indices else 0x0D
         assert mem[dl_addr + 6 + i] == expected, f"Mode D line {i+1} mismatch: expected {expected:#x}, got {mem[dl_addr + 6 + i]:#x}"

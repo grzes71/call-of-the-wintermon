@@ -17,8 +17,10 @@ TARGET           := call_of_the_wintermon.xex
 GEN_DIR          := gen
 
 # Assets sources and artifacts
-TITLE_IMG        := images/title.png
+TITLE_IMG        := images/title2.png
 TITLE_BIN        := $(GEN_DIR)/title.bin
+TITLE_SCROLL_SRC := scroll/title.txt
+TITLE_SCROLL_ASM := $(GEN_DIR)/title_scroll_text.asm
 
 INTRO_TXT_SRC    := texts/intro.txt
 INTRO_TXT_BIN    := $(GEN_DIR)/intro_text.bin
@@ -35,6 +37,8 @@ TILES_ARTIFACTS  := $(TILES_BIN_CAST) $(TILES_BIN_DEP) $(TILES_BIN_HELL) $(TILES
 
 MUSIC_TITLE_JSON := music/title.json
 MUSIC_TITLE_ASM  := $(GEN_DIR)/title_music.asm
+MUSIC_INTRO_DSL  := music/intro.dsl
+MUSIC_INTRO_ASM  := $(GEN_DIR)/intro_music.asm
 
 SCENES_MANIFEST    := scenes/scenes.json
 SCENES_DIR         := scenes
@@ -54,11 +58,15 @@ all: assets tiles music data xex tests check_memory
 # ------------------------------------------------------------------------------
 # 1. Assets conversion
 # ------------------------------------------------------------------------------
-assets: $(TITLE_BIN) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
+assets: $(TITLE_BIN) $(TITLE_SCROLL_ASM) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
 
 $(TITLE_BIN): $(TITLE_IMG) scripts/convert_image.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/convert_image.py $(TITLE_IMG) -o $(TITLE_BIN)
+
+$(TITLE_SCROLL_ASM): $(TITLE_SCROLL_SRC) scripts/compile_scroll_text.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_scroll_text.py -i $(TITLE_SCROLL_SRC) -o $(TITLE_SCROLL_ASM)
 
 $(INTRO_TXT_BIN): $(INTRO_TXT_SRC) scripts/gen_intro_text.py
 	@$(MKDIR) $(GEN_DIR)
@@ -76,11 +84,15 @@ $(TILES_ARTIFACTS): $(TILES_SRCS) scripts/convert_tiles.py
 # ------------------------------------------------------------------------------
 # 3. Audio / Music compilation
 # ------------------------------------------------------------------------------
-music: $(MUSIC_TITLE_ASM)
+music: $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM)
 
 $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_title_data
+
+$(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_intro_data
 
 # ------------------------------------------------------------------------------
 # 4. Data generation (Scene structures, platforms, objects)
@@ -96,7 +108,7 @@ $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFI
 # ------------------------------------------------------------------------------
 xex: $(TARGET)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(MUSIC_TITLE_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SCENES_ASM)
+$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(TITLE_SCROLL_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
 	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
 

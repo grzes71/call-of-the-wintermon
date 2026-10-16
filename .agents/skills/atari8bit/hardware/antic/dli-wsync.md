@@ -142,3 +142,32 @@ Practical rules:
   should trigger the interrupt.
 - Reset `VDSLST` from VBI if you want the chain to restart cleanly every frame.
 - Use blank-line DLIs when you want setup time before a visible band begins.
+
+## 3.9  DLI Pre-triggering & WSYNC Counting in Multi-Scanline Modes
+
+In multi-scanline modes (e.g. ANTIC Mode D = 2 scanlines/line, Mode 4/5 = 4 scanlines/line, Mode 2/3 = 8 scanlines/line), preparing hardware registers (such as PMG sizes, positions, priorities) before a time-critical scanline kernel often requires pre-triggering the DLI $N$ mode lines earlier.
+
+### Scanline Accounting Rule
+
+Because a DLI always triggers at cycle ~22 of the **last scanline** of the tagged display list instruction:
+1. The CPU enters the DLI handler on that last scanline (leaving ~85 cycles before the end of the line).
+2. The remaining scanlines before the start of the target mode line $2L$ equal:
+   $$\text{Scanlines to wait} = 1 \text{ (remainder of trigger line)} + (N - 1) \times \text{ScanlinesPerModeLine}$$
+
+### Mandatory `STA WSYNC` Sequence
+
+To land cycle-accurately on cycle 0 of scanline 0 of target mode line $2L$:
+- **Mode D (2 scanlines/line) with $N=1$ line pre-trigger:**
+  - Remaining: 1 scanline (the trigger line's last scanline).
+  - Requires **1x `STA WSYNC`**.
+- **Mode D (2 scanlines/line) with $N=2$ lines pre-trigger (e.g., line $2L-2$):**
+  - Remaining: 1 scanline (line $2L-2$, scanline 1) + 2 scanlines (line $2L-1$, scanlines 0 and 1) = **3 scanlines**.
+  - Requires **3x `STA WSYNC`**:
+    ```asm
+    sta WSYNC   ; 1st: halts to end of trigger line (2L-2, scanline 1)
+    sta WSYNC   ; 2nd: halts to end of pre-line (2L-1, scanline 0)
+    sta WSYNC   ; 3rd: halts to end of pre-line (2L-1, scanline 1)
+    ; CPU resumes at cycle 0 of scanline 2L (start of active band)!
+    ```
+- **Gotcha:** Using $N$ WSYNCs instead of calculating scanlines (e.g., 2 WSYNCs for $N=2$ mode lines) causes the kernel to start **1 scanline early** (on line $2L-1$ scanline 1) and exit **1 scanline early** (affecting the last scanline of the active zone).
+

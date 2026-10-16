@@ -83,35 +83,56 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x02E0 or start == 0x02E2:
         return "Vector (RUNAD/INITAD)", "SYSTEM", COLORS["SYSTEM"], "DOS Loader Run/Init Address"
     if start == 0x2000:
-        return "Engine & State Code", "CODE", COLORS["CODE"], "Main loop, Title, Intro, Game, Game Over states"
+        return "Engine & State Code", "CODE", COLORS["CODE"], "Main loop, Game state machine, Game Over logic"
     if start == 0x2400:
         return "Intro Font & VRAM", "GRAPHICS", COLORS["GRAPHICS"], "Custom 1 KB font ($2400) + Intro text ($2800)"
     if start == 0x2A00:
         return "Intro Display List", "DLIST", COLORS["DLIST"], "10-line ANTIC Mode 2 Display List"
     if start in (0x2A30, 0x2B00):
         return "Tileset Metadata & Tables", "METADATA", COLORS["METADATA"], "Row offset lookup tables & equates"
-    if start in (0x2C30, 0x2D00):
-        return "Scene Definitions & Objects", "METADATA", COLORS["METADATA"], "SoA scene structures, platforms, enemies, secrets"
     if start == 0x3000:
-        return "Gameplay VRAM & DLISTs", "GRAPHICS", COLORS["GRAPHICS"], "Mode D 160x96 ($3000) + dlist_game & dlist_title"
+        return "Gameplay VRAM & DLISTs", "GRAPHICS", COLORS["GRAPHICS"], "Mode D 160x96 ($3000) + dlist_game & dlist_scene_title"
     if start == 0x3F00:
         return "Gameplay Display List", "DLIST", COLORS["DLIST"], "96-line ANTIC Mode D Display List + Title Card DLIST"
     if start == 0x4000:
-        return "Title Screen VRAM", "GRAPHICS", COLORS["GRAPHICS"], "320x192 ANTIC Mode F bitmapped screen (7,696 B)"
+        return "Title VRAM & Scroller", "GRAPHICS", COLORS["GRAPHICS"], "Mode D 160x96 bitmap ($4000) + Scroller line ($4F00) + Text ($4F30)"
+    if start in (0x5000, 0x2C30, 0x2D00):
+        return "Scene Data, Title & Intro Music", "METADATA", COLORS["METADATA"], "Scene SoA tables ($5000), Title logic ($55BE), Intro music ($5758)"
     if start == 0x6000:
-        return "Title Display List", "DLIST", COLORS["DLIST"], "2-segment Mode F Display List with LMS"
+        return "Title Display List", "DLIST", COLORS["DLIST"], "ANTIC Mode D Title Display List with Mode 2 Scroller"
     if start == 0x6100:
         return "Unified DLI Engine & Buffers", "CODE", COLORS["CODE"], "Double-buffered DLI tables and 3-phase DLI interrupt handler"
     if start == 0x6800:
-        return "Player-Missile & Audio", "PMG", COLORS["PMG"], "2 KB PMG buffer ($6800) + CMC Audio Player & Music ($7000)"
+        return "Player-Missile & Audio", "PMG", COLORS["PMG"], "2 KB PMG buffer ($6800) + Audio Player & Title Music ($7000)"
     if start == 0x7000:
-        return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], "CMC Player engine & Call of the Wintermoon track"
+        return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], "POKEY Player engine & Title track"
     if start in (0x79D0, 0x7A00):
         return "Render Tables & Engine", "CODE", COLORS["CODE"], "2bpp horizontal flip table + Playfield blitter engine"
     if start == 0x8000:
         return "ANTIC Mode E Tilesets", "BITMAPS", COLORS["BITMAPS"], "Bitmapped sheets: Castles, Depths, Hell, Trees (16.2 KB)"
 
     return f"Segment ${start:04X}", "DATA", COLORS["METADATA"], f"Data segment ({size} bytes)"
+
+
+def describe_free_gap(start: int, end: int, size: int) -> str:
+    """Provide clear human-readable context for what borders this free gap."""
+    if start == 0x2C1E:
+        return "Low RAM gap before Gameplay VRAM ($3000) — vacated by scenes data"
+    if start == 0x5C6B:
+        return "Free expansion headroom in $5000 block before Title DLIST ($6000)"
+    if start == 0x7D8C:
+        return "Free headroom in $7000 block before ANTIC Mode E Tilesets ($8000)"
+    if start == 0x22D0:
+        return "Free headroom in $2000 block before Intro Font ($2400) — vacated by title code"
+    if start == 0x606D:
+        return "Free space after Title DLIST before DLI double buffers ($6100)"
+    if start == 0xBF6D:
+        return "Headroom below OS ROM Kernel boundary ($C000)"
+    if start == 0x3F89:
+        return "Free headroom in $3000 block after Gameplay DLIST"
+    if start == 0x4FC7:
+        return "Free space after Title Scroller before $5000 boundary"
+    return f"Unallocated headroom: {size} bytes"
 
 
 def build_memory_map(
@@ -130,15 +151,16 @@ def build_memory_map(
     for start, end, size in user_segs:
         if start > curr_addr:
             gap_size = start - curr_addr
+            gap_end = start - 1
             gap_seg = MemorySegment(
                 start=curr_addr,
-                end=start - 1,
+                end=gap_end,
                 size=gap_size,
                 name=f"FREE RAM ({gap_size} B)",
                 category="FREE",
                 color=COLORS["FREE"],
                 is_free=True,
-                details=f"Unallocated headroom: {gap_size} bytes",
+                details=describe_free_gap(curr_addr, gap_end, gap_size),
             )
             all_regions.append(gap_seg)
             free_gaps.append(gap_seg)
@@ -168,7 +190,7 @@ def build_memory_map(
             category="FREE",
             color=COLORS["FREE"],
             is_free=True,
-            details=f"Headroom below OS ROM boundary ($C000): {gap_size} bytes",
+            details=describe_free_gap(curr_addr, 0xBFFF, gap_size),
         )
         all_regions.append(gap_seg)
         free_gaps.append(gap_seg)
@@ -221,15 +243,16 @@ def print_text_report(
         ("$00 - $7F", 128, "SYSTEM (OS)", "Reserved for Atari OS Kernel"),
         ("$80 - $87", 8, "ENGINE", "Registers & temporary pointers (zp_temp, zp_ptr_src/dst)"),
         ("$88 - $8F", 8, "STATE", "Game states, title card fade counters, fire debouncing"),
-        ("$90 - $99", 10, "AUDIO", "CMC Audio Player base pointers (PLAYER_ZP_BASE)"),
+        ("$90 - $99", 10, "AUDIO", "POKEY Audio Player base pointers (PLAYER_ZP_BASE)"),
         ("$9A - $B7", 30, "RENDERER", "Scene renderer table pointers & parameters"),
-        ("$B8 - $FF", 72, "FREE", "Available for player physics, enemies AI & collision"),
+        ("$B8 - $C0", 9, "DLI ENGINE", "DLI registers save, pas counters & PMG pattern ptr"),
+        ("$C1 - $FF", 63, "FREE", "Available for player physics, enemies AI & collision"),
     ]
     for rng, sz, cat, desc in zp_info:
         cat_str = f"[{cat}]"
         col_prefix = "\033[32m" if cat == "FREE" else ""
         col_suffix = "\033[0m" if cat == "FREE" else ""
-        print(f"  {col_prefix}{rng:11} ({sz:3d} B) {cat_str:10} : {desc}{col_suffix}")
+        print(f"  {col_prefix}{rng:11} ({sz:3d} B) {cat_str:12} : {desc}{col_suffix}")
     print("=" * 82 + "\n")
 
 
@@ -314,7 +337,7 @@ def generate_graphical_pdf(
     ax_user.set_xlim(0, 100)
     ax_user.set_xticks([])
 
-    user_yticks = [0x2000, 0x3000, 0x4000, 0x6000, 0x6800, 0x7000, 0x7A00, 0x8000, 0xA000, 0xC000]
+    user_yticks = [0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x6800, 0x7000, 0x7A00, 0x8000, 0xA000, 0xC000]
     ax_user.set_yticks(user_yticks)
     ax_user.set_yticklabels([f"${y:04X}" for y in user_yticks], fontsize=9, color="#94A3B8", fontfamily="monospace")
     ax_user.tick_params(axis="y", colors="#64748B", length=6)
@@ -341,35 +364,45 @@ def generate_graphical_pdf(
 
         mid_y = start + height / 2
 
-        # Decide text display depending on height
-        if height >= 1200:
-            txt = f"{reg.name}  [${start:04X}–${end:04X}]  ({reg.size:,} B)"
-            ax_user.text(
-                50, mid_y, txt,
-                ha="center", va="center",
-                fontsize=9, fontweight="bold",
-                color="#FFFFFF",
-                path_effects=[path_effects.withStroke(linewidth=2, foreground="#0F172A")],
-            )
-        elif height >= 350:
-            txt = f"{reg.name} ({reg.size} B)"
-            ax_user.text(
-                50, mid_y, txt,
-                ha="center", va="center",
-                fontsize=8, fontweight="bold",
-                color="#FFFFFF" if not reg.is_free else "#A7F3D0",
-                path_effects=[path_effects.withStroke(linewidth=2, foreground="#0F172A")],
-            )
-        elif reg.is_free and height >= 100:
-            # Highlight visible free gaps
-            txt = f"★ FREE: {reg.size} B (${start:04X}–${end:04X})"
-            ax_user.text(
-                50, mid_y, txt,
-                ha="center", va="center",
-                fontsize=7.5, fontweight="bold",
-                color="#6EE7B7",
-                path_effects=[path_effects.withStroke(linewidth=2, foreground="#064E3B")],
-            )
+        # Decide text display depending on whether it is a free gap or occupied segment
+        if reg.is_free:
+            if height >= 200:
+                txt = f"★ FREE: {reg.size:,} B  [${start:04X}–${end:04X}]"
+                ax_user.text(
+                    50, mid_y, txt,
+                    ha="center", va="center",
+                    fontsize=8, fontweight="bold",
+                    color="#A7F3D0",
+                    path_effects=[path_effects.withStroke(linewidth=2, foreground="#064E3B")],
+                )
+            elif height >= 60:
+                txt = f"★ FREE: {reg.size} B"
+                ax_user.text(
+                    50, mid_y, txt,
+                    ha="center", va="center",
+                    fontsize=7, fontweight="bold",
+                    color="#6EE7B7",
+                    path_effects=[path_effects.withStroke(linewidth=2, foreground="#064E3B")],
+                )
+        else:
+            if height >= 1200:
+                txt = f"{reg.name}  [${start:04X}–${end:04X}]  ({reg.size:,} B)"
+                ax_user.text(
+                    50, mid_y, txt,
+                    ha="center", va="center",
+                    fontsize=9, fontweight="bold",
+                    color="#FFFFFF",
+                    path_effects=[path_effects.withStroke(linewidth=2, foreground="#0F172A")],
+                )
+            elif height >= 350:
+                txt = f"{reg.name} ({reg.size:,} B)"
+                ax_user.text(
+                    50, mid_y, txt,
+                    ha="center", va="center",
+                    fontsize=8, fontweight="bold",
+                    color="#FFFFFF",
+                    path_effects=[path_effects.withStroke(linewidth=2, foreground="#0F172A")],
+                )
 
     ax_user.set_title("User RAM Allocations & Free Gaps ($2000 – $BFFF)", color="#CBD5E1", fontsize=11, fontweight="bold", pad=10)
 
@@ -398,12 +431,15 @@ def generate_graphical_pdf(
     # Card 1: Key Metrics Summary
     y_pos = draw_section_header("MEMORY UTILIZATION SUMMARY", y_pos)
 
+    largest_gap = max(free_gaps, key=lambda g: g.size) if free_gaps else None
+    largest_str = f"{largest_gap.size:,} Bytes (${largest_gap.start:04X}–${largest_gap.end:04X})" if largest_gap else "None"
+
     metrics = [
         ("User RAM Space ($2000–$BFFF):", "40,960 Bytes (40.0 KB)"),
         ("Allocated Memory:", f"{total_allocated:,} Bytes ({pct_used:.1f}%)"),
         ("Total Free Headroom:", f"{total_free:,} Bytes ({pct_free:.1f}%)"),
-        ("Largest Free Block:", f"{max(g.size for g in free_gaps):,} Bytes ($60CA–$67FF)"),
-        ("Free Zero Page RAM:", "72 Bytes ($B8–$FF)"),
+        ("Largest Free Block:", largest_str),
+        ("Free Zero Page RAM:", "63 Bytes ($C1–$FF)"),
     ]
 
     for label, val in metrics:
@@ -417,12 +453,12 @@ def generate_graphical_pdf(
     y_pos = draw_section_header("CATEGORY LEGEND", y_pos)
 
     categories = [
-        ("CODE", COLORS["CODE"], "Game Engine & Logic Code ($2000, $7A00)"),
-        ("GRAPHICS", COLORS["GRAPHICS"], "Playfield VRAM ($3000) & Title ($4000)"),
+        ("CODE", COLORS["CODE"], "Game Engine ($2000), DLI Engine ($6100), Render ($7A00)"),
+        ("GRAPHICS", COLORS["GRAPHICS"], "Playfield VRAM ($3000) & Title/Scroller ($4000)"),
         ("BITMAPS", COLORS["BITMAPS"], "ANTIC Mode E Tileset Sheets ($8000)"),
-        ("DLIST", COLORS["DLIST"], "Display Lists (Game, Title, Intro)"),
-        ("PMG / AUDIO", COLORS["PMG"], "Player-Missiles ($6800) & CMC Music ($7000)"),
-        ("METADATA", COLORS["METADATA"], "SoA Scene tables & Tileset Row Offsets"),
+        ("DLIST", COLORS["DLIST"], "Display Lists (Game $3F00, Title $6000, Intro $2A00)"),
+        ("PMG / AUDIO", COLORS["PMG"], "Player-Missiles ($6800) & Audio Player ($7000)"),
+        ("METADATA", COLORS["METADATA"], "Scene SoA Tables, Title Code & Intro Music ($5000)"),
         ("FREE RAM", COLORS["FREE"], "Available unallocated memory gaps"),
         ("HARDWARE / ROM", COLORS["HARDWARE"], "GTIA/ANTIC/POKEY ($D000) & OS ROM ($C000+)"),
     ]
@@ -454,9 +490,10 @@ def generate_graphical_pdf(
     zp_lines = [
         ("$00 – $7F (128 B)", "Reserved for Atari OS Kernel", "#64748B"),
         ("$80 – $8F ( 16 B)", "Engine temporaries & state machine", "#38BDF8"),
-        ("$90 – $99 ( 10 B)", "CMC Audio Player pointers", "#A855F7"),
+        ("$90 – $99 ( 10 B)", "POKEY Audio Player base pointers", "#A855F7"),
         ("$9A – $B7 ( 30 B)", "Scene background renderer pointers", "#06B6D4"),
-        ("$B8 – $FF ( 72 B)", "★ 100% FREE for Entities, AI, Physics", "#34D399"),
+        ("$B8 – $C0 (  9 B)", "DLI engine registers & pattern pointers", "#E879F9"),
+        ("$C1 – $FF ( 63 B)", "★ 100% FREE for Entities, AI, Physics", "#34D399"),
     ]
     for rng, desc, col in zp_lines:
         ax_sidebar.text(0.06, y_pos, rng, fontsize=8, fontweight="bold", color=col)

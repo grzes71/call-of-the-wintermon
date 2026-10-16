@@ -37,32 +37,14 @@ dli_bg_colpf0       :16 .byte 0
 dli_bg_colpf1       :16 .byte 0
 dli_bg_colpf2       :16 .byte 0
 
-dli_pas_c1_sl0      :16 .byte 0
-dli_pas_c1_sl1      :16 .byte 0
-dli_pas_c1_sl2      :16 .byte 0
-dli_pas_c1_sl3      :16 .byte 0
-dli_pas_c1_sl4      :16 .byte 0
-dli_pas_c1_sl5      :16 .byte 0
-dli_pas_c1_sl6      :16 .byte 0
-dli_pas_c1_sl7      :16 .byte 0
-
-dli_pas_c2_sl0      :16 .byte 0
-dli_pas_c2_sl1      :16 .byte 0
-dli_pas_c2_sl2      :16 .byte 0
-dli_pas_c2_sl3      :16 .byte 0
-dli_pas_c2_sl4      :16 .byte 0
-dli_pas_c2_sl5      :16 .byte 0
-dli_pas_c2_sl6      :16 .byte 0
-dli_pas_c2_sl7      :16 .byte 0
-
-dli_pas_c3_sl0      :16 .byte 0
-dli_pas_c3_sl1      :16 .byte 0
-dli_pas_c3_sl2      :16 .byte 0
-dli_pas_c3_sl3      :16 .byte 0
-dli_pas_c3_sl4      :16 .byte 0
-dli_pas_c3_sl5      :16 .byte 0
-dli_pas_c3_sl6      :16 .byte 0
-dli_pas_c3_sl7      :16 .byte 0
+dli_pas_color_sl0   :16 .byte 0
+dli_pas_color_sl1   :16 .byte 0
+dli_pas_color_sl2   :16 .byte 0
+dli_pas_color_sl3   :16 .byte 0
+dli_pas_color_sl4   :16 .byte 0
+dli_pas_color_sl5   :16 .byte 0
+dli_pas_color_sl6   :16 .byte 0
+dli_pas_color_sl7   :16 .byte 0
 
 dli_zone_hpos_p1    :16 .byte 0
 dli_zone_col_p1     :16 .byte 0
@@ -95,19 +77,15 @@ dli_z0_colpf0       :2 .byte 0
 dli_z0_colpf1       :2 .byte 0
 dli_z0_colpf2       :2 .byte 0
 
-; Table base pointers for 50 tables (used by dli_stage_scene)
-DLI_TABLE_COUNT = 50
+; Table base pointers for 34 tables (used by dli_stage_scene)
+DLI_TABLE_COUNT = 34
 dli_table_ptrs_lo
     .byte <dli_hpos_p1, <dli_hpos_p2, <dli_hpos_p3
     .byte <dli_hpos_m0, <dli_hpos_m1, <dli_hpos_m2, <dli_hpos_m3
     .byte <dli_sizep1, <dli_sizep2, <dli_sizep3, <dli_sizem
     .byte <dli_bg_colpf0, <dli_bg_colpf1, <dli_bg_colpf2
-    .byte <dli_pas_c1_sl0, <dli_pas_c1_sl1, <dli_pas_c1_sl2, <dli_pas_c1_sl3
-    .byte <dli_pas_c1_sl4, <dli_pas_c1_sl5, <dli_pas_c1_sl6, <dli_pas_c1_sl7
-    .byte <dli_pas_c2_sl0, <dli_pas_c2_sl1, <dli_pas_c2_sl2, <dli_pas_c2_sl3
-    .byte <dli_pas_c2_sl4, <dli_pas_c2_sl5, <dli_pas_c2_sl6, <dli_pas_c2_sl7
-    .byte <dli_pas_c3_sl0, <dli_pas_c3_sl1, <dli_pas_c3_sl2, <dli_pas_c3_sl3
-    .byte <dli_pas_c3_sl4, <dli_pas_c3_sl5, <dli_pas_c3_sl6, <dli_pas_c3_sl7
+    .byte <dli_pas_color_sl0, <dli_pas_color_sl1, <dli_pas_color_sl2, <dli_pas_color_sl3
+    .byte <dli_pas_color_sl4, <dli_pas_color_sl5, <dli_pas_color_sl6, <dli_pas_color_sl7
     .byte <dli_zone_hpos_p1, <dli_zone_col_p1
     .byte <dli_zone_hpos_p2, <dli_zone_col_p2
     .byte <dli_zone_hpos_p3, <dli_zone_col_p3
@@ -119,12 +97,8 @@ dli_table_ptrs_hi
     .byte >dli_hpos_m0, >dli_hpos_m1, >dli_hpos_m2, >dli_hpos_m3
     .byte >dli_sizep1, >dli_sizep2, >dli_sizep3, >dli_sizem
     .byte >dli_bg_colpf0, >dli_bg_colpf1, >dli_bg_colpf2
-    .byte >dli_pas_c1_sl0, >dli_pas_c1_sl1, >dli_pas_c1_sl2, >dli_pas_c1_sl3
-    .byte >dli_pas_c1_sl4, >dli_pas_c1_sl5, >dli_pas_c1_sl6, >dli_pas_c1_sl7
-    .byte >dli_pas_c2_sl0, >dli_pas_c2_sl1, >dli_pas_c2_sl2, >dli_pas_c2_sl3
-    .byte >dli_pas_c2_sl4, >dli_pas_c2_sl5, >dli_pas_c2_sl6, >dli_pas_c2_sl7
-    .byte >dli_pas_c3_sl0, >dli_pas_c3_sl1, >dli_pas_c3_sl2, >dli_pas_c3_sl3
-    .byte >dli_pas_c3_sl4, >dli_pas_c3_sl5, >dli_pas_c3_sl6, >dli_pas_c3_sl7
+    .byte >dli_pas_color_sl0, >dli_pas_color_sl1, >dli_pas_color_sl2, >dli_pas_color_sl3
+    .byte >dli_pas_color_sl4, >dli_pas_color_sl5, >dli_pas_color_sl6, >dli_pas_color_sl7
     .byte >dli_zone_hpos_p1, >dli_zone_col_p1
     .byte >dli_zone_hpos_p2, >dli_zone_col_p2
     .byte >dli_zone_hpos_p3, >dli_zone_col_p3
@@ -158,47 +132,12 @@ dli_table_ptrs_hi
     inx
     bne @clr_pmg
 
-    ; 3. Pre-fill platform rows in PMG memory (8 scanlines solid per pas)
-    ; Mode D lines start after 24 blank scanlines (TV scanline 32)
-    ; Pas 0: lines 8..11   -> scanlines 48..55 ($30..$37)
-    ; Pas 1: lines 24..27  -> scanlines 80..87 ($50..$57)
-    ; Pas 2: lines 40..43  -> scanlines 112..119 ($70..$77)
-    ; Pas 3: lines 56..59  -> scanlines 144..151 ($90..$97)
-    ; Pas 4: lines 72..75  -> scanlines 176..183 ($B0..$B7)
-    ; Pas 5: lines 88..91  -> scanlines 208..215 ($D0..$D7)
-    ldx #7
-@fill_pas
-    lda #$FF            ; Solid pixels for player platforms
-    sta PMG_PLAYER1 + 48,x
-    sta PMG_PLAYER1 + 80,x
-    sta PMG_PLAYER1 + 112,x
-    sta PMG_PLAYER1 + 144,x
-    sta PMG_PLAYER1 + 176,x
-    sta PMG_PLAYER1 + 208,x
-
-    sta PMG_PLAYER2 + 48,x
-    sta PMG_PLAYER2 + 80,x
-    sta PMG_PLAYER2 + 112,x
-    sta PMG_PLAYER2 + 144,x
-    sta PMG_PLAYER2 + 176,x
-    sta PMG_PLAYER2 + 208,x
-
-    sta PMG_PLAYER3 + 48,x
-    sta PMG_PLAYER3 + 80,x
-    sta PMG_PLAYER3 + 112,x
-    sta PMG_PLAYER3 + 144,x
-    sta PMG_PLAYER3 + 176,x
-    sta PMG_PLAYER3 + 208,x
-
-    lda #$FF            ; All 4 missiles solid
-    sta PMG_MISSILES + 48,x
-    sta PMG_MISSILES + 80,x
-    sta PMG_MISSILES + 112,x
-    sta PMG_MISSILES + 144,x
-    sta PMG_MISSILES + 176,x
-    sta PMG_MISSILES + 208,x
-    dex
-    bpl @fill_pas
+    ; 3. Pre-fill platform rows in PMG memory from scene 0 patterns
+    lda scene_pmg_patterns_lo
+    sta dli_scene_pmg_ptr
+    lda scene_pmg_patterns_hi
+    sta dli_scene_pmg_ptr+1
+    jsr dli_apply_pmg_patterns
 
     ; 4. Hook DLI interrupt vector in OS page 2
     lda <dli_handler
@@ -209,6 +148,61 @@ dli_table_ptrs_hi
     ; 5. Enable DLI ($80) and VBI ($40) in NMIEN
     lda #$C0
     sta NMIEN
+
+    rts
+.endp
+
+; ==============================================================================
+; DLI APPLY PMG PATTERNS
+; Copies 18 bytes of PMG platform patterns (6 passes x 3 players) from ROM into
+; PMG memory across each 8-scanline platform pas. Missiles are set to $FF.
+; Input: dli_scene_pmg_ptr pointing to 18-byte pattern table for scene
+; ==============================================================================
+.proc dli_apply_pmg_patterns
+    lda #48
+    sta zp_temp_x           ; Base scanline for pas 0 (48)
+    ldy #0                  ; Pattern index (0..17)
+
+@pas_loop
+    lda (dli_scene_pmg_ptr),y
+    sta zp_temp_a           ; P1 pattern
+    iny
+    lda (dli_scene_pmg_ptr),y
+    sta zp_ptr_dst          ; P2 pattern
+    iny
+    lda (dli_scene_pmg_ptr),y
+    sta zp_ptr_dst+1        ; P3 pattern
+    iny
+    sty zp_temp_y           ; Save pattern index
+
+    lda zp_temp_x
+    clc
+    adc #7
+    tax                     ; End scanline (base + 7)
+
+@sl_loop
+    lda zp_temp_a           ; P1 pattern
+    sta PMG_PLAYER1,x
+    lda zp_ptr_dst          ; P2 pattern
+    sta PMG_PLAYER2,x
+    lda zp_ptr_dst+1        ; P3 pattern
+    sta PMG_PLAYER3,x
+    lda #$FF                ; Missiles solid
+    sta PMG_MISSILES,x
+
+    dex
+    cpx zp_temp_x
+    bcs @sl_loop
+
+    ; Advance to next pas: base += 32
+    lda zp_temp_x
+    clc
+    adc #32
+    sta zp_temp_x
+
+    ldy zp_temp_y
+    cpy #18
+    bcc @pas_loop
 
     rts
 .endp
@@ -226,6 +220,11 @@ dli_table_ptrs_hi
 
 @valid_id
     tax
+    lda scene_pmg_patterns_lo,x
+    sta dli_scene_pmg_ptr
+    lda scene_pmg_patterns_hi,x
+    sta dli_scene_pmg_ptr+1
+
     lda scene_dli_data_lo,x
     sta zp_ptr_src
     lda scene_dli_data_hi,x
@@ -236,9 +235,9 @@ dli_table_ptrs_hi
     eor #8
     sta dli_pending_offset
 
-    ; Copy 45 tables (6 bytes each)
+    ; Copy 34 tables (6 bytes each)
     lda #0
-    sta zp_temp_a       ; Table counter (0..44)
+    sta zp_temp_a       ; Table counter (0..33)
 
 @table_loop
     ldx zp_temp_a
@@ -349,6 +348,9 @@ dli_table_ptrs_hi
     lda #0
     sta dli_swap_requested
 
+    ; Copy PMG patterns for the new scene
+    jsr dli_apply_pmg_patterns
+
 @no_swap
     ; Reset DLI pas index to active buffer base offset
     lda dli_active_offset
@@ -396,7 +398,7 @@ dli_table_ptrs_hi
     lda dli_z0_secret_col,x
     sta COLPF3
 
-    lda dli_z0_prior,x
+    lda #$11
     sta PRIOR
     sta GPRIOR
 
@@ -429,24 +431,22 @@ dli_table_ptrs_hi
 .proc dli_handler
     ; --------------------------------------------------------------------------
     ; ENTRY: Save CPU registers to Zero Page (zero stack overhead)
+    ; X register is unused across DLI handler and preserved implicitly.
     ; --------------------------------------------------------------------------
     sta dli_save_a         ; [3]
-    stx dli_save_x         ; [3]
     sty dli_save_y         ; [3]
 
     ldy dli_pas_idx        ; [3] Active table offset + pas index
 
     ; --------------------------------------------------------------------------
-    ; FAZA A: Last scanline before pas (pre-WSYNC setup)
-    ; Set PMG widths (x4), positions for 3 channels, PRIOR (bit 4 cleared)
+    ; FAZA A: Executed during pre-pas line (2 scanlines before pas)
+    ; Set PMG player widths (x4), missile widths from table, and positions.
     ; --------------------------------------------------------------------------
-    lda dli_sizep1,y      ; [4] Size for platform player 1
+    lda #3                ; [2] Quad width (32px) for platform players
     sta SIZEP1            ; [4]
-    lda dli_sizep2,y      ; [4] Size for platform player 2
     sta SIZEP2            ; [4]
-    lda dli_sizep3,y      ; [4] Size for platform player 3
     sta SIZEP3            ; [4]
-    lda dli_sizem,y       ; [4] Size for platform missiles
+    lda dli_sizem,y       ; [4] Size for platform missiles ($FF for 32px quad width, $00 otherwise)
     sta SIZEM             ; [4]
 
     lda dli_hpos_p1,y      ; [4] Platform player positions
@@ -456,103 +456,93 @@ dli_table_ptrs_hi
     lda dli_hpos_p3,y      ; [4]
     sta HPOSP3            ; [4]
 
-    lda dli_hpos_m0,y      ; [4] Platform missile positions
-    sta HPOSM0            ; [4]
-    lda dli_hpos_m1,y      ; [4]
-    sta HPOSM1            ; [4]
-    lda dli_hpos_m2,y      ; [4]
-    sta HPOSM2            ; [4]
-    lda dli_hpos_m3,y      ; [4]
-    sta HPOSM3            ; [4]
-
-    lda #$11               ; [2] PRIOR: bit 4 = 1 (5th player enabled: missiles colored by COLPF3)
-    sta PRIOR             ; [4]
-
-    sta WSYNC             ; [4] Wait for scanline 0 of the pas
+    ; --------------------------------------------------------------------------
+    ; SYNC: 3 scanlines between DLI trigger (line 2L-2, scanline 1) and Pas (line 2L).
+    ; 1st WSYNC halts to end of line 2L-2, scanline 1.
+    ; 2nd WSYNC halts to end of line 2L-1, scanline 0.
+    ; 3rd WSYNC halts to end of line 2L-1, scanline 1 -> CPU resumes at cycle 0 of scanline 2L!
+    ; --------------------------------------------------------------------------
+    sta WSYNC             ; [4] Wait for end of trigger line (2L-2, scanline 1)
+    sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 0)
+    sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 1 -> aligns to scanline 2L)
 
     ; --------------------------------------------------------------------------
     ; FAZA B: 8 scanlines of platform color profiles
-    ; Updates COLPM1..3 and COLPF3 (5th player/missiles) in HBLANK of each scanline
+    ; Scanline 0 starts exactly on scanline 2L!
+    ; Updates COLPM1..3, COLPF3, and HPOSM0..3
     ; --------------------------------------------------------------------------
-    ; Scanline 0:
-    lda dli_pas_c1_sl0,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl0,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl0,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 0
+    ; --- Iteracja 0 (scanline 2L) ---
+    lda dli_pas_color_sl0,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+
+    lda dli_hpos_m0,y      ; [4] Platform missile positions
+    sta HPOSM0             ; [4]
+    lda dli_hpos_m1,y      ; [4]
+    sta HPOSM1             ; [4]
+    lda dli_hpos_m2,y      ; [4]
+    sta HPOSM2             ; [4]
+    lda dli_hpos_m3,y      ; [4]
+    sta HPOSM3             ; [4]
+
+    sta WSYNC              ; [4] End scanline 0 (2L)
 
     ; Scanline 1:
-    lda dli_pas_c1_sl1,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl1,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl1,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 1
+    lda dli_pas_color_sl1,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 1
 
     ; Scanline 2:
-    lda dli_pas_c1_sl2,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl2,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl2,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 2
+    lda dli_pas_color_sl2,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 2
 
     ; Scanline 3:
-    lda dli_pas_c1_sl3,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl3,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl3,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 3
+    lda dli_pas_color_sl3,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 3
 
     ; Scanline 4:
-    lda dli_pas_c1_sl4,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl4,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl4,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 4
+    lda dli_pas_color_sl4,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 4
 
     ; Scanline 5:
-    lda dli_pas_c1_sl5,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl5,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl5,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 5
+    lda dli_pas_color_sl5,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 5
 
     ; Scanline 6:
-    lda dli_pas_c1_sl6,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl6,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl6,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 6
+    lda dli_pas_color_sl6,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 6
 
     ; Scanline 7:
-    lda dli_pas_c1_sl7,y   ; [4]
-    sta COLPM1            ; [4]
-    sta COLPF3            ; [4]
-    lda dli_pas_c2_sl7,y   ; [4]
-    sta COLPM2            ; [4]
-    lda dli_pas_c3_sl7,y   ; [4]
-    sta COLPM3            ; [4]
-    sta WSYNC             ; [4] End scanline 7 (8th WSYNC)
+    lda dli_pas_color_sl7,y ; [4]
+    sta COLPM1             ; [4]
+    sta COLPM2             ; [4]
+    sta COLPM3             ; [4]
+    sta COLPF3             ; [4]
+    sta WSYNC              ; [4] End scanline 7 (8th WSYNC)
 
     ; --------------------------------------------------------------------------
     ; FAZA C: Guard line of following zone
@@ -568,11 +558,11 @@ dli_table_ptrs_hi
     ; --------------------------------------------------------------------------
     ; 2. In guard line: Reset sizes to x1, setup enemies and secret of next zone
     ; --------------------------------------------------------------------------
-    lda #0                 ; [2] Reset sizes to x1
+    lda #0                 ; [2] Reset sizes to x1 for enemy players & missiles
     sta SIZEP1            ; [4]
     sta SIZEP2            ; [4]
     sta SIZEP3            ; [4]
-    sta SIZEM             ; [4]
+    sta SIZEM             ; [4] Reset missiles to x1 for zone secret
 
     ; Enemies P1..P3
     lda dli_zone_hpos_p1,y ; [4]
@@ -603,9 +593,6 @@ dli_table_ptrs_hi
     lda dli_zone_secret_col,y ; [4]
     sta COLPF3                ; [4]
 
-    lda dli_zone_prior,y      ; [4] ($11 if secret active, else $01)
-    sta PRIOR                 ; [4]
-
     ; Advance pas index for next DLI
     iny                    ; [2]
     sty dli_pas_idx        ; [3]
@@ -614,7 +601,6 @@ dli_table_ptrs_hi
     ; EXIT: Restore registers from zero page and return
     ; --------------------------------------------------------------------------
     lda dli_save_a         ; [3]
-    ldx dli_save_x         ; [3]
     ldy dli_save_y         ; [3]
     rti                    ; [6]
 .endp

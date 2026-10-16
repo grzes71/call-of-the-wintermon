@@ -9,7 +9,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from atari_music.ai.client import generate_music_from_composition, load_composition_json
+from atari_music.ai.client import (
+    generate_music_from_composition,
+    generate_music_from_dsl,
+    load_composition_json,
+)
 from atari_music.mads_exporter import export_mads_asm
 
 
@@ -18,10 +22,10 @@ def compile_music(
     output_path: Path,
     song_label: str = "music_title_data",
 ) -> int:
-    """Compile a composition JSON file into relocatable MADS assembly.
+    """Compile a composition JSON or DSL file into relocatable MADS assembly.
 
     Args:
-        input_path: Path to source composition JSON.
+        input_path: Path to source composition JSON or DSL.
         output_path: Path to generated ASM file.
         song_label: Base label name for the song data structure.
 
@@ -33,8 +37,11 @@ def compile_music(
         return 1
 
     try:
-        composition = load_composition_json(input_path)
-        result = generate_music_from_composition(composition)
+        if input_path.suffix.lower() == ".dsl":
+            result = generate_music_from_dsl(input_path.read_text(encoding="utf-8"))
+        else:
+            composition = load_composition_json(input_path)
+            result = generate_music_from_composition(composition)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         export_mads_asm(result.pokey_ir, output_path, song_label=song_label)
         print(

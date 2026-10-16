@@ -305,7 +305,6 @@ class PlatformGraphicsItem(QGraphicsItem):
         # Text label (e.g. S:16 or M:8) if height >= 6 and width >= 12
         if h >= 6 and w >= 12:
             font = QFont("Monospace", 6)
-            font.setPixelSize(6)
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(text_col)
@@ -449,6 +448,13 @@ class SceneObjectGraphicsItem(QGraphicsItem):
             tip += f"\nAtari Color: ${defn.atari_color:02X} ({defn.atari_color})"
         if defn and defn.blink:
             tip += "\nBlink: ON"
+        eff_sprite_id = self.scene_object.get_effective_sprite_id(self.catalogues)
+        if eff_sprite_id is not None:
+            spr_desc = ""
+            if self.catalogues and hasattr(self.catalogues, "sprites") and eff_sprite_id in self.catalogues.sprites:
+                spr = self.catalogues.sprites[eff_sprite_id]
+                spr_desc = f" ({getattr(spr, 'description', '')})" if getattr(spr, "description", "") else ""
+            tip += f"\nSprite: ID {eff_sprite_id}{spr_desc}"
         if not defn and self.scene_object.definition_id:
             tip += f"\n[WARNING: Definition '{self.scene_object.definition_id}' not found in catalogue!]"
         self.setToolTip(tip)

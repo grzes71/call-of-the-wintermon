@@ -523,6 +523,19 @@ class TestGUIIntegrationCatalogues:
         assert 15 in window2.catalogues.enemies
         assert window2.catalogues.enemies[15].name == "Hydra"
 
+    def test_load_catalogues_triggered_action(self, monkeypatch, tmp_path: Path):
+        window = MainWindow(base_dir=tmp_path)
+        target_file = tmp_path / "definitions.json"
+        target_file.write_text('{"enemies": [{"id": 10, "name": "Bat"}]}', encoding="utf-8")
+        monkeypatch.setattr(
+            "scene_editor.main_window.QFileDialog.getOpenFileName",
+            lambda *args, **kwargs: (str(target_file), "JSON Files"),
+        )
+        # Triggering with False (as Qt triggered signal does) or via action must not raise TypeError
+        res = window.load_catalogues_from_json(False)
+        assert res is True
+        assert 10 in window.catalogues.enemies
+
     def test_custom_catalogue_paths(self, tmp_path: Path):
         cats = ProjectCatalogues()
         custom_enemies = tmp_path / "custom_subdir" / "my_enemies.json"
@@ -754,5 +767,126 @@ class TestSecretLinearDependencyChain:
         assert dlg.secret_dep_combo.currentData() is None
         assert "Available from the start of the scene" in dlg.secret_stage_lbl.text()
         assert "Stage" not in dlg.secret_stage_lbl.text()
+
+
+# =============================================================================
+# 8. Sprite Studio Integration Tests
+# =============================================================================
+
+class TestSpriteStudioIntegration:
+    def test_sprite_mapping_model_and_validation(self):
+        enemy = EnemyDefinition(id=1, name="Goblin", sprite_id=5)
+        enemy.validate()
+        assert enemy.sprite_id == 5
+
+        secret = SecretDefinition(id=2, name="CD", sprite_id=5)
+        secret.validate()
+        assert secret.sprite_id == 5
+
+        # Invalid sprite IDs
+        with pytest.raises(CatalogueValidationError):
+            EnemyDefinition(id=3, name="Bad", sprite_id=0).validate()
+        with pytest.raises(CatalogueValidationError):
+            SecretDefinition(id=4, name="Bad", sprite_id=256).validate()
+
+        # Serialization round-trip
+        data = enemy.to_dict()
+        assert data["sprite_id"] == 5
+        restored = EnemyDefinition.from_dict(data)
+        assert restored.sprite_id == 5
+
+        s_data = secret.to_dict()
+        assert s_data["sprite_id"] == 5
+        s_restored = SecretDefinition.from_dict(s_data)
+        assert s_restored.sprite_id == 5
+
+    def test_load_sprites_from_json(self):
+        cats = ProjectCatalogues()
+        assert len(cats.sprites) == 0
+
+        # Load real project sprite definition
+        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        assert sprite_file.is_file()
+
+        count = cats.load_sprites_from_json(sprite_file)
+        assert count >= 1
+        assert 1 in cats.sprites
+        spr = cats.sprites[1]
+        assert spr.id == 1
+        assert "CD" in spr.description
+
+    def test_catalogues_dialog_sprite_combo_unlock_and_mapping(self, qapp, tmp_path: Path):
+        cats = ProjectCatalogues()
+        cats.add_enemy(EnemyDefinition(id=1, name="Bat"))
+        cats.add_secret(SecretDefinition(id=1, name="Coin"))
+
+        dlg = CataloguesDialog(cats, base_dir=tmp_path)
+
+        # Initially combos must be disabled because no sprites are loaded
+        assert not dlg.enemy_sprite_combo.isEnabled()
+        assert not dlg.secret_sprite_combo.isEnabled()
+
+        # Load sprites
+        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        count = cats.load_sprites_from_json(sprite_file)
+        assert count > 0
+
+        # Manually refresh dialog sprite combos (as done in _on_load_sprites_clicked)
+        dlg._populate_sprite_combo(dlg.enemy_sprite_combo, None)
+        dlg._populate_sprite_combo(dlg.secret_sprite_combo, None)
+
+        assert dlg.enemy_sprite_combo.isEnabled()
+        assert dlg.secret_sprite_combo.isEnabled()
+
+        # Select sprite 1 for Enemy
+        idx = dlg.enemy_sprite_combo.findData(1)
+        assert idx >= 0
+        dlg.enemy_sprite_combo.setCurrentIndex(idx)
+        dlg._on_save_enemy_clicked()
+        assert cats.get_enemy(1).sprite_id == 1
+
+        # Select the SAME sprite 1 for Secret (same sprite can be used in different definitions)
+        dlg.tabs.setCurrentIndex(1)
+        dlg._on_secret_selected(0)
+        idx_s = dlg.secret_sprite_combo.findData(1)
+        assert idx_s >= 0
+        dlg.secret_sprite_combo.setCurrentIndex(idx_s)
+        dlg._on_save_secret_clicked()
+        assert cats.get_secret(1).sprite_id == 1
+
+    def test_scene_object_effective_sprite_id(self):
+        cats = ProjectCatalogues()
+        cats.add_enemy(EnemyDefinition(id=1, name="Spider", sprite_id=3))
+
+        # Object inherits definition sprite_id
+        obj = SceneObjectElement(id=10, type=OBJECT_TYPE_ENEMY, definition_id=1, platform_id="plat_1", x=10)
+        assert obj.sprite_id is None
+        assert obj.get_effective_sprite_id(cats) == 3
+
+        # Object with explicit sprite_id override
+        obj.sprite_id = 7
+        assert obj.get_effective_sprite_id(cats) == 7
+
+    def test_main_window_menu_and_sprite_loading(self, qapp, monkeypatch, tmp_path: Path):
+        monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+        win = MainWindow(base_dir=tmp_path)
+
+        # Check menu action exists
+        assert hasattr(win, "act_load_sprites")
+        assert win.act_load_sprites.text() == "Load &Sprites (JSON)..."
+
+        # Combos in main window should be disabled initially
+        assert not win.new_obj_sprite_combo.isEnabled()
+        assert not win.obj_prop_sprite_combo.isEnabled()
+
+        # Load sprites via main window method
+        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        success = win.load_sprites_from_json(sprite_file)
+        assert success is True
+
+        # Combos must now be enabled
+        assert win.new_obj_sprite_combo.isEnabled()
+        assert win.catalogues.sprites_path == sprite_file.resolve()
+
 
 

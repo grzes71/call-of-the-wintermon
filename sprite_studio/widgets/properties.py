@@ -6,7 +6,8 @@ from PySide6.QtGui import QColor
 class PropertiesWidget(QWidget):
     # Signals emitted when user changes something in the UI. 
     # Main window handles these to create commands.
-    id_changed = Signal(str)
+    id_changed = Signal(int)
+    description_changed = Signal(str)
     height_changed = Signal(int)
     color_changed = Signal(int)
     duration_changed = Signal(int)
@@ -21,9 +22,16 @@ class PropertiesWidget(QWidget):
     def _setup_ui(self):
         layout = QFormLayout(self)
         
-        self.edit_id = QLineEdit()
-        self.edit_id.textEdited.connect(self._on_id_edited)
-        layout.addRow("ID:", self.edit_id)
+        self.spin_id = QSpinBox()
+        self.spin_id.setRange(1, 255)
+        self.spin_id.valueChanged.connect(self._on_id_changed)
+        layout.addRow("ID:", self.spin_id)
+
+        self.edit_description = QLineEdit()
+        self.edit_description.setMaxLength(40)
+        self.edit_description.setPlaceholderText("Description (max 40 chars)")
+        self.edit_description.textEdited.connect(self._on_description_edited)
+        layout.addRow("Description:", self.edit_description)
         
         self.spin_height = QSpinBox()
         self.spin_height.setRange(1, 256)
@@ -51,7 +59,8 @@ class PropertiesWidget(QWidget):
         if not sprite:
             self.setEnabled(False)
             self.block_updates = True
-            self.edit_id.clear()
+            self.spin_id.setValue(1)
+            self.edit_description.clear()
             self.spin_height.setValue(1)
             self.spin_duration.setValue(4)
             self.chk_loop.setChecked(True)
@@ -61,7 +70,10 @@ class PropertiesWidget(QWidget):
         self.setEnabled(True)
         self.block_updates = True
         
-        self.edit_id.setText(sprite.id)
+        if not self.spin_id.hasFocus() or self.spin_id.value() != sprite.id:
+            self.spin_id.setValue(int(sprite.id))
+        if not self.edit_description.hasFocus() or self.edit_description.text() != sprite.description:
+            self.edit_description.setText(sprite.description)
         self.spin_height.setValue(sprite.height)
         self.spin_duration.setValue(sprite.animation.frame_duration)
         self.chk_loop.setChecked(sprite.animation.loop)
@@ -74,9 +86,13 @@ class PropertiesWidget(QWidget):
         
         self.block_updates = False
 
-    def _on_id_edited(self, text):
+    def _on_id_changed(self, value):
         if not self.block_updates:
-            self.id_changed.emit(text)
+            self.id_changed.emit(value)
+
+    def _on_description_edited(self, text):
+        if not self.block_updates:
+            self.description_changed.emit(text)
             
     def _on_height_changed(self, value):
         if not self.block_updates:

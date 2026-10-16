@@ -56,6 +56,7 @@ class CatalogDefinition:
     rgb_color: Optional[tuple[int, int, int]] = None
     atari_color: Optional[int] = None
     blink: bool = False
+    sprite_id: Optional[int] = None
 
     def validate(self) -> None:
         """Validate definition integrity."""
@@ -90,6 +91,14 @@ class CatalogDefinition:
         if not isinstance(self.blink, bool):
             raise InvalidDefinitionError(f"blink must be a boolean, got {type(self.blink).__name__}.")
 
+        if self.sprite_id is not None:
+            if isinstance(self.sprite_id, str) and self.sprite_id.strip().isdigit():
+                self.sprite_id = int(self.sprite_id.strip())
+            if isinstance(self.sprite_id, bool) or not isinstance(self.sprite_id, int) or not (1 <= self.sprite_id <= 255):
+                raise InvalidDefinitionError(
+                    f"Definition 'sprite_id' must be an integer between 1 and 255, got {self.sprite_id!r}."
+                )
+
     def clone(self) -> CatalogDefinition:
         """Create a deep copy."""
         return copy.deepcopy(self)
@@ -105,6 +114,8 @@ class CatalogDefinition:
             d["rgb_color"] = [int(c) for c in self.rgb_color]
         if self.atari_color is not None:
             d["atari_color"] = int(self.atari_color)
+        if self.sprite_id is not None:
+            d["sprite_id"] = int(self.sprite_id)
         return d
 
     @classmethod
@@ -139,12 +150,25 @@ class CatalogDefinition:
 
         blink = bool(data.get("blink", False))
 
+        raw_sprite_id = data.get("sprite_id")
+        sprite_id: Optional[int] = None
+        if raw_sprite_id is not None and str(raw_sprite_id).strip() != "":
+            if isinstance(raw_sprite_id, str) and raw_sprite_id.strip().isdigit():
+                sprite_id = int(raw_sprite_id.strip())
+            elif isinstance(raw_sprite_id, int) and not isinstance(raw_sprite_id, bool):
+                sprite_id = raw_sprite_id
+            else:
+                raise InvalidDefinitionError(
+                    f"Definition 'sprite_id' must be an integer between 1 and 255, got {raw_sprite_id!r}."
+                )
+
         defn = cls(
             id=defn_id,
             name=str(data["name"]).strip(),
             rgb_color=rgb,
             atari_color=atari,
             blink=blink,
+            sprite_id=sprite_id,
         )
         defn.validate()
         return defn
@@ -209,6 +233,7 @@ class SecretDefinition(CatalogDefinition):
             rgb_color=base_defn.rgb_color,
             atari_color=base_defn.atari_color,
             blink=base_defn.blink,
+            sprite_id=base_defn.sprite_id,
             dependency=dep,
         )
         defn.validate()
@@ -334,10 +359,42 @@ class ProjectCatalogues:
     enemies: dict[int, EnemyDefinition] = field(default_factory=dict)
     secrets: dict[int, SecretDefinition] = field(default_factory=dict)
     platform_profiles: dict[int, PlatformColorProfile] = field(default_factory=dict)
+    sprites: dict[int, Any] = field(default_factory=dict)
+    sprites_path: Optional[Path] = None
     definitions_path: Optional[Path] = None
     enemies_path: Optional[Path] = None
     secrets_path: Optional[Path] = None
     platform_profiles_path: Optional[Path] = None
+
+    def load_sprites_from_json(self, path: Path | str) -> int:
+        """Load sprite definitions from a Sprite Studio JSON file."""
+        target_path = Path(path).resolve()
+        if not target_path.is_file():
+            raise FileNotFoundError(f"Sprite file not found: {target_path}")
+
+        try:
+            from sprite_studio.io import load_project
+            project = load_project(target_path)
+            sprites_list = project.sprites
+        except Exception:
+            with open(target_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            sprites_list = []
+            from types import SimpleNamespace
+            for s_data in data.get("sprites", []):
+                raw_id = s_data.get("id", 1)
+                try:
+                    s_id = int(raw_id)
+                except (ValueError, TypeError):
+                    s_id = 1
+                desc = str(s_data.get("description", ""))
+                sprites_list.append(SimpleNamespace(id=s_id, description=desc))
+
+        self.sprites.clear()
+        for spr in sprites_list:
+            self.sprites[spr.id] = spr
+        self.sprites_path = target_path
+        return len(self.sprites)
 
     @staticmethod
     def _normalize_id(defn_id: Any) -> int:
@@ -742,6 +799,10 @@ class ProjectCatalogues:
         if used and force:
             for p in used:
                 p.color_profile_id = None
+            if scene is not None and hasattr(scene, "row_color_profiles"):
+                for r in range(len(scene.row_color_profiles)):
+                    if scene.row_color_profiles[r] == norm_id:
+                        scene.row_color_profiles[r] = None
 
         return self.platform_profiles.pop(norm_id)
 
@@ -952,6 +1013,14 @@ class ProjectCatalogues:
                     prof = PlatformColorProfile.from_dict(def_item)
                     catalogues.platform_profiles[prof.id] = prof
 
+            if "sprites_file" in data:
+                sf = (d_path.parent / data["sprites_file"]).resolve()
+                if sf.is_file():
+                    try:
+                        catalogues.load_sprites_from_json(sf)
+                    except Exception:
+                        pass
+
             return catalogues
 
         # 2. Legacy fallback: separate individual files
@@ -1089,6 +1158,12 @@ class ProjectCatalogues:
             "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
             "platform_profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
         }
+        if self.sprites_path:
+            try:
+                rel = self.sprites_path.relative_to(def_path.parent)
+                data["sprites_file"] = str(rel).replace("\\", "/")
+            except ValueError:
+                data["sprites_file"] = str(self.sprites_path).replace("\\", "/")
         self._atomic_save_json(def_path, data)
 
     def save_to_paths(

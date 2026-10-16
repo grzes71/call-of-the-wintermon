@@ -52,11 +52,13 @@ zp_ptr_elem_h       = $B0   ; 2 bytes: Pointer to scene elem h_lines table
 zp_ptr_elem_dx      = $B2   ; 2 bytes: Pointer to scene elem dst_x_byte table
 zp_ptr_elem_dy      = $B4   ; 2 bytes: Pointer to scene elem dst_y table
 zp_ptr_elem_fl      = $B6   ; 2 bytes: Pointer to scene elem flags table
-; --- DLI Engine Zero Page Variables ($B8-$BE) ---
+; --- DLI Engine Zero Page Variables ($B8-$C0) ---
 dli_save_a          = $B8   ; DLI accumulator save (no stack)
 dli_save_x          = $B9   ; DLI X register save (no stack)
 dli_save_y          = $BA   ; DLI Y register save (no stack)
 dli_pas_idx         = $BB   ; Active pas index counter (buffer offset + 0..5)
-dli_active_offset   = $BC   ; Active double buffer offset (0 or 16)
-dli_pending_offset  = $BD   ; Inactive/staging buffer offset (16 or 0)
+dli_active_offset   = $BC   ; Active double buffer offset (0 or 8)
+dli_pending_offset  = $BD   ; Inactive/staging buffer offset (8 or 0)
 dli_swap_requested  = $BE   ; Mailbox flag: 1 = swap pending for next VBLANK
+dli_scene_pmg_ptr   = $BF   ; 2 bytes ($BF-$C0): Pointer to active scene PMG patterns in ROM
+

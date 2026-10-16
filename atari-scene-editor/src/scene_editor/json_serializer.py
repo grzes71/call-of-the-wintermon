@@ -109,13 +109,16 @@ class SceneSerializer:
                         obj_data["source"] = source_path.as_posix()
             objects_data.append(obj_data)
 
-        return {
+        res: dict[str, Any] = {
             "schema_version": scene.schema_version,
             "scene": scene_info,
             "elements": elements_data,
             "platforms": [p.to_dict() for p in scene.platforms],
             "objects": objects_data,
         }
+        if scene.row_color_profiles and any(x is not None for x in scene.row_color_profiles):
+            res["row_color_profiles"] = list(scene.row_color_profiles)
+        return res
 
     @classmethod
     def to_json(cls, scene: Scene, indent: int = 2, base_dir: Path | str | None = None) -> str:
@@ -225,6 +228,21 @@ class SceneSerializer:
             except Exception:
                 catalogues = None
 
+        raw_row_profiles = data.get("row_color_profiles")
+        if raw_row_profiles is None and isinstance(data.get("scene"), dict):
+            raw_row_profiles = data["scene"].get("row_color_profiles")
+
+        row_color_profiles: list[Optional[int]] = []
+        if isinstance(raw_row_profiles, list):
+            for item in raw_row_profiles:
+                if item is not None and str(item).strip() != "":
+                    try:
+                        row_color_profiles.append(int(item))
+                    except (ValueError, TypeError):
+                        row_color_profiles.append(None)
+                else:
+                    row_color_profiles.append(None)
+
         scene = Scene(
             name=name,
             schema_version=version,
@@ -234,6 +252,7 @@ class SceneSerializer:
             elements=elements,
             platforms=platforms,
             objects=objects,
+            row_color_profiles=row_color_profiles if row_color_profiles else [None] * 6,
             catalogues=catalogues,
         )
         try:

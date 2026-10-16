@@ -237,10 +237,11 @@ def test_scene_dli_data_matches_json():
                 assert dli.hpos_p1[5] == 48 + 48        # $60
                 assert dli.hpos_p2[5] == 48 + 48 + 32   # $80
                 assert dli.hpos_p3[5] == 48 + 48 + 64   # $A0
-                assert dli.hpos_m0[5] == 48 + 16        # $40
-                assert dli.hpos_m1[5] == 48 + 16 + 8    # $48
-                assert dli.hpos_m2[5] == 48 + 16 + 16   # $50
-                assert dli.hpos_m3[5] == 48 + 16 + 24   # $58
+                p14 = next(p for p in pas_plats if p.id == "platform-014")
+                assert dli.hpos_m0[5] == 48 + p14.x
+                assert dli.hpos_m1[5] == 48 + p14.x + 8
+                assert dli.hpos_m2[5] == 48 + p14.x + 16
+                assert dli.hpos_m3[5] == 48 + p14.x + 24
 
 
 def test_validate_scene_dli_platforms_rejects_invalid():
@@ -251,9 +252,7 @@ def test_validate_scene_dli_platforms_rejects_invalid():
             hpos_m0=[0]*6, hpos_m1=[0]*6, hpos_m2=[0]*6, hpos_m3=[0]*6,
             sizep1=[0]*6, sizep2=[0]*6, sizep3=[0]*6, sizem=[0]*6,
             bg_colpf0=[0]*6, bg_colpf1=[0]*6, bg_colpf2=[0]*6,
-            pas_c1_sl=[[0]*6 for _ in range(8)],
-            pas_c2_sl=[[0]*6 for _ in range(8)],
-            pas_c3_sl=[[0]*6 for _ in range(8)],
+            pas_color_sl=[[0]*6 for _ in range(8)],
             zone_hpos_p1=[0]*6, zone_col_p1=[0]*6,
             zone_hpos_p2=[0]*6, zone_col_p2=[0]*6,
             zone_hpos_p3=[0]*6, zone_col_p3=[0]*6,
@@ -385,6 +384,40 @@ def test_sizem_for_missile_platforms():
                     f"Scene {scene_file_name} pas {pas_idx} has no missile platform, "
                     f"expected SIZEM=$00, got ${dli.sizem[pas_idx]:02X}"
                 )
+
+
+def test_pmg_patterns_match_platform_widths():
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    scene_data = parse_scene_json(Path("scenes/01-forest.json"), enemies, secrets)
+    dli = scene_data.dli_data
+    assert dli is not None
+    assert dli.pmg_patterns is not None
+
+    # Expected patterns for 01-forest:
+    # pas 0: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
+    # pas 1: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
+    # pas 2: platform-008 is 16px -> P1 has $F0; P2=$FF, P3=$FF
+    # pas 3: platform-012 is 16px -> P2 has $F0; P1=$FF, P3=$FF
+    # pas 4: platform-004 is 48px -> P1=32px ($FF), P2=16px ($F0); P3=$FF
+    # pas 5: platform-002 is 96px -> P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
+    expected_patterns = [
+        0xFF, 0xFF, 0xFF,  # pas 0
+        0xFF, 0xFF, 0xFF,  # pas 1
+        0xF0, 0xFF, 0xFF,  # pas 2 (platform-008 16px on P1)
+        0xFF, 0xF0, 0xFF,  # pas 3 (platform-012 16px on P2)
+        0xFF, 0xF0, 0xFF,  # pas 4 (platform-004 48px -> P2 has $F0)
+        0xFF, 0xFF, 0xFF,  # pas 5 (platform-002 96px)
+    ]
+    assert dli.pmg_patterns.patterns == expected_patterns
+
+    # Also verify generated ASM contains correct pattern tables
+    asm_text = Path("gen/scenes_dli_data.asm").read_text(encoding="utf-8")
+    assert "scene_sc_01_forest_pmg_patterns" in asm_text
+    assert ".byte $F0, $FF, $FF" in asm_text
+    assert ".byte $FF, $F0, $FF" in asm_text
+    assert "scene_pmg_patterns_lo" in asm_text
+    assert "scene_pmg_patterns_hi" in asm_text
+
 
 
 

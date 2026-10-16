@@ -218,3 +218,29 @@ class TestMainWindowIntegration:
         assert len(warnings) == 2
         assert "Hardware Resource Limit" in warnings[-1][0]
 
+    def test_open_scene_with_file_dialog(self, test_app, monkeypatch):
+        window, tmp_path, tile_path = test_app
+        import json
+        from PySide6.QtWidgets import QFileDialog
+
+        scene_file = tmp_path / "test_open.json"
+        scene_data = {
+            "schema_version": 1,
+            "scene": {"name": "Test Open Dialog", "width": 160, "height": 96},
+            "elements": [],
+            "platforms": [],
+            "objects": [],
+        }
+        scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+
+        # Simulate QFileDialog.getOpenFileName returning the file path when open_scene() called without args
+        monkeypatch.setattr(
+            QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(scene_file), "Scene JSON (*.json)"),
+        )
+
+        window.open_scene(None)
+        assert window.current_file_path == scene_file.resolve()
+        assert window.scene_model.name == "Test Open Dialog"
+

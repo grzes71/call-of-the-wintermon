@@ -67,11 +67,12 @@
         170,
         0
       ],
-      "atari_color": 26
+      "atari_color": 26,
+      "sprite_id": 3
     },
     {
       "id": 2,
-      "name": "Exit Door",
+      "name": "Ladder",
       "blink": true,
       "rgb_color": [
         255,
@@ -79,6 +80,7 @@
         255
       ],
       "atari_color": 72,
+      "sprite_id": 2,
       "dependency": 1
     }
   ],
@@ -87,14 +89,14 @@
       "id": 1,
       "name": "blue",
       "colors": [
-        "0x8E",
+        "0x00",
         "0x8C",
         "0x8A",
         "0x88",
         "0x86",
         "0x84",
         "0x82",
-        "0x80"
+        "0x00"
       ],
       "description": "Cyan/blue gradient suitable for winter/ice platforms"
     },
@@ -102,14 +104,14 @@
       "id": 2,
       "name": "gold",
       "colors": [
-        "0x1E",
+        "0x00",
         "0x1C",
         "0x1A",
         "0x18",
         "0x16",
         "0x14",
         "0x12",
-        "0x10"
+        "0x00"
       ],
       "description": "Amber/gold gradient for royal platforms and castle trim"
     },
@@ -117,7 +119,7 @@
       "id": 3,
       "name": "grey",
       "colors": [
-        "0x0E",
+        "0x00",
         "0x0C",
         "0x0A",
         "0x08",
@@ -132,14 +134,14 @@
       "id": 4,
       "name": "green",
       "colors": [
-        "0xCE",
+        "0x00",
         "0xCC",
         "0xCA",
         "0xC8",
         "0xC6",
         "0xC4",
         "0xC2",
-        "0xC0"
+        "0x00"
       ],
       "description": "Verdant green gradient for living branches and roots"
     },
@@ -147,16 +149,17 @@
       "id": 5,
       "name": "red",
       "colors": [
-        "0x3E",
+        "0x00",
         "0x3C",
         "0x3A",
         "0x38",
         "0x36",
         "0x34",
         "0x32",
-        "0x30"
+        "0x00"
       ],
       "description": "Cyan/blue gradient suitable for winter/ice platforms"
     }
-  ]
+  ],
+  "sprites_file": "C:/Users/grzes/Documents/Projects/atari-call-of-the-wintermoon/sprites/objects.sprite.json"
 }

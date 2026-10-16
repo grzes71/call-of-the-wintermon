@@ -61,26 +61,27 @@ def load_xex_and_symbols() -> tuple[bytearray, dict[str, int]]:
     return mem, labels
 
 
-def step_until_rts_or_rti(mpu: MPU, max_cycles: int = 20000) -> int:
-    """Step 6502 MPU until RTS ($60) or RTI ($40) instruction executes."""
+def step_until_rts_or_rti(mpu: MPU, max_cycles: int = 50000, target_sp: int | None = None) -> int:
+    """Step 6502 MPU until RTS ($60) or RTI ($40) instruction executes at the target stack depth."""
     cycles = 0
     while cycles < max_cycles:
         opcode = mpu.memory[mpu.pc]
         mpu.step()
         cycles += 1
         if opcode in (0x60, 0x40):  # RTS or RTI
-            return cycles
-    raise TimeoutError(f"Subroutine at PC=${mpu.pc:04X} did not return within {max_cycles} cycles")
+            if target_sp is None or mpu.sp == target_sp:
+                return cycles
+    raise TimeoutError(f"Subroutine at PC=${mpu.pc:04X} did not return within {max_cycles} cycles (SP=${mpu.sp:02X}, target_sp={target_sp})")
 
 
-def run_subroutine(mpu: MPU, addr: int, max_cycles: int = 20000) -> int:
+def run_subroutine(mpu: MPU, addr: int, max_cycles: int = 50000) -> int:
     """Execute a subroutine ending with RTS, preserving stack pointer."""
     sp = mpu.sp
     mpu.memory[0x0100 + sp] = 0x00
     mpu.memory[0x0100 + sp - 1] = 0x00
     mpu.sp = sp - 2
     mpu.pc = addr
-    return step_until_rts_or_rti(mpu, max_cycles)
+    return step_until_rts_or_rti(mpu, max_cycles, target_sp=sp)
 
 
 # ==============================================================================
@@ -100,8 +101,8 @@ def test_dlist_game_structure_and_dli_flags():
     assert lms_target == 0x3000
 
     # Remaining 95 lines of Mode D:
-    # DL_DLI ($80) MUST be set on lines 7, 23, 39, 55, 71, 87 (i in 6, 22, 38, 54, 70, 86)
-    expected_dli_lines = {7, 23, 39, 55, 71, 87}
+    # DL_DLI ($80) MUST be set on lines 6, 22, 38, 54, 70, 86 (1 line before each platform pas)
+    expected_dli_lines = {6, 22, 38, 54, 70, 86}
     dli_found = set()
 
     for line_idx in range(1, 96):
@@ -174,7 +175,7 @@ def test_dli_init_execution():
     assert mem[labels["DLI_SWAP_REQUESTED"]] == 0
     assert mem[labels["DLI_PAS_IDX"]] == 0
 
-    # 4. PMG platform rows pre-filled with solid pixels ($FF in P1..P3, $FF in Missiles)
+    # 4. PMG platform rows pre-filled from Scene 0 patterns ($F0 for 16px platforms)
     # 6 pas at scanlines: 48..55, 80..87, 112..119, 144..151, 176..183, 208..215
     pas_scanline_starts = [48, 80, 112, 144, 176, 208]
     pmg_p1 = labels["PMG_PLAYER1"]
@@ -182,13 +183,20 @@ def test_dli_init_execution():
     pmg_p3 = labels["PMG_PLAYER3"]
     pmg_m  = labels["PMG_MISSILES"]
 
-    for p_start in pas_scanline_starts:
+    expected_p1 = [0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]
+    expected_p2 = [0xFF, 0xFF, 0xFF, 0xF0, 0xF0, 0xFF]
+    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+
+    for idx, p_start in enumerate(pas_scanline_starts):
+        exp1 = expected_p1[idx]
+        exp2 = expected_p2[idx]
+        exp3 = expected_p3[idx]
         for sl in range(8):
             curr_sl = p_start + sl
-            assert mem[pmg_p1 + curr_sl] == 0xFF, f"Player 1 pas row {curr_sl} must be $FF"
-            assert mem[pmg_p2 + curr_sl] == 0xFF, f"Player 2 pas row {curr_sl} must be $FF"
-            assert mem[pmg_p3 + curr_sl] == 0xFF, f"Player 3 pas row {curr_sl} must be $FF"
-            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas row {curr_sl} must be $FF"
+            assert mem[pmg_p1 + curr_sl] == exp1, f"Player 1 pas {idx} row {curr_sl} must be ${exp1:02X}, got ${mem[pmg_p1 + curr_sl]:02X}"
+            assert mem[pmg_p2 + curr_sl] == exp2, f"Player 2 pas {idx} row {curr_sl} must be ${exp2:02X}, got ${mem[pmg_p2 + curr_sl]:02X}"
+            assert mem[pmg_p3 + curr_sl] == exp3, f"Player 3 pas {idx} row {curr_sl} must be ${exp3:02X}, got ${mem[pmg_p3 + curr_sl]:02X}"
+            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas {idx} row {curr_sl} must be $FF"
 
     # Guard lines (e.g. scanline 47, 56, 79, 88, etc.) must remain 0
     guard_lines = [47, 56, 79, 88, 111, 120, 143, 152, 175, 184, 207, 216]
@@ -268,7 +276,7 @@ def test_dli_vblank_update_and_zone0():
     assert mem[labels["COLBK"]] == 0x00
     assert mem[labels["COLOR4"]] == 0x00
 
-    # 4. Sizes reset to x1 for Zone 0
+    # 4. Sizes: players x1 for Zone 0, missiles x1 ($00) for zone secret
     assert mem[labels["SIZEP1"]] == 0
     assert mem[labels["SIZEP2"]] == 0
     assert mem[labels["SIZEP3"]] == 0
@@ -283,7 +291,7 @@ def invoke_dli(mpu: MPU, dli_addr: int) -> int:
     mpu.memory[0x0100 + sp - 2] = 0x30  # P status
     mpu.sp = sp - 3
     mpu.pc = dli_addr
-    return step_until_rts_or_rti(mpu)
+    return step_until_rts_or_rti(mpu, target_sp=sp)
 
 
 # ==============================================================================
@@ -314,6 +322,8 @@ def test_dli_handler_full_execution_and_palette_transition():
     mem[labels["COLPM0"]] = HERO_COL
 
     initial_sp = mpu.sp
+    expected_x = 0x5A
+    mpu.x = expected_x
 
     # --- DLI 1 (Pas 0, line 8) ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
@@ -363,3 +373,154 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mem[labels["COLBK"]] == 0x00
     # 3. Stack was not touched during DLI (SP remained intact)
     assert mpu.sp == 0xFD
+    # 4. X register is preserved across all DLI handlers
+    assert mpu.x == expected_x, "X register must remain intact across DLI invocations"
+
+
+# ==============================================================================
+# TEST 7: PMG Patterns Are Applied On Scene Change
+# ==============================================================================
+def test_pmg_patterns_are_applied_on_scene_change():
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    pmg_p1 = labels["PMG_PLAYER1"]
+    pmg_p2 = labels["PMG_PLAYER2"]
+    pmg_p3 = labels["PMG_PLAYER3"]
+
+    # 1. Initialize with Scene 0
+    run_subroutine(mpu, labels["DLI_INIT"])
+
+    # In Scene 0 (Forest):
+    # Pas 0 (48): P1=$FF
+    # Pas 2 (112): P1=$F0 (platform-008 is 16px on P1)
+    # Pas 3 (144): P2=$F0 (platform-012 is 16px on P2)
+    # Pas 4 (176): P2=$F0 (platform-004 is 48px -> P2 is 16px)
+    assert mem[pmg_p1 + 48] == 0xFF
+    assert mem[pmg_p1 + 112] == 0xF0
+    assert mem[pmg_p2 + 144] == 0xF0
+    assert mem[pmg_p2 + 176] == 0xF0
+
+    # 2. Stage Scene 1 (Forest Castle)
+    mpu.a = 1
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+
+    # Buffer swap commit via VBLANK update
+    run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+
+    # In Scene 1 (Castle):
+    # Pas 0 (48): P1=$F0 (platform-007 is 16px on P1)
+    # Pas 2 (112): P1=$FF
+    # Pas 3 (144): P1=$F0 (platform-011 is 16px on P1)
+    # Pas 4 (176): P2=$F0, P3=$C0 (platform-001 is 8px on P3)
+    assert mem[pmg_p1 + 48] == 0xF0
+    assert mem[pmg_p1 + 112] == 0xFF
+    assert mem[pmg_p1 + 144] == 0xF0
+    assert mem[pmg_p2 + 176] == 0xF0
+    assert mem[pmg_p3 + 176] == 0xC0
+
+    # 3. Stage Scene 0 back
+    mpu.a = 0
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+
+    # Verify Scene 0 patterns restored
+    assert mem[pmg_p1 + 48] == 0xFF
+    assert mem[pmg_p1 + 112] == 0xF0
+    assert mem[pmg_p1 + 144] == 0xFF
+    assert mem[pmg_p2 + 144] == 0xF0
+    assert mem[pmg_p2 + 176] == 0xF0
+    assert mem[pmg_p3 + 176] == 0xFF
+
+
+# ==============================================================================
+# TEST 8: Faza A Cycle Budget (<= 60 cycles) and 2x WSYNC Pre-Pas Synchronization
+# ==============================================================================
+def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Initialize Scene 0
+    run_subroutine(mpu, labels["DLI_INIT"])
+    run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+
+    # Simulate interrupt trigger to DLI_HANDLER
+    dli_addr = labels["DLI_HANDLER"]
+    wsync_addr = labels["WSYNC"]
+
+    sp = mpu.sp
+    mpu.memory[0x0100 + sp] = 0x00
+    mpu.memory[0x0100 + sp - 1] = 0x00
+    mpu.memory[0x0100 + sp - 2] = 0x30
+    mpu.sp = sp - 3
+    mpu.pc = dli_addr
+    mpu.x = 0x42  # Distinct value to ensure X preservation
+
+    # Step through Faza A until first WSYNC write (STA WSYNC = opcode 0x8D)
+    faza_a_cycles = 0
+    while mpu.pc != wsync_addr:
+        pc_before = mpu.pc
+        opcode = mem[pc_before]
+        if opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr:
+            break
+        mpu.step()
+        faza_a_cycles += 1
+
+    # Faza A must execute and reach STA WSYNC in <= 60 cycles (~55 cycles)
+    assert faza_a_cycles <= 60, f"Faza A took {faza_a_cycles} instructions/cycles; must be <= 60 to prevent scanline slip"
+
+    # Step over 1st STA WSYNC (end of line 2L-2 scanline 1)
+    mpu.step()
+
+    # Next instruction must be 2nd STA WSYNC (end of line 2L-1 scanline 0)
+    pc_before = mpu.pc
+    opcode = mem[pc_before]
+    assert opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr, "2nd WSYNC required"
+    mpu.step()
+
+    # Next instruction must be 3rd STA WSYNC (end of line 2L-1 scanline 1 -> enters scanline 2L)
+    pc_before = mpu.pc
+    opcode = mem[pc_before]
+    assert opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr, "3rd WSYNC required to align to scanline 2L"
+    mpu.step()
+
+    # We are now in Faza B Iteration 0 (scanline 2L)
+    # Step through until the next STA WSYNC (end of scanline 0 of the pas)
+    iter0_cycles = 0
+    while True:
+        pc_before = mpu.pc
+        opcode = mem[pc_before]
+        if opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr:
+            break
+        mpu.step()
+        iter0_cycles += 1
+
+    # Step over STA WSYNC of scanline 0
+    mpu.step()
+
+    # Verify iteration 0 executed in <= 70 cycles (~64 cycles)
+    assert iter0_cycles <= 70, f"Iteration 0 took {iter0_cycles} instructions/cycles; must be <= 70"
+
+    # In Scene 0 Pas 0: no missile platform, so SIZEM is 0
+    assert mem[labels["SIZEM"]] == 0x00
+
+    # Step through the rest of DLI 1 to RTI
+    step_until_rts_or_rti(mpu, target_sp=sp)
+    assert mem[labels["DLI_PAS_IDX"]] == 1
+
+    # Execute remaining 5 DLIs (Pas 1..5)
+    for _ in range(5):
+        invoke_dli(mpu, labels["DLI_HANDLER"])
+
+    # All 6 DLIs completed (Pas 0..5), DLI_PAS_IDX is now 6
+    assert mem[labels["DLI_PAS_IDX"]] == 6
+
+    # Verify X register was never modified
+    assert mpu.x == 0x42, f"X register must be preserved across Faza A and B, got ${mpu.x:02X}"
+

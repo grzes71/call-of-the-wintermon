@@ -90,6 +90,7 @@ class CatalogueItem:
     atari_color: int
     blink: bool = False
     dependency: Optional[int] = None
+    sprite_id: Optional[int] = None
 
 
 @dataclass
@@ -163,11 +164,26 @@ SUPPORTED_SPRITE_WIDTHS: dict[int, list[tuple[int, int]]] = {
 }
 
 
+WIDTH_TO_PMG_PATTERN: dict[int, int] = {
+    32: 0xFF,
+    16: 0xF0,
+    8: 0xC0,
+    24: 0xFC,
+}
+
+
+@dataclass
+class ScenePmgPatterns:
+    """PMG pattern bytes for platform channels (6 pas x 3 channels = 18 bytes)."""
+
+    patterns: list[int]
+
+
 @dataclass
 class SceneDliCompiledData:
-    """Compiled DLI table data for a single scene (315 bytes)."""
+    """Compiled DLI table data for a single scene (219 bytes + 18 bytes PMG patterns)."""
 
-    # 50 tables x 6 bytes = 300 bytes
+    # 34 tables x 6 bytes = 204 bytes
     hpos_p1: list[int]          # 6 bytes (pasy 0..5)
     hpos_p2: list[int]          # 6 bytes
     hpos_p3: list[int]          # 6 bytes
@@ -182,9 +198,7 @@ class SceneDliCompiledData:
     bg_colpf0: list[int]        # 6 bytes
     bg_colpf1: list[int]        # 6 bytes
     bg_colpf2: list[int]        # 6 bytes
-    pas_c1_sl: list[list[int]]  # 8 lists of 6 bytes
-    pas_c2_sl: list[list[int]]  # 8 lists of 6 bytes
-    pas_c3_sl: list[list[int]]  # 8 lists of 6 bytes
+    pas_color_sl: list[list[int]]  # 8 lists of 6 bytes
     zone_hpos_p1: list[int]     # 6 bytes (zones 1..6)
     zone_col_p1: list[int]      # 6 bytes
     zone_hpos_p2: list[int]     # 6 bytes
@@ -213,6 +227,7 @@ class SceneDliCompiledData:
     z0_colpf0: int
     z0_colpf1: int
     z0_colpf2: int
+    pmg_patterns: ScenePmgPatterns | None = None
 
 
 def validate_scene_dli_platforms(
@@ -371,30 +386,34 @@ def compile_scene_dli_data(
     hpos_p1 = [0] * 6
     hpos_p2 = [0] * 6
     hpos_p3 = [0] * 6
-    hpos_m0 = [0] * 6
-    hpos_m1 = [0] * 6
-    hpos_m2 = [0] * 6
-    hpos_m3 = [0] * 6
+    hpos_m0 = [0xFF] * 6
+    hpos_m1 = [0xFF] * 6
+    hpos_m2 = [0xFF] * 6
+    hpos_m3 = [0xFF] * 6
 
     sizep1 = [0] * 6
     sizep2 = [0] * 6
     sizep3 = [0] * 6
     sizem = [0] * 6
 
-    pas_c1_sl = [[0] * 6 for _ in range(8)]
-    pas_c2_sl = [[0] * 6 for _ in range(8)]
-    pas_c3_sl = [[0] * 6 for _ in range(8)]
+    pas_color_sl = [[0] * 6 for _ in range(8)]
 
     hpos_p_all = [hpos_p1, hpos_p2, hpos_p3]
     hpos_m_all = [hpos_m0, hpos_m1, hpos_m2, hpos_m3]
     sizep_all = [sizep1, sizep2, sizep3]
-    pas_c_all = [pas_c1_sl, pas_c2_sl, pas_c3_sl]
+
+    pmg_patterns_list = [0xFF] * 18
 
     for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
         pas_platforms = [p for p in platforms if p.y == pas_y]
 
         sprite_plats = sorted([p for p in pas_platforms if p.type_code == 0], key=lambda p: p.x)
         missile_plats = sorted([p for p in pas_platforms if p.type_code == 1], key=lambda p: p.x)
+
+        if pas_platforms:
+            row_colors = pas_platforms[0].colors
+            for sl in range(8):
+                pas_color_sl[sl][pas_idx] = row_colors[sl]
 
         ch_p = 0
         ch_m = 0
@@ -411,8 +430,7 @@ def compile_scene_dli_data(
                 if ch_p < 3:
                     hpos_p_all[ch_p][pas_idx] = min(255, max(0, 48 + p.x + seg_offset))
                     sizep_all[ch_p][pas_idx] = p_sizep
-                    for sl in range(8):
-                        pas_c_all[ch_p][sl][pas_idx] = p.colors[sl]
+                    pmg_patterns_list[pas_idx * 3 + ch_p] = WIDTH_TO_PMG_PATTERN.get(seg_w, 0xFF)
                     ch_p += 1
                 seg_offset += seg_w
 
@@ -478,12 +496,12 @@ def compile_scene_dli_data(
         z0_secret_col = sec.atari_color
         z0_prior = 0x11
     else:
-        z0_hpos_m0 = 0
-        z0_hpos_m1 = 0
-        z0_hpos_m2 = 0
-        z0_hpos_m3 = 0
+        z0_hpos_m0 = 0xFF
+        z0_hpos_m1 = 0xFF
+        z0_hpos_m2 = 0xFF
+        z0_hpos_m3 = 0xFF
         z0_secret_col = 0
-        z0_prior = 0x01
+        z0_prior = 0x11
 
     # Zones 1..6 (set up in Faza C of pas 0..5, 6 entries)
     zone_hpos_p1 = [0] * 6
@@ -493,12 +511,12 @@ def compile_scene_dli_data(
     zone_hpos_p3 = [0] * 6
     zone_col_p3  = [0] * 6
 
-    zone_hpos_m0 = [0] * 6
-    zone_hpos_m1 = [0] * 6
-    zone_hpos_m2 = [0] * 6
-    zone_hpos_m3 = [0] * 6
+    zone_hpos_m0 = [0xFF] * 6
+    zone_hpos_m1 = [0xFF] * 6
+    zone_hpos_m2 = [0xFF] * 6
+    zone_hpos_m3 = [0xFF] * 6
     zone_secret_col = [0] * 6
-    zone_prior = [0x01] * 6
+    zone_prior = [0x11] * 6
 
     for z_idx in range(6):
         target_zone = z_idx + 1  # Zones 1..6
@@ -525,7 +543,7 @@ def compile_scene_dli_data(
             zone_secret_col[z_idx] = s.atari_color
             zone_prior[z_idx] = 0x11
         else:
-            zone_prior[z_idx] = 0x01
+            zone_prior[z_idx] = 0x11
 
     compiled_dli = SceneDliCompiledData(
         hpos_p1=hpos_p1,
@@ -542,9 +560,7 @@ def compile_scene_dli_data(
         bg_colpf0=bg_colpf0,
         bg_colpf1=bg_colpf1,
         bg_colpf2=bg_colpf2,
-        pas_c1_sl=pas_c1_sl,
-        pas_c2_sl=pas_c2_sl,
-        pas_c3_sl=pas_c3_sl,
+        pas_color_sl=pas_color_sl,
         zone_hpos_p1=zone_hpos_p1,
         zone_col_p1=zone_col_p1,
         zone_hpos_p2=zone_hpos_p2,
@@ -572,6 +588,7 @@ def compile_scene_dli_data(
         z0_colpf0=upper_palette[0],
         z0_colpf1=upper_palette[1],
         z0_colpf2=upper_palette[2],
+        pmg_patterns=ScenePmgPatterns(patterns=pmg_patterns_list),
     )
 
     validate_scene_dli_platforms(platforms, compiled_dli, scene_name)
@@ -592,6 +609,7 @@ class SceneCompiledData:
     platforms: list[PlatformData] = field(default_factory=list)
     objects: list[SceneObjectData] = field(default_factory=list)
     dli_data: SceneDliCompiledData | None = None
+    pmg_patterns: ScenePmgPatterns | None = None
 
 
 def sanitize_symbol(name: str) -> str:
@@ -638,6 +656,7 @@ def load_catalogues(
                     name=item.get("name", f"Enemy {item['id']}"),
                     atari_color=item.get("atari_color", 0x42),
                     blink=bool(item.get("blink", False)),
+                    sprite_id=item.get("sprite_id"),
                 )
             for item in data.get("secrets", []):
                 raw_dep = item.get("dependency")
@@ -648,6 +667,7 @@ def load_catalogues(
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
+                    sprite_id=item.get("sprite_id"),
                 )
             return enemies, secrets
         except Exception as exc:
@@ -669,6 +689,7 @@ def load_catalogues(
                     name=item.get("name", f"Enemy {item['id']}"),
                     atari_color=item.get("atari_color", 0x42),
                     blink=bool(item.get("blink", False)),
+                    sprite_id=item.get("sprite_id"),
                 )
         except Exception as exc:
             print(f"Warning: Failed loading enemies catalog ({exc})", file=sys.stderr)
@@ -692,6 +713,7 @@ def load_catalogues(
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
+                    sprite_id=item.get("sprite_id"),
                 )
         except Exception as exc:
             print(f"Warning: Failed loading secrets catalog ({exc})", file=sys.stderr)
@@ -832,13 +854,61 @@ def parse_scene_json(
 
         plat_id_to_idx[pid] = idx
         plat_id_to_y[pid] = py
-        raw_cprof_id = p.get("color_profile_id")
-        cprof_id: Optional[int] = None
-        if raw_cprof_id is not None and str(raw_cprof_id).strip() != "":
+
+    # 2. Row color profiles mapping
+    raw_row_profiles = data.get("row_color_profiles")
+    if raw_row_profiles is None and isinstance(data.get("scene"), dict):
+        raw_row_profiles = data["scene"].get("row_color_profiles")
+
+    row_cprof_map: dict[int, Optional[int]] = {}
+    if isinstance(raw_row_profiles, list):
+        for r_idx, val in enumerate(raw_row_profiles):
+            if val is not None and str(val).strip() != "":
+                try:
+                    row_cprof_map[r_idx] = int(val)
+                except (ValueError, TypeError):
+                    row_cprof_map[r_idx] = None
+            else:
+                row_cprof_map[r_idx] = None
+    elif isinstance(raw_row_profiles, dict):
+        for k, val in raw_row_profiles.items():
             try:
-                cprof_id = int(raw_cprof_id)
+                row_cprof_map[int(k)] = int(val) if val is not None else None
             except (ValueError, TypeError):
-                cprof_id = None
+                pass
+
+    # If row_color_profiles was not specified at scene level, infer from platforms
+    if not row_cprof_map:
+        for p in raw_platforms:
+            ppos = p.get("position", {})
+            py = int(ppos.get("y", 0))
+            ridx = (py - 8) // 16
+            cprof = p.get("color_profile_id")
+            if cprof is not None and ridx not in row_cprof_map:
+                try:
+                    row_cprof_map[ridx] = int(cprof)
+                except (ValueError, TypeError):
+                    pass
+
+    for idx, p in enumerate(raw_platforms):
+        pid = str(p.get("id", f"platform-{idx}"))
+        ptype_str = str(p.get("type", "sprite")).lower()
+        ptype = 1 if ptype_str == "missile" else 0
+        ppos = p.get("position", {})
+        px = int(ppos.get("x", 0))
+        py = int(ppos.get("y", 0))
+        pw = int(p.get("width", 16))
+        ph = int(p.get("height", 4))
+
+        ridx = (py - 8) // 16
+        cprof_id = row_cprof_map.get(ridx)
+        if cprof_id is None:
+            raw_cprof_id = p.get("color_profile_id")
+            if raw_cprof_id is not None and str(raw_cprof_id).strip() != "":
+                try:
+                    cprof_id = int(raw_cprof_id)
+                except (ValueError, TypeError):
+                    cprof_id = None
 
         if cprof_id is not None and profiles and cprof_id in profiles:
             colors = list(profiles[cprof_id])
@@ -942,6 +1012,7 @@ def parse_scene_json(
         platforms=platforms,
         objects=objects,
         dli_data=dli_data,
+        pmg_patterns=dli_data.pmg_patterns if dli_data else None,
     )
 
 
@@ -1259,8 +1330,8 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
         "; ==============================================================================",
         "; SCENES DLI DATA — CALL OF THE WINTERMON (Auto-generated by compile_scenes.py)",
         "; Target: Atari 800XL / 65XE (MOS 6502, ANTIC Mode D 160x96 2bpp)",
-        "; Format: 315 bytes per scene (50 tables x 6 bytes + 15 bytes Zone 0)",
-        "; Segment: Loaded under RENDER_TABLES segment ($79D0)",
+        "; Format: 219 bytes per scene (34 tables x 6 bytes + 15 bytes Zone 0)",
+        "; Segment: Loaded under SCENES_DATA segment ($5000)",
         "; ==============================================================================",
         "",
     ]
@@ -1268,7 +1339,7 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
     for sc in scenes:
         sym = sc.symbol_name
         dli = sc.dli_data
-        lines.append(f"; --- DLI Data for {sc.name} (315 bytes) ---")
+        lines.append(f"; --- DLI Data for {sc.name} (219 bytes) ---")
         lines.append(f"scene_{sym}_dli_data")
         if dli:
             lines.append("    ; 1..7: Platform HPOSP1..3 and HPOSM0..3 (6 bytes each)")
@@ -1291,19 +1362,11 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.bg_colpf2))
 
-            lines.append("    ; 15..22: Platform Channel 1 Scanlines 0..7 (6 bytes each)")
+            lines.append("    ; 15..22: Platform Color Scanlines 0..7 (single table for all channels)")
             for sl in range(8):
-                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c1_sl[sl]))
+                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_color_sl[sl]))
 
-            lines.append("    ; 23..30: Platform Channel 2 Scanlines 0..7 (6 bytes each)")
-            for sl in range(8):
-                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c2_sl[sl]))
-
-            lines.append("    ; 31..38: Platform Channel 3 Scanlines 0..7 (6 bytes each)")
-            for sl in range(8):
-                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.pas_c3_sl[sl]))
-
-            lines.append("    ; 39..44: Zone Enemies HPOS and Color (P1..P3, 6 bytes each)")
+            lines.append("    ; 23..28: Zone Enemies HPOS and Color (P1..P3, 6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p2))
@@ -1311,7 +1374,7 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p3))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p3))
 
-            lines.append("    ; 45..50: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
+            lines.append("    ; 29..34: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m0))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m2))
@@ -1327,7 +1390,19 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             ]
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in z0_vals))
         else:
-            lines.append("    :315 .byte 0")
+            lines.append("    :219 .byte 0")
+        lines.append("")
+
+        if dli and dli.pmg_patterns:
+            lines.append(f"; --- PMG Patterns for {sc.name} (18 bytes) ---")
+            lines.append(f"scene_{sym}_pmg_patterns")
+            for p_idx in range(6):
+                p_slice = dli.pmg_patterns.patterns[p_idx * 3 : p_idx * 3 + 3]
+                lines.append("    .byte " + ", ".join(f"${v:02X}" for v in p_slice))
+        else:
+            lines.append(f"; --- PMG Patterns for {sc.name} (18 bytes) ---")
+            lines.append(f"scene_{sym}_pmg_patterns")
+            lines.append("    :18 .byte $FF")
         lines.append("")
 
     lines.extend([
@@ -1338,6 +1413,14 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_dli_data" for sc in scenes),
         "scene_dli_data_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_dli_data" for sc in scenes),
+        "",
+        "; " + "=" * 78,
+        "; MASTER SCENE PMG PATTERNS POINTER TABLES",
+        "; " + "=" * 78,
+        "scene_pmg_patterns_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_pmg_patterns" for sc in scenes),
+        "scene_pmg_patterns_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_pmg_patterns" for sc in scenes),
         "",
     ])
 

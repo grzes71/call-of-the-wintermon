@@ -73,68 +73,66 @@ def emu_env():
 
 
 def test_title_init_first_run_starts_at_black(emu_env):
-    """When title_first_run == 1, title_init must set color to $00 and fade_frame to 0."""
+    """When title_first_run == 1, title_init must set colors to $00 and fade_frame to 0."""
     mpu, labels = emu_env
 
     # Setup first run state
     mpu.memory[labels["TITLE_FIRST_RUN"]] = 1
     mpu.memory[labels["FADE_FRAME"]] = 99
-    mpu.memory[labels["COLOR1"]] = 0x0E
+    mpu.memory[labels["COLOR0"]] = 0xC4
+    mpu.memory[labels["COLOR1"]] = 0xCA
+    mpu.memory[labels["COLOR2"]] = 0xEE
 
     run_subroutine(mpu, labels["TITLE_INIT"])
 
     assert mpu.memory[labels["FADE_FRAME"]] == 0
+    assert mpu.memory[labels["COLOR0"]] == 0x00
+    assert mpu.memory[labels["COLPF0"]] == 0x00
     assert mpu.memory[labels["COLOR1"]] == 0x00
     assert mpu.memory[labels["COLPF1"]] == 0x00
     assert mpu.memory[labels["COLOR2"]] == 0x00
+    assert mpu.memory[labels["COLPF2"]] == 0x00
     assert mpu.memory[labels["COLBK"]] == 0x00
 
 
 def test_title_init_subsequent_run_skips_fade(emu_env):
-    """When title_first_run == 0 (e.g. returning from game over), color must be $0E immediately."""
+    """When title_first_run == 0 (e.g. returning from game over), colors must be full brightness immediately."""
     mpu, labels = emu_env
 
     # Setup return from game over (title_first_run == 0)
     mpu.memory[labels["TITLE_FIRST_RUN"]] = 0
     mpu.memory[labels["FADE_FRAME"]] = 0
+    mpu.memory[labels["COLOR0"]] = 0x00
     mpu.memory[labels["COLOR1"]] = 0x00
+    mpu.memory[labels["COLOR2"]] = 0x00
 
     run_subroutine(mpu, labels["TITLE_INIT"])
 
-    # Must be set directly to $0E, fade_frame to 28
+    # Must be set directly to full brightness ($C4, $CA, $EE), fade_frame to 28
     assert mpu.memory[labels["FADE_FRAME"]] == 28
-    assert mpu.memory[labels["COLOR1"]] == 0x0E
-    assert mpu.memory[labels["COLPF1"]] == 0x0E
+    assert mpu.memory[labels["COLOR0"]] == 0xC4
+    assert mpu.memory[labels["COLPF0"]] == 0xC4
+    assert mpu.memory[labels["COLOR1"]] == 0xCA
+    assert mpu.memory[labels["COLPF1"]] == 0xCA
+    assert mpu.memory[labels["COLOR2"]] == 0xEE
+    assert mpu.memory[labels["COLPF2"]] == 0xEE
 
 
 def test_fade_frame_progression_over_28_frames():
-    """Verify the arithmetic formula used by title_run for the 28-frame fade-in."""
-    # Algorithm in title_run:
-    # inc fade_frame (1..28)
-    # lsr @
-    # and #$0E
-    luminances = []
-    for frame in range(1, 29):
-        lum = (frame >> 1) & 0x0E
-        luminances.append(lum)
+    """Verify the 8-step fade progression for 28-frame title screen fade-in."""
+    title_fade_c0 = [0x00, 0xC0, 0xC0, 0xC2, 0xC2, 0xC4, 0xC4, 0xC4]
+    title_fade_c1 = [0x00, 0xC2, 0xC4, 0xC6, 0xC8, 0xCA, 0xCA, 0xCA]
+    title_fade_c2 = [0x00, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE]
 
-    # Frame 1..3 must have luminance 0
-    assert luminances[0] == 0x00
-    assert luminances[1] == 0x00
-    assert luminances[2] == 0x00
-    # Must smoothly increase through even GTIA luminances
-    assert luminances[3] == 0x02
-    assert luminances[7] == 0x04
-    assert luminances[11] == 0x06
-    assert luminances[15] == 0x08
-    assert luminances[19] == 0x0A
-    assert luminances[23] == 0x0C
-    # Exactly at frame 28 reaches $0E
-    assert luminances[27] == 0x0E
-    # All values must be even and <= 0x0E
-    for val in luminances:
-        assert val % 2 == 0
-        assert 0 <= val <= 0x0E
+    for frame in range(1, 29):
+        step = frame >> 2
+        c0 = title_fade_c0[step]
+        c1 = title_fade_c1[step]
+        c2 = title_fade_c2[step]
+        if frame < 4:
+            assert (c0, c1, c2) == (0x00, 0x00, 0x00)
+        if frame >= 28:
+            assert (c0, c1, c2) == (0xC4, 0xCA, 0xEE)
 
 
 def test_scene_title_card_frame_progression(emu_env):

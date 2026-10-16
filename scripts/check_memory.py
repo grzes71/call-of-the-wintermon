@@ -73,14 +73,14 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Intro Display List"
         elif start in (0x2A30, 0x2B00):
             seg_type = "Tileset Metadata & Row Tables"
-        elif start in (0x2C30, 0x2D00):
-            seg_type = "Scene Definitions & Object Tables"
+        elif start in (0x5000, 0x2C30, 0x2D00):
+            seg_type = "Scene Definitions, Objects & DLI Data"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
         elif start == 0x3F00:
             seg_type = "Gameplay Display List"
         elif start == 0x4000:
-            seg_type = "Title Screen VRAM (320x192 Mode F)"
+            seg_type = "Title Screen VRAM (ANTIC Mode D 160x95)"
         elif start == 0x6000:
             seg_type = "Title Display List"
         elif start == 0x6100:

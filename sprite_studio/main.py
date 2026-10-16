@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         
         self.props = PropertiesWidget()
         self.props.id_changed.connect(self._on_prop_id)
+        self.props.description_changed.connect(self._on_prop_description)
         self.props.height_changed.connect(self._on_prop_height)
         self.props.color_changed.connect(self._on_prop_color)
         self.props.duration_changed.connect(self._on_prop_duration)
@@ -245,7 +246,11 @@ class MainWindow(QMainWindow):
             self._refresh_frame()
 
     def _on_add_sprite(self):
-        new_spr = Sprite(id=f"SPRITE_{len(self.project.sprites)}")
+        used_ids = {s.id for s in self.project.sprites if isinstance(s.id, int)}
+        new_id = 1
+        while new_id in used_ids and new_id < 255:
+            new_id += 1
+        new_spr = Sprite(id=new_id)
         new_spr.frames.append(Frame(pixels=["00000000"] * new_spr.height))
         
         def do(): self.project.sprites.append(new_spr)
@@ -260,7 +265,13 @@ class MainWindow(QMainWindow):
 
     def _on_copy_sprite(self, spr):
         new_spr = copy.deepcopy(spr)
-        new_spr.id = new_spr.id + "_COPY"
+        used_ids = {s.id for s in self.project.sprites if isinstance(s.id, int)}
+        new_id = 1
+        while new_id in used_ids and new_id < 255:
+            new_id += 1
+        new_spr.id = new_id
+        if new_spr.description:
+            new_spr.description = f"{new_spr.description[:33]} (Copy)"
         def do(): self.project.sprites.append(new_spr)
         def undo(): self.project.sprites.remove(new_spr)
         self._execute_cmd("Copy Sprite", do, undo, self._refresh_all)
@@ -361,13 +372,35 @@ class MainWindow(QMainWindow):
         self._execute_cmd("Edit Pixel", do, undo, self._refresh_frame)
 
     # ... properties
-    def _on_prop_id(self, new_id):
+    def _on_prop_id(self, new_id: int):
         if not self.current_sprite: return
         spr = self.current_sprite
         old_id = spr.id
-        def do(): spr.id = new_id
-        def undo(): spr.id = old_id
-        self._execute_cmd("Change ID", do, undo, lambda: self.list_widget.refresh_list(spr))
+        if old_id == new_id: return
+        def do():
+            spr.id = new_id
+            self.list_widget.update_sprite_display(spr)
+            self.props.update_from_sprite(spr)
+        def undo():
+            spr.id = old_id
+            self.list_widget.update_sprite_display(spr)
+            self.props.update_from_sprite(spr)
+        self._execute_cmd("Change ID", do, undo)
+
+    def _on_prop_description(self, new_desc: str):
+        if not self.current_sprite: return
+        spr = self.current_sprite
+        old_desc = spr.description
+        if old_desc == new_desc: return
+        def do():
+            spr.description = new_desc
+            self.list_widget.update_sprite_display(spr)
+            self.props.update_from_sprite(spr)
+        def undo():
+            spr.description = old_desc
+            self.list_widget.update_sprite_display(spr)
+            self.props.update_from_sprite(spr)
+        self._execute_cmd("Change Description", do, undo)
 
     def _on_prop_height(self, new_h):
         if not self.current_sprite: return

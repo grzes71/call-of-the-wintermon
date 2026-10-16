@@ -83,3 +83,18 @@ dli_sky
 ```
 
 This pattern keeps the DLI bodies short while still allowing per-band changes.
+
+### §4.3  PMG Channel Multiplexing Across Bands & Guard-Line Race Conditions
+
+When hardware player/missile channels (P0..P3, M0..M3) are shared between different visual entities in different vertical screen zones (for example: P1..P3 used as wide platform segments inside a band, and reused as enemy sprites in the guard lines / gaps between bands):
+
+#### The "Ghost Stripe" Hazard
+If the DLI kernel transitions between band mode (e.g. platform sizes/positions) and zone mode (enemy sizes/positions/colors):
+1. ANTIC DMA fetches PMG pattern data line-by-line continuously.
+2. If the handler updates `HPOSP`, `COLPM`, or `SIZEP` for the next zone while the scan beam is still on a scanline where the PMG DMA buffer contains active pattern bits from the previous band (e.g. `$FF`), GTIA will **immediately render a 1-scanline slice** of that pattern at the new `HPOSP` position with the new `COLPM` color!
+
+#### Defensive Rules
+1. **Zero-Byte Guard Lines:** Ensure the scanlines immediately following any multiplexed band contain strictly `$00` in PMG memory.
+2. **Align Register Commits to Clean Scanlines:** Never update `HPOSP` or `COLPM` until the CPU has crossed into a scanline whose PMG buffer is guaranteed to be `$00`.
+3. **Double-Check Multi-Scanline Offsets:** If a multi-scanline mode (e.g. Mode D) starts Faza B even 1 scanline early, the exit phase will commit zone registers 1 scanline early — landing right on the last scanline of the previous band's non-zero PMG data.
+

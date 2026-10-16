@@ -120,7 +120,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-006",
@@ -153,7 +153,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 2
     },
     {
       "id": "platform-010",
@@ -164,7 +164,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-011",
@@ -175,7 +175,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-012",
@@ -186,7 +186,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 3
     },
     {
       "id": "platform-013",
@@ -197,13 +197,13 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 1
     },
     {
       "id": "platform-014",
       "type": "missile",
       "position": {
-        "x": 16,
+        "x": 7,
         "y": 88
       },
       "width": 32,
@@ -242,7 +242,7 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 118
+      "x": 119
     },
     {
       "id": 5,
@@ -256,9 +256,17 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-012",
-      "x": 112,
+      "x": 116,
       "speed": "medium",
       "movement_strategy": "stationary"
     }
+  ],
+  "row_color_profiles": [
+    1,
+    1,
+    2,
+    3,
+    1,
+    3
   ]
 }

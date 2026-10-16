@@ -552,6 +552,7 @@ class SceneObjectElement:
         movement_strategy: Optional[str] = None,
         custom_width: int = 8,
         custom_height: int = 8,
+        sprite_id: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         raw_id = id
@@ -605,6 +606,30 @@ class SceneObjectElement:
             self.movement_strategy = movement_strategy or kwargs.get("movement_strategy")
         self.custom_width = int(custom_width)
         self.custom_height = int(custom_height)
+
+        raw_sprite = sprite_id if sprite_id is not None else kwargs.get("sprite_id")
+        if raw_sprite is not None and str(raw_sprite).strip() != "" and str(raw_sprite).lower() != "none":
+            try:
+                self.sprite_id: Optional[int] = int(raw_sprite)
+            except (ValueError, TypeError):
+                self.sprite_id = None
+        else:
+            self.sprite_id = None
+
+    def get_effective_sprite_id(self, catalogues: Any = None) -> Optional[int]:
+        """Return explicit sprite_id or fallback to definition's sprite_id from catalogues."""
+        if self.sprite_id is not None:
+            return self.sprite_id
+        if catalogues and self.definition_id:
+            try:
+                norm_id = int(self.definition_id)
+                if self.type == OBJECT_TYPE_ENEMY and norm_id in catalogues.enemies:
+                    return catalogues.enemies[norm_id].sprite_id
+                elif norm_id in catalogues.secrets:
+                    return catalogues.secrets[norm_id].sprite_id
+            except (ValueError, TypeError):
+                pass
+        return None
 
     @property
     def width(self) -> int:
@@ -677,6 +702,8 @@ class SceneObjectElement:
             "platform_id": self.platform_id,
             "x": int(self.x),
         }
+        if self.sprite_id is not None:
+            d["sprite_id"] = int(self.sprite_id)
         if self.type == OBJECT_TYPE_ENEMY:
             d["speed"] = self.speed
             d["movement_strategy"] = self.movement_strategy
@@ -727,6 +754,14 @@ class SceneObjectElement:
         if "source_rect" in data and isinstance(data["source_rect"], dict):
             source_rect = Rect.from_dict(data["source_rect"])
 
+        raw_sprite_id = data.get("sprite_id")
+        sprite_id = None
+        if raw_sprite_id is not None and str(raw_sprite_id).strip() != "":
+            try:
+                sprite_id = int(raw_sprite_id)
+            except (ValueError, TypeError):
+                sprite_id = None
+
         return cls(
             id=obj_id,
             type=obj_type,
@@ -737,6 +772,7 @@ class SceneObjectElement:
             movement_strategy=strategy if obj_type == OBJECT_TYPE_ENEMY else None,
             source=source,
             source_rect=source_rect,
+            sprite_id=sprite_id,
         )
 
     def clone(self) -> SceneObjectElement:
@@ -762,10 +798,56 @@ class Scene:
     elements: list[SceneElement] = field(default_factory=list)
     platforms: list[PlatformElement] = field(default_factory=list)
     objects: list[SceneObjectElement] = field(default_factory=list)
+    row_color_profiles: list[Optional[int]] = field(default_factory=lambda: [None] * 6)
     catalogues: Optional[Any] = None
 
     def __post_init__(self) -> None:
         self._sync_z_indices()
+        self._ensure_row_color_profiles()
+        self._sync_platform_color_profiles()
+
+    def _ensure_row_color_profiles(self) -> None:
+        """Ensure row_color_profiles has entries for all rows and infer from platforms if needed."""
+        if not isinstance(self.height, int) or isinstance(self.height, bool):
+            return
+        rows = get_allowed_platform_rows(self.height)
+        max_rows = max(6, len(rows))
+        while len(self.row_color_profiles) < max_rows:
+            self.row_color_profiles.append(None)
+        # Infer row profiles from platforms if row entry is None
+        for p in self.platforms:
+            r = p.row_index
+            if 0 <= r < len(self.row_color_profiles) and self.row_color_profiles[r] is None:
+                if p.color_profile_id is not None:
+                    self.row_color_profiles[r] = p.color_profile_id
+
+    def _sync_platform_color_profiles(self) -> None:
+        """Ensure all platforms reflect their row's color profile."""
+        for p in self.platforms:
+            r = p.row_index
+            if 0 <= r < len(self.row_color_profiles):
+                p.color_profile_id = self.row_color_profiles[r]
+
+    def get_row_color_profile_id(self, row_index: int) -> Optional[int]:
+        """Return the color profile ID assigned to the given platform row index."""
+        if 0 <= row_index < len(self.row_color_profiles):
+            return self.row_color_profiles[row_index]
+        return None
+
+    def set_row_color_profile_id(self, row_index: int, profile_id: Optional[int]) -> None:
+        """Set the color profile ID for a platform row, updating all platforms in that row."""
+        while len(self.row_color_profiles) <= row_index:
+            self.row_color_profiles.append(None)
+        self.row_color_profiles[row_index] = profile_id
+        for p in self.platforms:
+            if p.row_index == row_index:
+                p.color_profile_id = profile_id
+
+    def set_platform_color_profile(self, platform_id: str, profile_id: Optional[int]) -> None:
+        """Set color profile for the row containing the specified platform."""
+        p = self.get_platform(platform_id)
+        if p is not None:
+            self.set_row_color_profile_id(p.row_index, profile_id)
 
     def get_secret_stage(self, definition_id: Any) -> int:
         """Resolve stage (1-based) for a secret definition. Defaults to 1 if catalogues missing or not found."""
@@ -1064,6 +1146,12 @@ class Scene:
                 f"at ({colliding.position.x}, {colliding.position.y})."
             )
 
+        r = platform.row_index
+        if platform.color_profile_id is not None and self.get_row_color_profile_id(r) is None:
+            self.set_row_color_profile_id(r, platform.color_profile_id)
+        else:
+            platform.color_profile_id = self.get_row_color_profile_id(r)
+
         self.platforms.append(platform)
 
     def remove_platform(self, platform_id: str) -> Optional[PlatformElement]:
@@ -1154,6 +1242,7 @@ class Scene:
         dx = target_x - p.position.x
         p.position.x = target_x
         p.position.y = target_y
+        p.color_profile_id = self.get_row_color_profile_id(p.row_index)
         for obj in attached_objs:
             obj.x += dx
 
@@ -1440,6 +1529,7 @@ class Scene:
         new_source_rect: Optional[Rect] = None,
         new_speed: Optional[str] = None,
         new_strategy: Optional[str] = None,
+        new_sprite_id: Optional[int | str] = None,
     ) -> None:
         """Update properties of an existing object with validation."""
         obj = self.get_object(object_id)
@@ -1453,6 +1543,7 @@ class Scene:
         old_rect = obj.source_rect.clone() if obj.source_rect is not None else None
         old_speed = obj.speed
         old_strategy = obj.movement_strategy
+        old_sprite_id = obj.sprite_id
 
         if new_platform_id is not None and new_platform_id != obj.platform_id:
             target_plat = self.get_platform(new_platform_id)
@@ -1492,6 +1583,15 @@ class Scene:
             if new_strategy is not None:
                 obj.movement_strategy = new_strategy
 
+        if new_sprite_id is not None:
+            if str(new_sprite_id).strip() != "" and str(new_sprite_id).lower() != "none":
+                try:
+                    obj.sprite_id = int(new_sprite_id)
+                except (ValueError, TypeError):
+                    obj.sprite_id = None
+            else:
+                obj.sprite_id = None
+
         try:
             obj.validate(scene=self)
             # Re-check row limits for the scene
@@ -1504,6 +1604,7 @@ class Scene:
             obj.source_rect = old_rect
             obj.speed = old_speed
             obj.movement_strategy = old_strategy
+            obj.sprite_id = old_sprite_id
             raise
 
     def clone(self) -> Scene:

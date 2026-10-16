@@ -38,7 +38,10 @@ from scene_editor.catalogue_model import (
 )
 from scene_editor.scene_model import ModelValidationError, PlatformElement, Position, Scene
 from scene_editor.json_serializer import SceneSerializer
-from scene_editor.commands import ChangePlatformColorProfileCommand
+from scene_editor.commands import (
+    ChangePlatformColorProfileCommand,
+    ChangeRowColorProfileCommand,
+)
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
@@ -513,4 +516,72 @@ def test_default_catalogue_paths_point_to_scenes_dir(tmp_path: Path):
     assert e_path == expected
     assert s_path == expected
     assert p_path == expected
+
+
+# ------------------------------------------------------------------------------
+# Row-based color profiles tests
+# ------------------------------------------------------------------------------
+def test_all_platforms_in_same_row_share_row_color_profile():
+    scene = Scene(name="Row Test", width=160, height=96)
+    # Platforms on Row 1 (y=24)
+    p1 = PlatformElement(id="plat-r1-a", type="sprite", position=Position(10, 24), width=16, height=4)
+    p2 = PlatformElement(id="plat-r1-b", type="sprite", position=Position(60, 24), width=32, height=4)
+    scene.add_platform(p1)
+    scene.add_platform(p2)
+
+    # Set profile for row 1 to 2
+    scene.set_row_color_profile_id(1, 2)
+    assert p1.color_profile_id == 2
+    assert p2.color_profile_id == 2
+    assert scene.get_row_color_profile_id(1) == 2
+
+    # Update profile for row 1 to 5
+    scene.set_row_color_profile_id(1, 5)
+    assert p1.color_profile_id == 5
+    assert p2.color_profile_id == 5
+
+
+def test_moving_platform_to_different_row_adopts_destination_row_profile():
+    scene = Scene(name="Move Test", width=160, height=96)
+    scene.set_row_color_profile_id(1, 2)
+    scene.set_row_color_profile_id(2, 5)
+
+    p = PlatformElement(id="plat-move", type="sprite", position=Position(20, 24), width=16, height=4)
+    scene.add_platform(p)
+    assert p.color_profile_id == 2
+
+    # Move platform from row 1 (y=24) to row 2 (y=40)
+    scene.move_platform("plat-move", 20, 40)
+    assert p.position.y == 40
+    assert p.color_profile_id == 5
+
+
+def test_change_row_color_profile_command_undo_redo():
+    scene = Scene(name="Cmd Test", width=160, height=96)
+    p = PlatformElement(id="plat-cmd", type="sprite", position=Position(10, 40), width=16, height=4)
+    scene.add_platform(p)
+    scene.set_row_color_profile_id(2, 1)
+    assert p.color_profile_id == 1
+
+    cmd = ChangeRowColorProfileCommand(scene, 2, 1, 3)
+    cmd.redo()
+    assert scene.get_row_color_profile_id(2) == 3
+    assert p.color_profile_id == 3
+
+    cmd.undo()
+    assert scene.get_row_color_profile_id(2) == 1
+    assert p.color_profile_id == 1
+
+
+def test_scene_serialization_with_row_color_profiles(tmp_path: Path):
+    scene = Scene(name="Serialize Test", width=160, height=96)
+    for r in range(6):
+        scene.set_row_color_profile_id(r, (r + 1))
+
+    scene_path = tmp_path / "row_scene.json"
+    SceneSerializer.save_to_file(scene, scene_path)
+
+    loaded = SceneSerializer.load_from_file(scene_path)
+    assert loaded.row_color_profiles[:6] == [1, 2, 3, 4, 5, 6]
+
 

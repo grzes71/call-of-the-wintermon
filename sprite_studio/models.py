@@ -12,7 +12,8 @@ class Animation:
 
 @dataclass
 class Sprite:
-    id: str = "NEW_SPRITE"
+    id: int = 1
+    description: str = ""
     width: int = 8
     height: int = 24
     color: int = 0

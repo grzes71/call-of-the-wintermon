@@ -25,8 +25,16 @@ def load_project(path: Path) -> Project:
         for f_data in s_data.get("frames", []):
             frames.append(Frame(pixels=f_data.get("pixels", [])))
             
+        raw_id = s_data.get("id", 1)
+        try:
+            sprite_id = int(raw_id)
+        except (ValueError, TypeError):
+            sprite_id = 1
+        description = str(s_data.get("description", ""))
+
         sprite = Sprite(
-            id=s_data.get("id", "UNKNOWN"),
+            id=sprite_id,
+            description=description,
             width=s_data.get("width", 8),
             height=s_data.get("height", 24),
             color=s_data.get("color", 0),
@@ -45,7 +53,8 @@ def save_project(path: Path, project: Project) -> bool:
     
     for sprite in project.sprites:
         s_dict = {
-            "id": sprite.id,
+            "id": int(sprite.id),
+            "description": str(sprite.description),
             "width": sprite.width,
             "height": sprite.height,
             "color": sprite.color,

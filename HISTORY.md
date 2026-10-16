@@ -2,6 +2,282 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-16] - Sprite Studio Integration in Atari Scene Editor
+
+- **Catalogue Model ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
+  - Added optional `sprite_id: Optional[int] = None` to `CatalogDefinition` with validation (`1 <= sprite_id <= 255`).
+  - Updated `to_dict()` and `from_dict()` for `EnemyDefinition` and `SecretDefinition` to serialize and deserialize `sprite_id`.
+  - Added `sprites: dict[int, Any]` and `sprites_path: Optional[Path]` to `ProjectCatalogues`.
+  - Implemented `ProjectCatalogues.load_sprites_from_json(path)` supporting Sprite Studio format (`version: 1`, `sprites: [...]`).
+  - Added persistence of `sprites_file` in [scenes/definitions.json](scenes/definitions.json) and automatic reloading when loading catalogue definitions.
+- **Scene Model & Commands ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - Added `sprite_id: Optional[int] = None` to `SceneObjectElement`, serialized in `to_dict()` and `from_dict()`.
+  - Added `SceneObjectElement.get_effective_sprite_id(catalogues)` to inherit definition's sprite mapping or use an instance override.
+  - Added `new_sprite_id` parameter to `Scene.update_object_props()` and `UpdateSceneObjectPropsCommand`.
+- **Catalogue Dialog UI ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py))**:
+  - Added `btn_load_sprites` ("Load Sprites (Sprite Studio)...") button in the catalogue manager footer.
+  - Added `sprite_combo` (`QComboBox`) for Enemies and Secrets, disabled by default.
+  - Implemented `_populate_sprite_combo()` enabling the combobox when sprite data is loaded and listing available sprites (`id: description`).
+  - Updated enemy and secret save/selection handlers to map and display `[Sprite: X]` in entry lists and form controls.
+  - Allowed multiple enemies and secrets to map to the same sprite while restricting each entry to at most one sprite.
+- **Main Window & Menus ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Added menu items: `Load &Sprites (JSON)...` under `&Catalogues` and `Load &Sprites (JSON)...` under `&File`.
+  - Implemented `MainWindow.load_sprites_from_json(file_path)` to load and persist sprite files.
+  - Added `new_obj_sprite_combo` to New Object Creator and `obj_prop_sprite_combo` to Selected Object properties (both default disabled, enabled upon loading sprites).
+  - Connected `_on_obj_prop_sprite_changed` to push `UpdateSceneObjectPropsCommand(new_sprite_id=...)`.
+- **Scene Graphics Item & Exporter ([atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py), [scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Updated `SceneObjectGraphicsItem` tooltip to display mapped `Sprite: ID {id} ({description})`.
+  - Added `sprite_id: Optional[int] = None` to `CatalogueItem` in [scripts/compile_scenes.py](scripts/compile_scenes.py) and updated `load_catalogues()`.
+- **Automated Verification ([tests/test_catalogues.py](tests/test_catalogues.py))**:
+  - Added `TestSpriteStudioIntegration` test suite covering validation, JSON loading of [sprites/secret-cd.sprite.json](sprites/secret-cd.sprite.json), combo enablement, multi-mapping, effective sprite resolution, and main window menu integration.
+  - Ran `make all`: all 364 tests passed, assembly and memory validation passed.
+
+
+## [2026-10-16] - Sprite Studio Integer ID (1-255) & Description Field
+
+- **Data Models ([sprite_studio/models.py](sprite_studio/models.py))**:
+  - Changed `Sprite.id` from `str = "NEW_SPRITE"` to `int = 1` (valid range 1..255).
+  - Added `Sprite.description: str = ""` (string with maximum 40 characters).
+- **Validation Engine ([sprite_studio/validation.py](sprite_studio/validation.py))**:
+  - Updated `validate_project` to enforce integer IDs in range `1 <= id <= 255`, rejecting non-integers (including booleans), out-of-range values, and duplicates.
+  - Added validation for `description`, ensuring it is a string not exceeding 40 characters.
+- **Serialization & Backward Compatibility ([sprite_studio/io.py](sprite_studio/io.py))**:
+  - Updated `load_project` to parse integer IDs with fallback, migrate legacy string IDs, and load `description`.
+  - Updated `save_project` to emit `id` as integer and `description` as string.
+  - Migrated [sprites/secret-cd.sprite.json](sprites/secret-cd.sprite.json) to integer ID and added `"description": "Secret CD"`.
+- **Properties & UI Controls ([sprite_studio/widgets/properties.py](sprite_studio/widgets/properties.py))**:
+  - Replaced ID `QLineEdit` with `QSpinBox` bounded to 1..255 emitting `id_changed(int)`.
+  - Added description `QLineEdit` with `maxLength=40` emitting `description_changed(str)`.
+  - Implemented focus-preserving value updates in `update_from_sprite` to avoid cursor jumping while typing.
+- **Sprite List & Main Window Integration ([sprite_studio/widgets/sprite_list.py](sprite_studio/widgets/sprite_list.py), [sprite_studio/main.py](sprite_studio/main.py))**:
+  - Display list items as `f"{sprite.id}: {sprite.description}"` or `f"{sprite.id}"`.
+  - Added `update_sprite_display` to update list items without reselecting or triggering re-render cascades.
+  - Updated `_on_add_sprite` and `_on_copy_sprite` to automatically allocate the smallest unused integer ID in 1..255.
+  - Added undo/redo commands for description and ID modifications.
+- **Automated Verification ([tests/test_sprite_studio.py](tests/test_sprite_studio.py))**:
+  - Created test suite covering models, validation, serialization, legacy JSON migration, UI widgets, and undo/redo workflows.
+  - Ran `make all`: all 359 tests passed.
+
+## [2026-10-16] - Intro Music Replacement & Dynamic Tempo Test Harness
+
+- **Intro Music Composition ([music/intro.dsl](music/intro.dsl))**:
+  - Replaced intro music with new composition ("Rlyeh Awakening") at 140 BPM using 16-bit bass mode (`audctl_mode = $10`, `frames_per_tick = 4`).
+  - Compiled DSL to [gen/intro_music.asm](gen/intro_music.asm) via [scripts/compile_music.py](scripts/compile_music.py).
+- **Dynamic Tempo Test Harness ([tests/test_intro_music.py](tests/test_intro_music.py))**:
+  - Updated `test_audio_play_intro_initialization` and `test_audio_update_advances_frame` to read song tempo directly from the compiled header (`mpu.memory[labels["MUSIC_INTRO_DATA"]]`) rather than asserting hardcoded 90 BPM (`frames_per_tick = 5`).
+- **Build & Memory Verification**:
+  - Ran `make all`: all 349 tests pass; binary [call_of_the_wintermon.xex](call_of_the_wintermon.xex) compiled cleanly.
+  - Memory validation passes with 36,373 bytes total allocated and 4,587 bytes headroom below `$C000`.
+
+## [2026-10-16] - Fix 1-Scanline Enemy Artifacts via 3x WSYNC Alignment
+
+- **Root Cause Analysis ([engine/dli.asm](engine/dli.asm))**:
+  - Identified the source of the 1-scanline horizontal stripes indicated by the user (purple stripe at $X=107$ corresponding to Enemy 1, blue stripe at $X=116$ corresponding to Enemy 7):
+  - In ANTIC Mode D (2 scanlines per mode line), triggering DLI on line $2L-2$ (e.g. line 6) occurs on scanline 1 of that line (scanline 45).
+  - The gap before line $2L$ (scanline 48) spans 3 TV scanlines: remaining scanline 1 of line 6, followed by scanlines 0 and 1 of pre-pas line 7.
+  - Using only 2x `WSYNC` caused Faza B to start 1 scanline too early (scanline 47 instead of 48). Consequently, Faza B finished 1 scanline early (scanline 54), causing Faza C (guard line enemy positioning) to run on scanline 55 (the 8th scanline of the platform PMG bitmap, which still contained `$FF`).
+  - When Faza C updated `HPOSP` to the enemy position and `COLPM` to the enemy color, the hardware immediately rendered an 8-pixel horizontal stripe in that enemy's color for that single scanline.
+- **Cycle-Exact Scanline Alignment ([engine/dli.asm](engine/dli.asm))**:
+  - Added the 3rd `STA WSYNC` in Faza A, correctly halting through all 3 scanlines (scanline 1 of line $2L-2$, scanlines 0 and 1 of line $2L-1$), aligning Faza B iteration 0 to cycle 0 of scanline $2L$ (the first scanline of platform PMG memory).
+  - Faza C now executes cleanly on scanline $2L+8$ (the true guard line), where PMG memory is `$00`, eliminating both artifact lines completely.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated `test_dli_faza_a_cycle_budget_and_faza_b_iter0` py65 test harness to step across the 3 synchronizing `WSYNC`s. All 349 tests pass.
+
+- **Unified Color Table Generation ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Replaced redundant 24 color tables (`pas_c1_sl0..7`, `pas_c2_sl0..7`, `pas_c3_sl0..7`) in `SceneDliCompiledData` and `compile_scene_dli_data()` with a single unified `pas_color_sl: list[list[int]]` (8 scanlines $\times$ 6 pas).
+  - Updated `generate_scenes_dli_asm()` to emit `pas_color_sl0..7` (34 tables total $\times$ 6 bytes + 15 bytes Zone 0 = 219 bytes per scene, down from 315 bytes).
+  - Saved 192 bytes of ROM in `SCENES_DATA` segment ($5000) across 2 scenes.
+- **Engine DLI Buffering & Faza B Execution ([engine/dli.asm](engine/dli.asm))**:
+  - Replaced 24-table double buffer allocation with 8 tables (`dli_pas_color_sl0..7`), saving 256 bytes in `DLI_SEGMENT` ($6100).
+  - Reduced `DLI_TABLE_COUNT` from 50 to 34 and trimmed `dli_table_ptrs_lo` / `dli_table_ptrs_hi` by 32 bytes.
+  - Streamlined Faza B iteration 0 from 60 cycles to 48 cycles before WSYNC (single `LDA dli_pas_color_sl0,y` followed by `STA COLPM1/2/3`).
+  - Streamlined Faza B iterations 1–7 from 32 cycles to 24 cycles before WSYNC (single `LDA dli_pas_color_slN,y` followed by `STA COLPM1/2/3`, `STA COLPF3`).
+  - Saved 68 cycles per pas (408 cycles per frame across all 6 pas).
+- **Test Suite Updates ([tests/test_compile_scenes.py](tests/test_compile_scenes.py))**:
+  - Updated `make_dummy_dli()` to construct `SceneDliCompiledData` with `pas_color_sl`.
+  - Updated missile platform test assertions to resolve coordinates dynamically.
+  - Verified 349 tests pass cleanly (`make all` and `make check_memory`).
+
+- **Open Scene Target Path Fix ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Fixed `TypeError: argument should be a str or an os.PathLike object ..., not 'NoneType'` in `open_scene()`.
+  - Replaced `Path(file_path)` with `Path(target_path).resolve()` on line 989, ensuring that when `open_scene()` is invoked without arguments from the menu, the file path selected via `QFileDialog` is correctly stored in `self.current_file_path`.
+- **Eliminate QFont Warning ([atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py))**:
+  - Removed redundant `font.setPixelSize(6)` following `QFont("Monospace", 6)` in `PlatformGraphicsItem`, resolving `QFont::setPointSize: Point size <= 0 (-1)` warnings.
+- **Automated Verification ([tests/test_gui_integration.py](tests/test_gui_integration.py))**:
+  - Added `test_open_scene_with_file_dialog` testing `open_scene(None)` with mock file selection dialog. All 349 tests pass.
+
+## [2026-10-16] - Row-Based Platform Color Profiles Architecture
+
+- **Row-Based Profile Assignment ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Added `row_color_profiles: list[Optional[int]]` to `Scene` model, replacing per-platform profile assignment with uniform row-level profiles (all platforms in a row share that row's profile).
+  - Implemented `get_row_color_profile_id()`, `set_row_color_profile_id()`, and `set_platform_color_profile()`.
+  - Added automatic synchronization in `add_platform()`, `move_platform()`, and `__post_init__()`: platforms on row $r$ immediately reflect row $r$'s profile, and moving a platform between rows dynamically adapts it to the destination row's profile.
+- **Scene Serialization & Migration ([atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:
+  - Updated `SceneSerializer.to_dict()` and `from_dict()` to serialize `row_color_profiles`.
+  - Maintained backward compatibility: legacy scenes without `row_color_profiles` automatically infer row profiles from their platforms.
+- **Scene Editor UI ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - Added `ChangeRowColorProfileCommand` with full Undo/Redo support.
+  - Added dedicated `Platform Row Color Profiles` group in Tab 2 with combo selectors for each of the 6 platform rows (Row 0..5, y=8..88).
+  - Updated Selected Platform panel to show and edit the selected platform's row profile, immediately updating all platforms sharing that row.
+- **Compiler Pipeline & DLI Color Uniformity ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Updated `parse_scene_json` to support `row_color_profiles` and assign uniform scanline colors to all platforms in each row.
+  - Initialized `pas_c1_sl`, `pas_c2_sl`, `pas_c3_sl` with the row's color profile in `compile_scene_dli_data`, ensuring sprite channels and missile platforms (`COLPF3`) share the exact same scanline colors across the row.
+  - Configured `scenes/01-forest.json` and `scenes/02-forest-castle.json` with explicit `row_color_profiles`.
+- **Automated Verification ([tests/test_platform_profiles.py](tests/test_platform_profiles.py))**:
+  - Added unit and integration tests verifying row profile sharing, moving platforms across rows, command undo/redo, and JSON round-trip serialization.
+  - Verified full test suite (`make all`: 348 tests passed, 3,505 bytes headroom).
+
+## [2026-10-16] - DLI Timing Fix via 1-Line Pre-Trigger & SIZEM Hardware Fix
+
+- **DLI Trigger Re-Alignment ([main.asm](main.asm))**:
+  - Shifted all 6 DLI triggers in `dlist_game` by 1 Mode D line earlier: from lines 7, 23, 39, 55, 71, 87 to lines 6, 22, 38, 54, 70, 86.
+  - Gives Faza A an entire pre-pas Mode D line (2 scanlines = 228 cycles) before the start of each platform pas (lines 8, 24, 40, 56, 72, 88).
+- **2x WSYNC Scanline 2L Synchronization ([engine/dli.asm](engine/dli.asm))**:
+  - Synchronized Faza A to the start of scanline `2L` via double `STA WSYNC` (halting through the 2 scanlines of the pre-pas line).
+  - Eliminates the 1-scanline late start of Faza B with 100% cycle-exact determinism across PAL, NTSC, and py65 emulation.
+- **GTIA SIZEM Missile Platform Width Fix ([engine/dli.asm](engine/dli.asm))**:
+  - Identified root cause of missile platforms appearing as 4 dashes: GTIA size register requires `%11` (bit 0=1 and bit 1=1) for 4x quad width; `%10` (`$AA`) is parsed by GTIA as 1x width.
+  - Restored `LDA dli_sizem,y / STA SIZEM` in Faza A, which applies `%11111111` (`$FF`) generated by `compile_scenes.py` for 32px missile platforms (forming a solid 32-pixel platform).
+  - Configured `STA SIZEM = #0` in Faza C and `dli_vblank_update` so zone secrets use normal 1x missile widths.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_convert_tiles.py](tests/test_convert_tiles.py))**:
+  - Updated DLI line indices in test harnesses to reflect shifted lines `{6, 22, 38, 54, 70, 86}`.
+  - Verified Faza A cycle budget, 2x WSYNC execution, and SIZEM transitions across all 6 DLIs. All 344 tests pass.
+
+## [2026-10-16] - DLI Faza A Reduction to 51 Cycles & Faza B Iteration 0 Missile Setup
+
+- **Faza A Optimization to 51 Cycles ([engine/dli.asm](engine/dli.asm))**:
+  - Removed `HPOSM0-3` setup from Faza A (saved 32 cycles), reducing Faza A pre-WSYNC execution to exactly 51 cycles.
+  - Guarantees `STA WSYNC` is reached well within the ~60 CPU cycle budget of scanline `2L-1`, preventing scanline spillover.
+- **Faza B Iteration 0 Missile Positioning ([engine/dli.asm](engine/dli.asm))**:
+  - Removed the temporary Faza B prologue (`SIZEM` / `PRIOR` conditional branching).
+  - Moved `HPOSM0-3` to Faza B iteration 0 on scanline `2L` along with `COLPM1..3` (60 cycles total, cleanly fitting scanline `2L`).
+  - Removed `STA COLPF3` from iteration 0 to reserve cycles for missile positions.
+- **Global Hardware Constants ([engine/dli.asm](engine/dli.asm), [scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Configured `SIZEM = $AA` (quad-width missiles) and `PRIOR = $11` (5th player mode enabled) as global frame constants in `dli_vblank_update`.
+  - Removed `STA SIZEM` and `STA PRIOR` resets from Faza C guard line so the hardware constants persist across all 6 platform pas.
+  - Updated `scripts/compile_scenes.py` to default `HPOSM0-3` to `$FF` (offscreen) for pas and zones without active missile platforms or secrets.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated py65 emulation harness `test_dli_faza_a_cycle_budget_and_faza_b_iter0` confirming Faza A reaches WSYNC in $\le 60$ cycles (~51 cycles) and iteration 0 completes within $\le 65$ cycles (~60 cycles).
+
+## [2026-10-16] - DLI Faza A Cycle Reduction and Faza B PRIOR/SIZEM Prologue
+
+- **Cycle Budget Optimization ([engine/dli.asm](engine/dli.asm))**:
+  - Removed X register saving (`stx dli_save_x`) from DLI entry and restoration (`ldx dli_save_x`) from DLI exit, saving 6 cycles (X is never modified by any subroutine inside `dli_handler`).
+  - Removed `lda dli_sizem,y / sta SIZEM` (8 cycles) and `lda #$11 / sta PRIOR` (6 cycles) from Faza A, saving 14 cycles.
+  - Reduced Faza A execution before `STA WSYNC` down to 79 cycles (fits safely inside the 85-cycle window on scanline `2L-1`), eliminating the 1-scanline late start of Faza B.
+- **Faza B Prologue Implementation ([engine/dli.asm](engine/dli.asm))**:
+  - Moved SIZEM application to the beginning of Faza B on scanline `2L`.
+  - Implemented dynamic PRIOR derivation (Option B): evaluates `dli_sizem,y` to set `PRIOR = $11` if missile 5th player platform is active (`SIZEM != 0`), or `PRIOR = $01` if no missile platform is present (`SIZEM == 0`).
+  - Avoided adding any new tables or memory buffers, preserving 100% data compatibility and zero extra RAM consumption.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated `test_dli_handler_full_execution_and_palette_transition` to assert that register X is strictly preserved across all 6 DLI phases.
+  - Added `test_dli_faza_a_cycle_budget_and_faza_b_prologue` to emulate instruction execution up to `WSYNC`, asserting Faza A reaches WSYNC in <= 85 cycles and verifying PRIOR and SIZEM values in Faza B prologue.
+
+## [2026-10-16] - Atari Scene Editor QAction Triggered Bool TypeError Fix
+
+- **Qt Signal Argument Guard ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Fixed `TypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'bool'` occurring when clicking `Catalogues -> Load Catalogues (JSON)...`.
+  - Root cause: `QAction.triggered(bool checked = False)` emits a boolean argument. Slots with default parameters `file_path: Optional[Path | str] = None` received `file_path=False`, failing `file_path is None` and attempting `Path(False)`.
+  - Replaced `if file_path is None:` with `if not file_path or isinstance(file_path, bool):` in `load_catalogues_from_json` and guarded `open_scene`.
+  - Wrapped action connections (`self.act_load_catalogues.triggered.connect(lambda: self.load_catalogues_from_json())` and `act_open.triggered.connect(lambda: self.open_scene())`) to prevent signal parameters from bleeding into path arguments.
+- **Automated Verification ([tests/test_catalogues.py](tests/test_catalogues.py))**:
+  - Added unit test `test_load_catalogues_triggered_action` verifying `load_catalogues_from_json` safely handles boolean inputs and launches file dialog without error.
+
+## [2026-10-16] - Memory Map Visualizer Dynamic Free Block & Zero Page Fixes
+
+- **Dynamic Free Block Resolution ([scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Replaced hardcoded text `($60CA–$67FF)` in the PDF largest-gap overview panel with dynamic evaluation of `max(free_gaps, key=lambda g: g.size)`.
+  - Added contextual description annotations to free gaps (`describe_free_gap`), identifying origin of vacated headroom (e.g., `$2C1E–$2FFF` vacated by `scenes_data`, `$22D0–$23FF` vacated by title code, and `$5C6B–$5FFF` headroom before DLIST).
+  - Fixed duplicate size printing in the memory map zoom bar (`FREE RAM (994 B) (994 B)` -> `★ FREE: 994 B [$2C1E–$2FFF]`).
+- **Zero Page Allocation Audit ([scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Corrected stale `$B8–$FF` free block display to reflect modern layout in [zeropage.asm](zeropage.asm): `$B8–$C0` used by DLI Engine, leaving `$C1–$FF` (63 bytes) available.
+- **Segment Naming Consistency ([scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Updated segment `0x4000` label to "Title VRAM & Scroller" and `0x5000` to "Scene Data, Title & Intro Music" across memory validation and visualization tools.
+
+## [2026-10-16] - Intro Screen Background Music (music/intro.dsl)
+
+- **Music Tooling DSL Support ([scripts/compile_music.py](scripts/compile_music.py))**:
+  - Enhanced `compile_music` to detect `.dsl` files and invoke `generate_music_from_dsl` from the `atari_music` engine alongside `.json` compositions.
+  - Automatically exports relocatable MADS assembly with configurable label prefix (`music_intro_data`).
+- **Build Pipeline Integration ([Makefile](Makefile))**:
+  - Added `MUSIC_INTRO_DSL := music/intro.dsl` and `MUSIC_INTRO_ASM := $(GEN_DIR)/intro_music.asm`.
+  - Added compilation rule generating `$(MUSIC_INTRO_ASM)` from `$(MUSIC_INTRO_DSL)` with label `music_intro_data`.
+  - Added `$(MUSIC_INTRO_ASM)` as prerequisite to `music:` and `$(TARGET)`.
+- **Audio Manager & Intro Scene Driver ([lib/audio.asm](lib/audio.asm), [scenes/intro.asm](scenes/intro.asm))**:
+  - In `lib/audio.asm`, implemented `audio_play_intro` subroutine loading `music_intro_data` pointers into `music_init` and triggering `music_play`.
+  - In `scenes/intro.asm` (`intro_init`), calls `audio_play_intro` to start music when the Intro screen is entered.
+  - In `scenes/intro.asm` (`intro_run`), calls `audio_update` every VBLANK frame to advance the POKEY music player.
+  - In `scenes/intro.asm` (`@fire_pressed`), calls `audio_stop` to silence all POKEY channels before transitioning to `STATE_GAME`.
+- **Memory Map Placement ([main.asm](main.asm))**:
+  - Included `gen/intro_music.asm` (1,299 bytes) in the expanded `$5000` block (`$5000-$5C6A`) right after `scenes/title.asm`.
+  - Leaves 917 bytes of headroom before `$6000` (`DLIST_ADDR`) and 3,492 bytes of total headroom below `$C000`.
+- **Automated Verification**:
+  - Added [tests/test_intro_music.py](tests/test_intro_music.py) testing DSL compilation, symbol resolution, `audio_play_intro` player state, `audio_update` tick advancement, `audio_stop` POKEY silencing, and `intro_init` triggering playback.
+  - All 342 unit and py65 emulation tests passed; memory validation passed.
+
+
+## [2026-10-16] - Smooth ANTIC Mode 2 Marquee Scroller Under Title Screen
+
+- **Marquee Text Compiler ([scripts/compile_scroll_text.py](scripts/compile_scroll_text.py))**:
+  - Implemented standalone text compiler converting UTF-8 text ([scroll/title.txt](scroll/title.txt)) to ANTIC 2 internal screen display codes (`0..127`), supporting standard ASCII and Polish diacritics.
+  - Automatically appends trailing spaces (minimum 24 spaces) to guarantee a clean visual gap before the marquee loops.
+  - Generates [gen/title_scroll_text.asm](gen/title_scroll_text.asm) containing `TITLE_SCROLL_TEXT_LEN` and formatted `.byte` tables.
+- **Title Display List & Scroller Integration ([main.asm](main.asm))**:
+  - Defined `TITLE_SCROLL_VRAM_LEN = 48` buffer equate (normal playfield width fetches 48 bytes with `DL_HSCROL`).
+  - Placed 48-byte scrolling VRAM line `title_scroll_vram` ($4F00-$4F2F) and compiled text `title_scroll_text` ($4F30-$4FC6) into the `$4000-$4FFF` segment immediately after `gen/title.bin`.
+  - Updated `dlist_title` ($6000) to 229 scanlines: 16 top blank scanlines, 96 Mode D lines (192 scanlines), 4 blank separator scanlines, 1 blank scanline with DLI (`DL_BLANK1 | DL_DLI`), 1 line ANTIC Mode 2 (`DL_MODE_2 | DL_LMS | DL_HSCROL` pointing to `title_scroll_vram`), 8 bottom blank scanlines, and `DL_JVB`.
+  - Relocated [scenes/title.asm](scenes/title.asm) into the expanded `$5000` block (`$5000-$5757`), freeing up 240+ bytes in the `$2000` engine segment (now 314 bytes free before `$2400`).
+- **Driver & DLI Routines ([scenes/title.asm](scenes/title.asm))**:
+  - In `title_init`: sets `CHBAS`/`CHBASE` to `intro_font` ($24), hooks `dli_title_scroll` to `VDSLST`, enables NMI `VBLANK + DLI = $C0`, clears `title_scroll_vram` with spaces ($00), and resets scroll state (`title_scroll_fine = 3`).
+  - In `title_run`: executes `update_title_scroll` once per frame to advance the ticker. On fire/key exit to `STATE_INTRO`, resets `HSCROL = 0` and restores `NMIEN = $40`.
+  - Implemented `dli_title_scroll`: triggers on the blank scanline right before Mode 2, executes `WSYNC`, applies `HSCROL = title_scroll_fine`, sets `COLPF2 = $00` (black background for text line), and `COLPF1 = COLOR1` (text foreground tracks 28-frame fade-in).
+  - Implemented `update_title_scroll`: decrements `title_scroll_fine` (3 -> 2 -> 1 -> 0); on underflow wraps to 3, coarse-shifts the 48-byte buffer left by 1 character, fetches next screen code from `title_scroll_text,x`, and advances `title_scroll_idx` (wrapping at `TITLE_SCROLL_TEXT_LEN`).
+- **Build Pipeline & Automated Testing**:
+  - Updated [Makefile](Makefile) with `TITLE_SCROLL_SRC`, `TITLE_SCROLL_ASM`, and build prerequisites.
+  - Added [tests/test_title_scroll.py](tests/test_title_scroll.py) covering text compilation, symbol resolution, `title_init` state initialization, py65 emulation of fine/coarse scroll progression, and `dli_title_scroll` register updates.
+  - All 336 unit/integration tests passed; memory validation passed.
+
+
+## [2026-10-16] - Switch Title Screen to ANTIC Mode D (160x95) and Relocate Scene Data to $5000
+
+- **ANTIC Mode D Title Screen (3,840 bytes vs 7,696 bytes)**:
+  - In [scripts/convert_image.py](scripts/convert_image.py), added `convert_image_to_antic_d()` converting 160x95..97 4-color indexed images to standard 160x96 2bpp ANTIC Mode D binary (`gen/title.bin`, 3,840 bytes). Updated CLI to make Mode D default.
+  - In [Makefile](Makefile), updated `TITLE_IMG := images/title2.png`.
+  - In [scenes/title.asm](scenes/title.asm), converted title screen driver to ANTIC Mode D with 4-color palette (`COLPF0 = $C4` dark green, `COLPF1 = $CA` medium green, `COLPF2 = $EE` light yellow-green, `COLBK = $00` black). Replaced 1-color luminance fade with 8-step fade tables (`title_fade_c0..c2`) smoothly fading all 3 playfield registers over 28 frames.
+  - In [main.asm](main.asm), replaced 2-segment Mode F `dlist_title` with a clean 96-line Mode D display list (`dlist_title` at `$6000`, 104 bytes) with a single LMS pointing to `TITLE_VRAM = $4000`.
+- **Memory Map Architecture Refactoring (Headroom increased from 1.28 KB to 5.16 KB)**:
+  - Relocated `SCENES_DATA` from `$2C30` to `$5000`, now including both `gen/scenes_data.asm` (796 B) and `gen/scenes_dli_data.asm` (666 B).
+  - Relocated `RENDER_TABLES` to page-aligned `$7A00`, containing strictly `engine/render_tables.asm` (flip table) and `engine/render.asm` (blitter).
+  - Freed 994 bytes of low RAM gap between `$2C1E` and `$3000` (before `GAME_VRAM`).
+  - Created 2,626 bytes of contiguous unallocated headroom in `$55BE-$5FFF` allowing scene definitions and DLI tables to scale to 10+ scenes.
+  - Created 628 bytes of headroom in `$7D8C-$7FFF` before `$8000` (`TILES_ADDR`).
+  - Total allocated User RAM reduced from 39,671 to 35,800 bytes; headroom below `$C000` expanded to 5,160 bytes.
+  - Updated [scripts/check_memory.py](scripts/check_memory.py) and [scripts/generate_memory_map.py](scripts/generate_memory_map.py) with the new segment locations.
+- **Test Suite Updates**:
+  - In [tests/test_convert_image.py](tests/test_convert_image.py), added unit tests for `convert_image_to_antic_d`.
+  - In [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py), updated title initialization and fade tests for 4-color Mode D palette.
+  - All 330 unit/integration tests passed; memory validation passed.
+
+## [2026-10-16] - Platform PMG Patterns and Hardcoded SIZEP in DLI Faza A
+
+- **Hardcoded SIZEP in Faza A**:
+  - In [engine/dli.asm](engine/dli.asm) (`dli_handler`), replaced dynamic indexing of `dli_sizep1..3,y` with hardcoded `lda #3; sta SIZEP1; sta SIZEP2; sta SIZEP3`, saving 10 cycles in Faza A (~108 cycles total) and eliminating scanline timing overflow into Faza B.
+  - SIZEM remains dynamic (`dli_sizem,y`), and Faza C continues resetting `SIZEP1..3 = 0` and `SIZEM = 0` for Zone enemies and secrets.
+- **Scene Compiler PMG Pattern Generation**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), added `WIDTH_TO_PMG_PATTERN` mapping (32px $\rightarrow$ `$FF`, 16px $\rightarrow$ `$F0`, 8px $\rightarrow$ `$C0`, 24px $\rightarrow$ `$FC`), `ScenePmgPatterns` dataclass, and extraction of 18 pattern bytes per scene (6 passes $\times$ 3 channels).
+  - Generated `scene_{sym}_pmg_patterns` tables and pointer arrays `scene_pmg_patterns_lo` and `scene_pmg_patterns_hi` in [gen/scenes_dli_data.asm](gen/scenes_dli_data.asm).
+- **DLI PMG Pattern Staging and Buffer Update**:
+  - In [zeropage.asm](zeropage.asm), allocated `dli_scene_pmg_ptr = $BF` (2 bytes, `$BF-$C0`).
+  - In [engine/dli.asm](engine/dli.asm), implemented `dli_apply_pmg_patterns` subroutine copying 18 pattern bytes from ROM into PMG memory for P1..P3 across all 6 passes while keeping missiles solid `$FF`.
+  - Updated `dli_init` to pre-fill PMG memory using Scene 0 patterns.
+  - Updated `dli_stage_scene` to save `scene_pmg_patterns_lo/hi,x` into `dli_scene_pmg_ptr`.
+  - Updated `dli_vblank_update` to call `dli_apply_pmg_patterns` upon committing a double-buffer swap (`dli_swap_requested != 0`).
+- **Test Suite Updates**:
+  - In [tests/test_dli_system.py](tests/test_dli_system.py), updated `test_dli_init_execution` to assert Scene 0 patterns (`$F0` for 16-px platforms) and added `test_pmg_patterns_are_applied_on_scene_change`.
+  - Updated test runner helper `step_until_rts_or_rti` to support `target_sp` so nested subroutines do not prematurely terminate harness execution.
+  - In [tests/test_compile_scenes.py](tests/test_compile_scenes.py), added `test_pmg_patterns_match_platform_widths`.
+  - All 327 unit/integration tests passed; memory validation passed with segment ending at `$67F4` (below `$6800`) and headroom below `$C000` at 1,289 bytes.
+
 ## [2026-10-16] - Fix Bottom Platform (Row 5) Visibility and Missile Platform Coloring
 
 - **PMG Pre-fill Scanline Alignment Fix**:

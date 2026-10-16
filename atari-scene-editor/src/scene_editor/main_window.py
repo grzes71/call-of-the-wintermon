@@ -57,6 +57,7 @@ from .commands import (
     AddPlatformCommand,
     AddSceneObjectCommand,
     ChangePlatformColorProfileCommand,
+    ChangeRowColorProfileCommand,
     ChangePlatformTypeCommand,
     ChangeSceneObjectIdCommand,
     FlipElementCommand,
@@ -508,7 +509,7 @@ class MainWindow(QMainWindow):
 
         self.plat_prop_color_profile_combo = QComboBox()
         self.plat_prop_color_profile_combo.currentIndexChanged.connect(self._on_plat_prop_color_profile_changed)
-        pe_layout.addRow("Color Profile:", self.plat_prop_color_profile_combo)
+        pe_layout.addRow("Row Color Profile:", self.plat_prop_color_profile_combo)
 
         self.plat_prop_x_spin = QSpinBox()
         self.plat_prop_x_spin.setRange(-500, 500)
@@ -528,6 +529,18 @@ class MainWindow(QMainWindow):
         pe_layout.addRow("", self.btn_delete_plat)
 
         p_layout.addWidget(self.plat_elem_group)
+
+        # Row Color Profiles Group
+        self.row_profiles_group = QGroupBox("Platform Row Color Profiles")
+        rp_layout = QFormLayout(self.row_profiles_group)
+        self.row_cprof_combos: list[QComboBox] = []
+        for r in range(6):
+            y_coord = 8 + r * 16
+            cb = QComboBox()
+            cb.currentIndexChanged.connect(lambda idx, row_idx=r: self._on_row_cprof_combo_changed(row_idx))
+            rp_layout.addRow(f"Row {r} (y={y_coord}):", cb)
+            self.row_cprof_combos.append(cb)
+        p_layout.addWidget(self.row_profiles_group)
 
         # Platforms List Group
         self.plat_list_group = QGroupBox("Platforms on Scene")
@@ -565,6 +578,11 @@ class MainWindow(QMainWindow):
         self.new_obj_definition_info_lbl = QLabel("")
         self.new_obj_definition_info_lbl.setWordWrap(True)
         oc_layout.addRow("", self.new_obj_definition_info_lbl)
+
+        self.new_obj_sprite_combo = QComboBox()
+        self.new_obj_sprite_combo.setEnabled(False)
+        self.new_obj_sprite_combo.setToolTip("Select a sprite from Sprite Studio to map with this object (enabled when sprites are loaded)")
+        oc_layout.addRow("Sprite (Sprite Studio):", self.new_obj_sprite_combo)
 
         self.new_obj_platform_combo = QComboBox()
         self.new_obj_platform_combo.currentIndexChanged.connect(self._on_new_obj_platform_combo_changed)
@@ -618,6 +636,12 @@ class MainWindow(QMainWindow):
         self.obj_prop_definition_info_lbl = QLabel("-")
         self.obj_prop_definition_info_lbl.setWordWrap(True)
         oe_layout.addRow("", self.obj_prop_definition_info_lbl)
+
+        self.obj_prop_sprite_combo = QComboBox()
+        self.obj_prop_sprite_combo.setEnabled(False)
+        self.obj_prop_sprite_combo.setToolTip("Select a sprite from Sprite Studio to map with this object (enabled when sprites are loaded)")
+        self.obj_prop_sprite_combo.currentIndexChanged.connect(self._on_obj_prop_sprite_changed)
+        oe_layout.addRow("Sprite (Sprite Studio):", self.obj_prop_sprite_combo)
 
         self.obj_prop_platform_combo = QComboBox()
         self.obj_prop_platform_combo.setEnabled(False)
@@ -689,7 +713,7 @@ class MainWindow(QMainWindow):
 
         act_open = QAction("&Open Scene...", self)
         act_open.setShortcut(QKeySequence.StandardKey.Open)
-        act_open.triggered.connect(self.open_scene)
+        act_open.triggered.connect(lambda: self.open_scene())
         file_menu.addAction(act_open)
         toolbar.addAction(act_open)
 
@@ -703,6 +727,13 @@ class MainWindow(QMainWindow):
         act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
         act_save_as.triggered.connect(self.save_scene_as)
         file_menu.addAction(act_save_as)
+
+        file_menu.addSeparator()
+
+        act_load_sprites_file = QAction("Load &Sprites (JSON)...", self)
+        act_load_sprites_file.setStatusTip("Load sprite definitions from Sprite Studio JSON file")
+        act_load_sprites_file.triggered.connect(lambda: self.load_sprites_from_json())
+        file_menu.addAction(act_load_sprites_file)
 
         file_menu.addSeparator()
 
@@ -787,8 +818,13 @@ class MainWindow(QMainWindow):
 
         self.act_load_catalogues = QAction("&Load Catalogues (JSON)...", self)
         self.act_load_catalogues.setStatusTip("Load enemy or secret definitions from a JSON file")
-        self.act_load_catalogues.triggered.connect(self.load_catalogues_from_json)
+        self.act_load_catalogues.triggered.connect(lambda: self.load_catalogues_from_json())
         cat_menu.addAction(self.act_load_catalogues)
+
+        self.act_load_sprites = QAction("Load &Sprites (JSON)...", self)
+        self.act_load_sprites.setStatusTip("Load sprite definitions from Sprite Studio JSON file")
+        self.act_load_sprites.triggered.connect(lambda: self.load_sprites_from_json())
+        cat_menu.addAction(self.act_load_sprites)
 
         self.act_save_catalogues = QAction("&Save Catalogues (JSON)", self)
         self.act_save_catalogues.setStatusTip("Save enemy and secret definitions to default or configured JSON files")
@@ -901,24 +937,27 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
-    def open_scene(self, file_path: Optional[str] = None) -> None:
+    def open_scene(self, file_path: Optional[str | Path] = None) -> None:
         """Open a scene JSON file."""
         if not self._maybe_save_changes():
             return
 
-        if not file_path:
-            file_path, _ = QFileDialog.getOpenFileName(
+        if not file_path or isinstance(file_path, bool):
+            chosen_path, _ = QFileDialog.getOpenFileName(
                 self,
                 "Open Atari Scene JSON",
                 str(self.base_dir),
                 "Scene JSON (*.json);;All Files (*)",
             )
-            if not file_path:
+            if not chosen_path:
                 return
+            target_path = chosen_path
+        else:
+            target_path = str(file_path)
 
         try:
             scene = SceneSerializer.load_from_file(
-                file_path,
+                target_path,
                 base_dir=self.base_dir,
                 validate_source_exists=False,
             )
@@ -970,7 +1009,7 @@ class MainWindow(QMainWindow):
 
         scene.catalogues = self.catalogues
         self.scene_model = scene
-        self.current_file_path = Path(file_path).resolve()
+        self.current_file_path = Path(target_path).resolve()
         self.undo_stack.clear()
         self._is_dirty = False
 
@@ -1800,19 +1839,56 @@ class MainWindow(QMainWindow):
             return
 
         new_prof_id = self.plat_prop_color_profile_combo.currentData()
-        if plat.color_profile_id == new_prof_id:
+        old_prof_id = self.scene_model.get_row_color_profile_id(plat.row_index)
+        if old_prof_id == new_prof_id:
             return
 
-        cmd = ChangePlatformColorProfileCommand(
+        cmd = ChangeRowColorProfileCommand(
             self.scene_model,
-            selected_id,
-            plat.color_profile_id,
+            plat.row_index,
+            old_prof_id,
             new_prof_id,
             callback=self._sync_all,
         )
         self.undo_stack.push(cmd)
 
+    def _on_row_cprof_combo_changed(self, row_idx: int) -> None:
+        if not hasattr(self, "row_cprof_combos") or row_idx >= len(self.row_cprof_combos):
+            return
+        cb = self.row_cprof_combos[row_idx]
+        new_prof_id = cb.currentData()
+        old_prof_id = self.scene_model.get_row_color_profile_id(row_idx)
+        if old_prof_id == new_prof_id:
+            return
+
+        cmd = ChangeRowColorProfileCommand(
+            self.scene_model,
+            row_idx,
+            old_prof_id,
+            new_prof_id,
+            callback=self._sync_all,
+        )
+        self.undo_stack.push(cmd)
+
+    def _refresh_row_profiles(self) -> None:
+        if not hasattr(self, "row_cprof_combos"):
+            return
+        for r, cb in enumerate(self.row_cprof_combos):
+            cur_data = self.scene_model.get_row_color_profile_id(r)
+            cb.blockSignals(True)
+            cb.clear()
+            cb.addItem("(None / Default)", None)
+            for prof in sorted(self.catalogues.platform_profiles.values(), key=lambda p: p.name):
+                cb.addItem(f"{prof.name} [{prof.id}]", prof.id)
+            idx = cb.findData(cur_data)
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
+            else:
+                cb.setCurrentIndex(0)
+            cb.blockSignals(False)
+
     def _refresh_platform_creator_profiles(self) -> None:
+        self._refresh_row_profiles()
         if not hasattr(self, "new_plat_color_profile_combo"):
             return
         cur_data = self.new_plat_color_profile_combo.currentData()
@@ -1931,7 +2007,7 @@ class MainWindow(QMainWindow):
 
     def load_catalogues_from_json(self, file_path: Optional[Path | str] = None) -> bool:
         """Load enemy and/or secret catalogue definitions from a JSON file."""
-        if file_path is None:
+        if not file_path or isinstance(file_path, bool):
             path_str, _ = QFileDialog.getOpenFileName(
                 self,
                 "Open Catalogue JSON File",
@@ -2019,6 +2095,80 @@ class MainWindow(QMainWindow):
         except Exception as err:
             QMessageBox.critical(self, "Import Error", f"Failed to import catalogue definitions:\n{err}")
             return False
+
+    def load_sprites_from_json(self, file_path: Optional[Path | str] = None) -> bool:
+        """Load sprite definitions from a Sprite Studio JSON file."""
+        if not file_path or isinstance(file_path, bool):
+            path_str, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open Sprite Studio JSON File",
+                str(self.base_dir / "sprites") if (self.base_dir / "sprites").is_dir() else str(self.base_dir),
+                "Sprite JSON (*.sprite.json *.json);;All Files (*)",
+            )
+            if not path_str:
+                return False
+            target_path = Path(path_str)
+        else:
+            target_path = Path(file_path)
+
+        try:
+            count = self.catalogues.load_sprites_from_json(target_path)
+            self.catalogues.save_to_dir(self.base_dir)
+            self._sync_all()
+
+            QMessageBox.information(
+                self,
+                "Sprites Loaded",
+                f"Successfully loaded {count} sprite(s) from:\n{target_path.name}",
+            )
+            return True
+        except Exception as err:
+            QMessageBox.critical(self, "Load Error", f"Failed to load sprite definitions:\n{err}")
+            return False
+
+    def _populate_sprite_combo(
+        self,
+        combo: Optional[QComboBox],
+        current_sprite_id: Optional[int],
+        allow_default: bool = False,
+        defn_sprite_id: Optional[int] = None,
+    ) -> None:
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+
+        has_sprites = bool(self.catalogues.sprites)
+        combo.setEnabled(has_sprites)
+
+        if allow_default:
+            if defn_sprite_id is not None:
+                combo.addItem(f"Default (Sprite {defn_sprite_id})", None)
+            else:
+                combo.addItem("Default / None (Brak)", None)
+        else:
+            combo.addItem("None (Brak)", None)
+
+        if has_sprites:
+            for s_id in sorted(self.catalogues.sprites.keys()):
+                spr = self.catalogues.sprites[s_id]
+                desc = getattr(spr, "description", "")
+                label = f"{spr.id}: {desc}" if desc else f"Sprite {spr.id}"
+                combo.addItem(label, spr.id)
+
+        if current_sprite_id is None:
+            combo.setCurrentIndex(0)
+        else:
+            idx = combo.findData(current_sprite_id)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            elif has_sprites:
+                combo.addItem(f"Sprite ID {current_sprite_id}", current_sprite_id)
+                combo.setCurrentIndex(combo.count() - 1)
+            else:
+                combo.setCurrentIndex(0)
+
+        combo.blockSignals(False)
 
     def save_catalogues_to_json(self) -> bool:
         """Save project catalogues to default or configured definitions JSON file."""
@@ -2121,6 +2271,8 @@ class MainWindow(QMainWindow):
         defn_id = self.new_obj_definition_combo.currentData()
         if not defn_id:
             self.new_obj_definition_info_lbl.setText("<small style='color: #888;'>No definition selected.</small>")
+            if hasattr(self, "new_obj_sprite_combo"):
+                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite_id=None)
             return
         defn = self.catalogues.get_definition(obj_type, defn_id)
         if defn:
@@ -2130,11 +2282,17 @@ class MainWindow(QMainWindow):
             if defn.rgb_color:
                 r, g, b = defn.rgb_color
                 color_badge = f"<span style='background-color: rgb({r},{g},{b}); border: 1px solid #aaa;'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
+            spr_str = f" | Sprite: <b>{defn.sprite_id}</b>" if getattr(defn, "sprite_id", None) is not None else ""
             self.new_obj_definition_info_lbl.setText(
-                f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: <b>{blink_str}</b></small>"
+                f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: <b>{blink_str}</b>{spr_str}</small>"
             )
+            if hasattr(self, "new_obj_sprite_combo"):
+                cur_sel = self.new_obj_sprite_combo.currentData()
+                self._populate_sprite_combo(self.new_obj_sprite_combo, cur_sel, allow_default=True, defn_sprite_id=getattr(defn, "sprite_id", None))
         else:
             self.new_obj_definition_info_lbl.setText("")
+            if hasattr(self, "new_obj_sprite_combo"):
+                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite_id=None)
 
     def _refresh_object_creator_definitions(self) -> None:
         obj_type = self.new_obj_type_combo.currentData() or OBJECT_TYPE_ENEMY
@@ -2147,9 +2305,13 @@ class MainWindow(QMainWindow):
             self.new_obj_definition_info_lbl.setText(
                 "<small style='color: #e57373;'>Catalogue is empty. Click 'Manage Catalogues...' to add definitions.</small>"
             )
+            if hasattr(self, "new_obj_sprite_combo"):
+                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite_id=None)
         else:
             for defn_id, defn in defs.items():
                 label = f"{defn.name} [{defn.id}]"
+                if getattr(defn, "sprite_id", None) is not None:
+                    label += f" [Sprite: {defn.sprite_id}]"
                 self.new_obj_definition_combo.addItem(label, defn.id)
             self._update_new_obj_definition_info()
 
@@ -2245,6 +2407,7 @@ class MainWindow(QMainWindow):
 
         speed = self.new_obj_speed_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
         strategy = self.new_obj_strategy_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
+        sprite_id = self.new_obj_sprite_combo.currentData() if hasattr(self, "new_obj_sprite_combo") and self.new_obj_sprite_combo.isEnabled() else None
 
         obj = SceneObjectElement(
             id=obj_id,
@@ -2256,6 +2419,7 @@ class MainWindow(QMainWindow):
             source_rect=self._new_obj_rect.clone() if self._new_obj_rect else None,
             speed=speed,
             movement_strategy=strategy,
+            sprite_id=sprite_id,
         )
 
         try:
@@ -2482,6 +2646,24 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
+    def _on_obj_prop_sprite_changed(self) -> None:
+        selected_id = self._get_effective_selected_object_id()
+        if selected_id is None:
+            return
+        obj = self.scene_model.get_object(selected_id)
+        if not obj:
+            return
+        new_spr = self.obj_prop_sprite_combo.currentData()
+        if new_spr == obj.sprite_id:
+            return
+        cmd = UpdateSceneObjectPropsCommand(
+            self.scene_model,
+            selected_id,
+            new_sprite_id=new_spr,
+            callback=lambda: self._on_object_command_executed(selected_id),
+        )
+        self.undo_stack.push(cmd)
+
     def _on_object_list_row_changed(self, row: int) -> None:
         if 0 <= row < len(self.scene_model.objects):
             obj = self.scene_model.objects[row]
@@ -2499,7 +2681,9 @@ class MainWindow(QMainWindow):
             defn_name = f" '{defn.name}'" if defn else f" [def: {obj.definition_id or 'None'}]"
             strat_info = f", {obj.movement_strategy}" if obj.movement_strategy else ""
             spd_info = f", {obj.speed}" if obj.speed else ""
-            text = f"[{type_tag}]{defn_name} {obj.id} @ {obj.platform_id} (x={obj.x}{spd_info}{strat_info})"
+            eff_spr = obj.get_effective_sprite_id(self.catalogues)
+            spr_info = f", spr={eff_spr}" if eff_spr is not None else ""
+            text = f"[{type_tag}]{defn_name} {obj.id} @ {obj.platform_id} (x={obj.x}{spd_info}{strat_info}{spr_info})"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, obj.id)
             self.objects_list.addItem(item)
@@ -2559,6 +2743,9 @@ class MainWindow(QMainWindow):
             self.obj_prop_definition_combo.blockSignals(False)
             self.obj_prop_definition_info_lbl.setText("<small style='color: #888;'>No object selected on scene.</small>")
 
+            if hasattr(self, "obj_prop_sprite_combo"):
+                self._populate_sprite_combo(self.obj_prop_sprite_combo, None, allow_default=True)
+
             self.obj_prop_platform_combo.blockSignals(True)
             self.obj_prop_platform_combo.clear()
             for plat in self.scene_model.platforms:
@@ -2615,11 +2802,17 @@ class MainWindow(QMainWindow):
             if defn.rgb_color:
                 r, g, b = defn.rgb_color
                 color_badge = f"<span style='background-color: rgb({r},{g},{b}); border: 1px solid #aaa;'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
+            spr_str = f" | Sprite: <b>{defn.sprite_id}</b>" if getattr(defn, "sprite_id", None) is not None else ""
             self.obj_prop_definition_info_lbl.setText(
-                f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: {blink_str}</small>"
+                f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: {blink_str}{spr_str}</small>"
             )
         else:
             self.obj_prop_definition_info_lbl.setText("<small style='color: #ff5555;'>⚠ Definition not found in catalogue</small>")
+
+        # Sprite combo
+        if hasattr(self, "obj_prop_sprite_combo"):
+            def_spr = getattr(defn, "sprite_id", None) if defn else None
+            self._populate_sprite_combo(self.obj_prop_sprite_combo, obj.sprite_id, allow_default=True, defn_sprite_id=def_spr)
 
         # Platform combo - read-only
         self.obj_prop_platform_combo.blockSignals(True)

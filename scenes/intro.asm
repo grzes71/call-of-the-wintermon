@@ -39,6 +39,9 @@ INTRO_TEXT_COLOR = $CA     ; Light green (Hue $C, Luminance $A)
     ; Require releasing fire button before accepting next press
     lda #0
     sta fire_released
+
+    ; Start Intro background music
+    jsr audio_play_intro
     rts
 .endp
 
@@ -57,6 +60,9 @@ INTRO_TEXT_COLOR = $CA     ; Light green (Hue $C, Luminance $A)
 @sync_vblank
     cmp RTCLOK+2
     beq @sync_vblank
+
+    ; Advance music playback by 1 frame
+    jsr audio_update
 
     ; Check if button was released first
     lda fire_released
@@ -87,6 +93,9 @@ INTRO_TEXT_COLOR = $CA     ; Light green (Hue $C, Luminance $A)
     sta CH              ; Clear key buffer
 
 @fire_pressed
+    ; Stop intro music before transition
+    jsr audio_stop
+
     ; Transition to GAME screen
     lda #STATE_GAME
     sta game_state
