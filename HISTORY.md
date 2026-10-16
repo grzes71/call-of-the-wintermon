@@ -2,7 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-16] - Integration of Catalogues into Unified scenes/definitions.json
+## [2026-10-16] - Fix Bottom Platform (Row 5) Visibility and Missile Platform Coloring
+
+- **PMG Pre-fill Scanline Alignment Fix**:
+  - In [engine/dli.asm](engine/dli.asm) (`dli_init`), corrected pre-filled solid PMG offsets from `16, 48, 80, 112, 144, 176` to `48, 80, 112, 144, 176, 208`.
+  - Mode D lines start after 24 blank scanlines (TV scanline 32), so Mode D line $Y$ corresponds to scanline $32 + (Y \times 2)$. The previous offsets omitted the bottom row 5 (Mode D line 88 $\rightarrow$ scanlines 208..215), leaving `PMG_PLAYER1..3` and `PMG_MISSILES` at 208..215 empty ($00).
+  - Row 5 platforms (`platform-014` and `platform-002`) now render solid 8-scanline bars across scanlines 208..215.
+- **5th Player Mode and Missile Platform Color Gradient**:
+  - In [engine/dli.asm](engine/dli.asm) (`dli_handler`), configured `PRIOR = $11` in Faza A to enable 5th player mode (converting all 4 missiles into a single entity colored by `COLPF3`).
+  - In Faza B, added `sta COLPF3` to each of the 8 scanline updates to mirror `COLPM1`, giving missile platforms the exact same color gradient as player platforms without consuming Mode D playfield palette registers.
+- **Test Suite Alignment**:
+  - In [tests/test_dli_system.py](tests/test_dli_system.py), updated `pas_scanline_starts` to `[48, 80, 112, 144, 176, 208]` and guard line assertions.
+  - In [tests/test_compile_scenes.py](tests/test_compile_scenes.py), updated assertion for row 5 x coordinate ($48 + 48 = 96$).
+  - All 325 unit/integration tests passed via `.venv/Scripts/python.exe -m pytest`.
+
 
 - **Unified Catalogue Schema and File**:
   - Combined `platform_profiles.json`, `enemies.json`, and `secrets.json` into a single file [scenes/definitions.json](scenes/definitions.json) containing `version`, `enemies`, `secrets`, and `platform_profiles`.

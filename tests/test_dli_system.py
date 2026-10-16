@@ -174,9 +174,9 @@ def test_dli_init_execution():
     assert mem[labels["DLI_SWAP_REQUESTED"]] == 0
     assert mem[labels["DLI_PAS_IDX"]] == 0
 
-    # 4. PMG platform rows pre-filled with solid pixels ($FF in P1..P3, $FC in Missiles)
-    # 6 pas at scanlines: 16..23, 48..55, 80..87, 112..119, 144..151, 176..183
-    pas_scanline_starts = [16, 48, 80, 112, 144, 176]
+    # 4. PMG platform rows pre-filled with solid pixels ($FF in P1..P3, $FF in Missiles)
+    # 6 pas at scanlines: 48..55, 80..87, 112..119, 144..151, 176..183, 208..215
+    pas_scanline_starts = [48, 80, 112, 144, 176, 208]
     pmg_p1 = labels["PMG_PLAYER1"]
     pmg_p2 = labels["PMG_PLAYER2"]
     pmg_p3 = labels["PMG_PLAYER3"]
@@ -190,8 +190,8 @@ def test_dli_init_execution():
             assert mem[pmg_p3 + curr_sl] == 0xFF, f"Player 3 pas row {curr_sl} must be $FF"
             assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas row {curr_sl} must be $FF"
 
-    # Guard lines (e.g. scanline 15, 24, 47, 56) must remain 0
-    guard_lines = [15, 24, 47, 56, 79, 88, 111, 120, 143, 152, 175, 184]
+    # Guard lines (e.g. scanline 47, 56, 79, 88, etc.) must remain 0
+    guard_lines = [47, 56, 79, 88, 111, 120, 143, 152, 175, 184, 207, 216]
     for gl in guard_lines:
         assert mem[pmg_p1 + gl] == 0x00, f"Guard line {gl} in Player 1 must be $00"
         assert mem[pmg_m + gl] == 0x00, f"Guard line {gl} in Missiles must be $00"

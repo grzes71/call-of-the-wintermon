@@ -159,43 +159,44 @@ dli_table_ptrs_hi
     bne @clr_pmg
 
     ; 3. Pre-fill platform rows in PMG memory (8 scanlines solid per pas)
-    ; Pas 0: lines 8..11   -> scanlines 16..23 ($10..$17)
-    ; Pas 1: lines 24..27  -> scanlines 48..55 ($30..$37)
-    ; Pas 2: lines 40..43  -> scanlines 80..87 ($50..$57)
-    ; Pas 3: lines 56..59  -> scanlines 112..119 ($70..$77)
-    ; Pas 4: lines 72..75  -> scanlines 144..151 ($90..$97)
-    ; Pas 5: lines 88..91  -> scanlines 176..183 ($B0..$B7)
+    ; Mode D lines start after 24 blank scanlines (TV scanline 32)
+    ; Pas 0: lines 8..11   -> scanlines 48..55 ($30..$37)
+    ; Pas 1: lines 24..27  -> scanlines 80..87 ($50..$57)
+    ; Pas 2: lines 40..43  -> scanlines 112..119 ($70..$77)
+    ; Pas 3: lines 56..59  -> scanlines 144..151 ($90..$97)
+    ; Pas 4: lines 72..75  -> scanlines 176..183 ($B0..$B7)
+    ; Pas 5: lines 88..91  -> scanlines 208..215 ($D0..$D7)
     ldx #7
 @fill_pas
     lda #$FF            ; Solid pixels for player platforms
-    sta PMG_PLAYER1 + 16,x
     sta PMG_PLAYER1 + 48,x
     sta PMG_PLAYER1 + 80,x
     sta PMG_PLAYER1 + 112,x
     sta PMG_PLAYER1 + 144,x
     sta PMG_PLAYER1 + 176,x
+    sta PMG_PLAYER1 + 208,x
 
-    sta PMG_PLAYER2 + 16,x
     sta PMG_PLAYER2 + 48,x
     sta PMG_PLAYER2 + 80,x
     sta PMG_PLAYER2 + 112,x
     sta PMG_PLAYER2 + 144,x
     sta PMG_PLAYER2 + 176,x
+    sta PMG_PLAYER2 + 208,x
 
-    sta PMG_PLAYER3 + 16,x
     sta PMG_PLAYER3 + 48,x
     sta PMG_PLAYER3 + 80,x
     sta PMG_PLAYER3 + 112,x
     sta PMG_PLAYER3 + 144,x
     sta PMG_PLAYER3 + 176,x
+    sta PMG_PLAYER3 + 208,x
 
     lda #$FF            ; All 4 missiles solid
-    sta PMG_MISSILES + 16,x
     sta PMG_MISSILES + 48,x
     sta PMG_MISSILES + 80,x
     sta PMG_MISSILES + 112,x
     sta PMG_MISSILES + 144,x
     sta PMG_MISSILES + 176,x
+    sta PMG_MISSILES + 208,x
     dex
     bpl @fill_pas
 
@@ -464,18 +465,19 @@ dli_table_ptrs_hi
     lda dli_hpos_m3,y      ; [4]
     sta HPOSM3            ; [4]
 
-    lda #$01               ; [2] PRIOR: bit 4 = 0 (no 5th player), Hero/P0 in front
+    lda #$11               ; [2] PRIOR: bit 4 = 1 (5th player enabled: missiles colored by COLPF3)
     sta PRIOR             ; [4]
 
     sta WSYNC             ; [4] Wait for scanline 0 of the pas
 
     ; --------------------------------------------------------------------------
     ; FAZA B: 8 scanlines of platform color profiles
-    ; Updates COLPM1..3 in HBLANK (cycles 0..23) of each scanline
+    ; Updates COLPM1..3 and COLPF3 (5th player/missiles) in HBLANK of each scanline
     ; --------------------------------------------------------------------------
     ; Scanline 0:
     lda dli_pas_c1_sl0,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl0,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl0,y   ; [4]
@@ -485,6 +487,7 @@ dli_table_ptrs_hi
     ; Scanline 1:
     lda dli_pas_c1_sl1,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl1,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl1,y   ; [4]
@@ -494,6 +497,7 @@ dli_table_ptrs_hi
     ; Scanline 2:
     lda dli_pas_c1_sl2,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl2,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl2,y   ; [4]
@@ -503,6 +507,7 @@ dli_table_ptrs_hi
     ; Scanline 3:
     lda dli_pas_c1_sl3,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl3,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl3,y   ; [4]
@@ -512,6 +517,7 @@ dli_table_ptrs_hi
     ; Scanline 4:
     lda dli_pas_c1_sl4,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl4,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl4,y   ; [4]
@@ -521,6 +527,7 @@ dli_table_ptrs_hi
     ; Scanline 5:
     lda dli_pas_c1_sl5,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl5,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl5,y   ; [4]
@@ -530,6 +537,7 @@ dli_table_ptrs_hi
     ; Scanline 6:
     lda dli_pas_c1_sl6,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl6,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl6,y   ; [4]
@@ -539,6 +547,7 @@ dli_table_ptrs_hi
     ; Scanline 7:
     lda dli_pas_c1_sl7,y   ; [4]
     sta COLPM1            ; [4]
+    sta COLPF3            ; [4]
     lda dli_pas_c2_sl7,y   ; [4]
     sta COLPM2            ; [4]
     lda dli_pas_c3_sl7,y   ; [4]

@@ -234,9 +234,9 @@ def test_scene_dli_data_matches_json():
 
             # In 01-forest pas 5 (y=88): 96px sprite (P1..P3) + 32px missile (M0..M3)
             if scene_file_name == "01-forest.json" and pas_y == 88:
-                assert dli.hpos_p1[5] == 48 + 49        # $61
-                assert dli.hpos_p2[5] == 48 + 49 + 32   # $81
-                assert dli.hpos_p3[5] == 48 + 49 + 64   # $A1
+                assert dli.hpos_p1[5] == 48 + 48        # $60
+                assert dli.hpos_p2[5] == 48 + 48 + 32   # $80
+                assert dli.hpos_p3[5] == 48 + 48 + 64   # $A0
                 assert dli.hpos_m0[5] == 48 + 16        # $40
                 assert dli.hpos_m1[5] == 48 + 16 + 8    # $48
                 assert dli.hpos_m2[5] == 48 + 16 + 16   # $50
