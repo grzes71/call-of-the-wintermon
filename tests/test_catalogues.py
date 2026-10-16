@@ -805,7 +805,9 @@ class TestSpriteStudioIntegration:
         assert len(cats.sprites) == 0
 
         # Load real project sprite definition
-        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        sprite_file = Path("sprites") / "objects.sprite.json"
+        if not sprite_file.is_file():
+            sprite_file = Path("sprites") / "secret-cd.sprite.json"
         assert sprite_file.is_file()
 
         count = cats.load_sprites_from_json(sprite_file)
@@ -822,23 +824,39 @@ class TestSpriteStudioIntegration:
 
         dlg = CataloguesDialog(cats, base_dir=tmp_path)
 
-        # Initially combos must be disabled because no sprites are loaded
+        # 1. Combos MUST be disabled when no sprites are loaded
         assert not dlg.enemy_sprite_combo.isEnabled()
         assert not dlg.secret_sprite_combo.isEnabled()
 
-        # Load sprites
-        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        # Selecting items or clicking new must keep them disabled
+        dlg._on_enemy_selected(0)
+        assert not dlg.enemy_sprite_combo.isEnabled()
+        dlg._on_new_enemy_clicked()
+        assert not dlg.enemy_sprite_combo.isEnabled()
+
+        dlg.tabs.setCurrentIndex(1)
+        dlg._on_secret_selected(0)
+        assert not dlg.secret_sprite_combo.isEnabled()
+        dlg._on_new_secret_clicked()
+        assert not dlg.secret_sprite_combo.isEnabled()
+
+        # 2. Load sprites
+        sprite_file = Path("sprites") / "objects.sprite.json"
+        if not sprite_file.is_file():
+            sprite_file = Path("sprites") / "secret-cd.sprite.json"
         count = cats.load_sprites_from_json(sprite_file)
         assert count > 0
 
-        # Manually refresh dialog sprite combos (as done in _on_load_sprites_clicked)
+        # Refresh dialog sprite combos (as done in _on_load_sprites_clicked)
+        dlg.enemy_list.setCurrentRow(0)
         dlg._populate_sprite_combo(dlg.enemy_sprite_combo, None)
         dlg._populate_sprite_combo(dlg.secret_sprite_combo, None)
 
+        # 3. Combos MUST now be enabled
         assert dlg.enemy_sprite_combo.isEnabled()
         assert dlg.secret_sprite_combo.isEnabled()
 
-        # Select sprite 1 for Enemy
+        # Select sprite 1 for Enemy 1
         idx = dlg.enemy_sprite_combo.findData(1)
         assert idx >= 0
         dlg.enemy_sprite_combo.setCurrentIndex(idx)
@@ -869,18 +887,22 @@ class TestSpriteStudioIntegration:
 
     def test_main_window_menu_and_sprite_loading(self, qapp, monkeypatch, tmp_path: Path):
         monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+        monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+        monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
         win = MainWindow(base_dir=tmp_path)
 
         # Check menu action exists
         assert hasattr(win, "act_load_sprites")
         assert win.act_load_sprites.text() == "Load &Sprites (JSON)..."
 
-        # Combos in main window should be disabled initially
+        # Combos in main window must be disabled initially
         assert not win.new_obj_sprite_combo.isEnabled()
         assert not win.obj_prop_sprite_combo.isEnabled()
 
         # Load sprites via main window method
-        sprite_file = Path("sprites") / "secret-cd.sprite.json"
+        sprite_file = Path("sprites") / "objects.sprite.json"
+        if not sprite_file.is_file():
+            sprite_file = Path("sprites") / "secret-cd.sprite.json"
         success = win.load_sprites_from_json(sprite_file)
         assert success is True
 

@@ -4,32 +4,32 @@
 
 ## [2026-10-16] - Sprite Studio Integration in Atari Scene Editor
 
-- **Catalogue Model ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
+- **Catalogue Model & Session Loading ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
   - Added optional `sprite_id: Optional[int] = None` to `CatalogDefinition` with validation (`1 <= sprite_id <= 255`).
   - Updated `to_dict()` and `from_dict()` for `EnemyDefinition` and `SecretDefinition` to serialize and deserialize `sprite_id`.
   - Added `sprites: dict[int, Any]` and `sprites_path: Optional[Path]` to `ProjectCatalogues`.
   - Implemented `ProjectCatalogues.load_sprites_from_json(path)` supporting Sprite Studio format (`version: 1`, `sprites: [...]`).
-  - Added persistence of `sprites_file` in [scenes/definitions.json](scenes/definitions.json) and automatic reloading when loading catalogue definitions.
+  - Ensured sprite definitions are strictly loaded on demand via user action (menu/button) and not automatically persisted in [scenes/definitions.json](scenes/definitions.json), guaranteeing comboboxes start disabled.
 - **Scene Model & Commands ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
   - Added `sprite_id: Optional[int] = None` to `SceneObjectElement`, serialized in `to_dict()` and `from_dict()`.
   - Added `SceneObjectElement.get_effective_sprite_id(catalogues)` to inherit definition's sprite mapping or use an instance override.
   - Added `new_sprite_id` parameter to `Scene.update_object_props()` and `UpdateSceneObjectPropsCommand`.
 - **Catalogue Dialog UI ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py))**:
-  - Added `btn_load_sprites` ("Load Sprites (Sprite Studio)...") button in the catalogue manager footer.
-  - Added `sprite_combo` (`QComboBox`) for Enemies and Secrets, disabled by default.
-  - Implemented `_populate_sprite_combo()` enabling the combobox when sprite data is loaded and listing available sprites (`id: description`).
+  - Added `btn_load_sprites` ("Load Sprites...") button in the catalogue manager footer.
+  - Added `sprite_combo` (`QComboBox`) for Enemies and Secrets: strictly disabled (`setEnabled(False)`) when no sprites are loaded, with tooltip explaining how to unlock it.
+  - Implemented `_populate_sprite_combo()` to dynamically unlock the combobox (`setEnabled(True)`) and populate available sprites (`id: description`) only after a sprite JSON is loaded.
   - Updated enemy and secret save/selection handlers to map and display `[Sprite: X]` in entry lists and form controls.
   - Allowed multiple enemies and secrets to map to the same sprite while restricting each entry to at most one sprite.
 - **Main Window & Menus ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
   - Added menu items: `Load &Sprites (JSON)...` under `&Catalogues` and `Load &Sprites (JSON)...` under `&File`.
-  - Implemented `MainWindow.load_sprites_from_json(file_path)` to load and persist sprite files.
-  - Added `new_obj_sprite_combo` to New Object Creator and `obj_prop_sprite_combo` to Selected Object properties (both default disabled, enabled upon loading sprites).
+  - Implemented `MainWindow.load_sprites_from_json(file_path)` to load sprite files on demand.
+  - Added `new_obj_sprite_combo` to New Object Creator and `obj_prop_sprite_combo` to Selected Object properties (both strictly disabled when sprites are not loaded, enabled upon loading).
   - Connected `_on_obj_prop_sprite_changed` to push `UpdateSceneObjectPropsCommand(new_sprite_id=...)`.
 - **Scene Graphics Item & Exporter ([atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py), [scripts/compile_scenes.py](scripts/compile_scenes.py))**:
   - Updated `SceneObjectGraphicsItem` tooltip to display mapped `Sprite: ID {id} ({description})`.
   - Added `sprite_id: Optional[int] = None` to `CatalogueItem` in [scripts/compile_scenes.py](scripts/compile_scenes.py) and updated `load_catalogues()`.
 - **Automated Verification ([tests/test_catalogues.py](tests/test_catalogues.py))**:
-  - Added `TestSpriteStudioIntegration` test suite covering validation, JSON loading of [sprites/secret-cd.sprite.json](sprites/secret-cd.sprite.json), combo enablement, multi-mapping, effective sprite resolution, and main window menu integration.
+  - Added `TestSpriteStudioIntegration` test suite covering validation, JSON loading of [sprites/objects.sprite.json](sprites/objects.sprite.json), combobox disabled state verification prior to loading, unlock after loading, multi-mapping, effective sprite resolution, and main window menu integration.
   - Ran `make all`: all 364 tests passed, assembly and memory validation passed.
 
 

@@ -373,17 +373,27 @@ class CataloguesDialog(QDialog):
         combo.blockSignals(True)
         combo.clear()
 
-        has_sprites = bool(self.catalogues.sprites)
+        has_sprites = bool(self.catalogues and self.catalogues.sprites)
         combo.setEnabled(has_sprites)
 
+        if not has_sprites:
+            if current_sprite_id is not None:
+                combo.addItem(f"Sprite ID {current_sprite_id} (definicje nie załadowane)", current_sprite_id)
+            else:
+                combo.addItem("Brak (definicje sprite'ów nie załadowane)", None)
+            combo.setCurrentIndex(0)
+            combo.setToolTip("Combobox jest wyłączony (disabled), ponieważ nie załadowano definicji sprite'ów z pliku JSON.")
+            combo.blockSignals(False)
+            return
+
+        combo.setToolTip("Wybierz sprite ze Sprite Studio do zmapowania z tym wpisem.")
         combo.addItem("None (Brak)", None)
 
-        if has_sprites:
-            for s_id in sorted(self.catalogues.sprites.keys()):
-                spr = self.catalogues.sprites[s_id]
-                desc = getattr(spr, "description", "")
-                label = f"{spr.id}: {desc}" if desc else f"Sprite {spr.id}"
-                combo.addItem(label, spr.id)
+        for s_id in sorted(self.catalogues.sprites.keys()):
+            spr = self.catalogues.sprites[s_id]
+            desc = getattr(spr, "description", "")
+            label = f"{spr.id}: {desc}" if desc else f"Sprite {spr.id}"
+            combo.addItem(label, spr.id)
 
         if current_sprite_id is None:
             combo.setCurrentIndex(0)
@@ -392,11 +402,8 @@ class CataloguesDialog(QDialog):
             if idx >= 0:
                 combo.setCurrentIndex(idx)
             else:
-                if has_sprites:
-                    combo.addItem(f"Sprite ID {current_sprite_id}", current_sprite_id)
-                    combo.setCurrentIndex(combo.count() - 1)
-                else:
-                    combo.setCurrentIndex(0)
+                combo.addItem(f"Sprite ID {current_sprite_id}", current_sprite_id)
+                combo.setCurrentIndex(combo.count() - 1)
 
         combo.blockSignals(False)
 

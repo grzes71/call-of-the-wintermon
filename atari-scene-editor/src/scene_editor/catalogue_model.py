@@ -1013,14 +1013,6 @@ class ProjectCatalogues:
                     prof = PlatformColorProfile.from_dict(def_item)
                     catalogues.platform_profiles[prof.id] = prof
 
-            if "sprites_file" in data:
-                sf = (d_path.parent / data["sprites_file"]).resolve()
-                if sf.is_file():
-                    try:
-                        catalogues.load_sprites_from_json(sf)
-                    except Exception:
-                        pass
-
             return catalogues
 
         # 2. Legacy fallback: separate individual files
@@ -1158,12 +1150,6 @@ class ProjectCatalogues:
             "secrets": [s.to_dict() for s in sorted(self.secrets.values(), key=lambda s: s.id)],
             "platform_profiles": [p.to_dict() for p in sorted(self.platform_profiles.values(), key=lambda p: p.id)],
         }
-        if self.sprites_path:
-            try:
-                rel = self.sprites_path.relative_to(def_path.parent)
-                data["sprites_file"] = str(rel).replace("\\", "/")
-            except ValueError:
-                data["sprites_file"] = str(self.sprites_path).replace("\\", "/")
         self._atomic_save_json(def_path, data)
 
     def save_to_paths(
