@@ -28,6 +28,8 @@ source_code:
   engine:
     - path: "engine/dli.asm"
       description: "Unified DLI engine, scanline timing and double-buffered palette/PMG registers"
+    - path: "engine/player.asm"
+      description: "Hero (Player 0) state machine, horizontal walk movement and PMG rendering"
     - path: "engine/render.asm"
       description: "Playfield rendering engine and fast tile blitter"
     - path: "engine/render_tables.asm"

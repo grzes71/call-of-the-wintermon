@@ -99,3 +99,34 @@ def test_generate_sprites_asm():
     assert "sprite_frame_dur" in asm_text
     assert "sprite_frames_table_lo" in asm_text
     assert "sprite_frames_table_hi" in asm_text
+
+
+from scripts.compile_sprites import pack_row_to_player_bitmap, generate_player_sprites_asm
+
+
+def test_pack_row_player_bitmap():
+    """Verify MSB-first bit packing for Player 0."""
+    assert pack_row_to_player_bitmap("00000000") == 0x00
+    assert pack_row_to_player_bitmap("11111111") == 0xFF
+    assert pack_row_to_player_bitmap("10000000") == 0x80
+    assert pack_row_to_player_bitmap("00000001") == 0x01
+    assert pack_row_to_player_bitmap("00001000") == 0x08
+    assert pack_row_to_player_bitmap("00011100") == 0x1C
+
+
+def test_generate_player_sprites_asm():
+    """Verify Player 0 animation frames and direction tables."""
+    json_path = Path("sprites/player.sprite.json")
+    sprites = parse_sprites_json(json_path, mode="player")
+    asm_text = generate_player_sprites_asm(sprites)
+
+    assert "PLAYER_SPRITE_WIDTH  = 8" in asm_text
+    assert "PLAYER_SPRITE_HEIGHT = 20" in asm_text
+    assert "PLAYER_FRAME_COUNT   = 5" in asm_text
+    assert "player_anim_right_frame_0" in asm_text
+    assert "player_anim_right_frames" in asm_text
+    assert "player_anim_left_frame_0" in asm_text
+    assert "player_anim_left_frames" in asm_text
+    assert "player_anim_table_lo" in asm_text
+    assert "player_anim_table_hi" in asm_text
+

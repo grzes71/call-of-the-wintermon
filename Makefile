@@ -42,6 +42,8 @@ MUSIC_INTRO_ASM  := $(GEN_DIR)/intro_music.asm
 
 SPRITES_SRC       := sprites/objects.sprite.json
 SPRITES_ASM       := $(GEN_DIR)/sprites_data.asm
+PLAYER_SPRITE_SRC := sprites/player.sprite.json
+PLAYER_SPRITE_ASM := $(GEN_DIR)/player_sprites.asm
 
 SCENES_MANIFEST    := scenes/scenes.json
 SCENES_DIR         := scenes
@@ -52,7 +54,9 @@ SCENES_DLI_ASM     := $(GEN_DIR)/scenes_dli_data.asm
 
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
                     engine/dli.asm engine/render.asm engine/render_tables.asm engine/secrets.asm \
+                    engine/player.asm engine/status_line.asm \
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
+
 
 .PHONY: all assets tiles music data tests xex check_memory run clean
 
@@ -100,11 +104,15 @@ $(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 # 4. Data generation (Scene structures, platforms, objects, sprites)
 # ------------------------------------------------------------------------------
-data: $(SPRITES_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
+data: $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
 
 $(SPRITES_ASM): $(SPRITES_SRC) scripts/compile_sprites.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_sprites.py -i $< -o $@
+	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $< -o $@
+
+$(PLAYER_SPRITE_ASM): $(PLAYER_SPRITE_SRC) scripts/compile_sprites.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_sprites.py --mode player -i $< -o $@
 
 $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFINITIONS) $(SPRITES_SRC) $(SPRITES_ASM) scripts/compile_scenes.py
 	@$(MKDIR) $(GEN_DIR)
@@ -115,9 +123,10 @@ $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFI
 # ------------------------------------------------------------------------------
 xex: $(TARGET)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(TITLE_SCROLL_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(SCENES_ASM)
+$(TARGET): $(ASM_SRCS) $(TITLE_BIN) $(TITLE_SCROLL_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
 	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
+
 
 # ------------------------------------------------------------------------------
 # 5. Automated testing (Pytest suite + py65 emulation)

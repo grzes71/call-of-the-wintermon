@@ -38,6 +38,10 @@ SCENE_TITLE_FADE_STEPS = 8
     lda active_scene_id
     jsr secrets_init
 
+    ; Initialize player engine (Player 0 Hero spawn and PMG)
+    lda active_scene_id
+    jsr player_init
+
     ; Initialize status line (lives hearts, scene name, collected CDs)
     lda player_lives
     bne @has_lives
@@ -266,37 +270,7 @@ SCENE_TITLE_FADE_STEPS = 8
     lda #$03
     sta GRACTL
 
-    ; Check if button was released first
-    lda fire_released
-    bne @can_press
-
-    lda STRIG0
-    bne @btn_released
-    lda CH
-    cmp #$FF
-    beq @no_input
-@btn_released
-    lda #1
-    sta fire_released
-@no_input
-    rts
-
-@can_press
-    ; Check Fire button (STRIG0 = 0) or Keypress (CH != $FF)
-    lda STRIG0
-    beq @fire_pressed
-    lda CH
-    cmp #$FF
-    bne @key_pressed
-    rts
-
-@key_pressed
-    lda #$FF
-    sta CH              ; Clear key buffer
-
-@fire_pressed
-    ; Transition to GAME OVER screen
-    lda #STATE_OVER
-    sta game_state
+    ; Update Hero Player 0 (joystick input, horizontal movement, animation & PMG render)
+    jsr player_update
     rts
 .endp

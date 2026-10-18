@@ -2,6 +2,37 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-18] - Reduce Player Walk Movement Speed by Half
+
+- **Player Engine Physics ([engine/player.asm](engine/player.asm), [zeropage.asm](zeropage.asm))**:
+  - Allocated `player_sub_x` ($C9) in Zero Page as a sub-pixel step divider.
+  - Reduced horizontal movement speed from 1.0 px/frame to 0.5 px/frame (moves 1 pixel every 2 frames): `inc player_sub_x` followed by `lsr` carry check so the first movement step responds immediately on frame 1.
+  - Reset `player_sub_x = 0` on entering idle state to ensure instantaneous response on subsequent stick presses.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Updated py65 test expectations verifying 0.5 px/frame right/left progression, idle sub-pixel reset, and 3-frame boundary clamping.
+  - Verified full test suite (`make all`: 406 passed, 3,004 bytes headroom below $C000).
+
+## [2026-10-18] - Hero (Player 0) Spawn and Horizontal Walk Movement
+
+- **Player Sprite Compilation Pipeline ([scripts/compile_sprites.py](scripts/compile_sprites.py), [Makefile](Makefile))**:
+  - Added `pack_row_to_player_bitmap()` converting 8-pixel scanlines to MSB-first 1bpp Player 0 bitmap bytes (`bit 7` = leftmost pixel, `bit 0` = rightmost pixel).
+  - Implemented `generate_player_sprites_asm()` emitting `player_anim_right_frames`, `player_anim_left_frames`, and direction lookup tables (`player_anim_table_lo/hi`) into `gen/player_sprites.asm`.
+  - Added `--mode {missiles,player}` CLI switch and integrated `PLAYER_SPRITE_SRC` / `PLAYER_SPRITE_ASM` targets into `Makefile`.
+- **Hero Player 0 Engine ([engine/player.asm](engine/player.asm), [zeropage.asm](zeropage.asm), [main.asm](main.asm))**:
+  - Allocated Player 0 Zero Page state registers: `player_x` ($C3), `player_pmg_y` ($C4), `player_dir` ($C5), `player_state` ($C6), `player_frame_idx` ($C7), `player_frame_timer` ($C8).
+  - Implemented `player_init(A = active_scene_id)`: reads scene spawn coordinates (`scene_player_start_x/y`), maps vertical position to PMG scanline (`player_pmg_y = (player_start_y << 1) + 52`), sets `COLPM0 = $98` (royal cyan), `SIZEP0 = 0`, sets `HPOSP0 = 48 + player_x`, clears `PMG_PLAYER0` buffer ($6C00-$6CFF), and renders initial standing frame.
+  - Implemented `player_render_frame()`: resolves frame address via `player_anim_table_lo/hi` based on `player_dir` and copies 20 scanlines to `PMG_PLAYER0 + player_pmg_y`.
+  - Implemented `player_update()`: polls `STICK0` (bits 2 and 3), moves left/right with boundary clamping (`0 <= player_x <= 152`), updates `HPOSP0`, cycles 5-frame walk animation with wrap-around, and resets to standing frame 0 on idle while preserving last direction.
+- **Gameplay State Machine Integration ([scenes/game.asm](scenes/game.asm))**:
+  - Hooked `player_init` into `game_init` sequence after DLI and secrets setup.
+  - Hooked `player_update` into active gameplay loop (`@do_playing`).
+- **Resource Manifest Update ([manifest.yaml](manifest.yaml))**:
+  - Registered `engine/player.asm` in the engine components section.
+- **Automated Verification ([tests/test_compile_sprites.py](tests/test_compile_sprites.py), [tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added unit tests for player bitmap packing and assembly generation.
+  - Added 5 py65 integration tests verifying spawn state, PMG scanline rendering, right walk animation progression, left walk direction switching, idle state frame reset, and boundary clamping.
+  - Verified full test suite (`make all`: 406 passed, 3,022 bytes headroom below $C000).
+
 ## [2026-10-18] - Game Resource Manifest (manifest.yaml)
 
 - **Game Manifest Creation ([manifest.yaml](manifest.yaml))**:

@@ -66,3 +66,13 @@ dli_scene_pmg_ptr   = $BF   ; 2 bytes ($BF-$C0): Pointer to active scene PMG pat
 player_lives        = $C1   ; Remaining player lives (initially 3, displayed as heart glyphs 64)
 player_cds          = $C2   ; Collected CDs count (0..99, displayed as 2-digit number)
 
+; --- Player 0 Engine Zero Page Variables ($C3-$C9) ---
+player_x            = $C3   ; Player horizontal position on canvas (0..152)
+player_pmg_y        = $C4   ; Player top scanline in PMG memory ($6C00 + Y)
+player_dir          = $C5   ; Movement direction (0 = right, 1 = left)
+player_state        = $C6   ; Movement state (0 = idle, 1 = walk)
+player_frame_idx    = $C7   ; Animation frame index (0..PLAYER_FRAME_COUNT-1)
+player_frame_timer  = $C8   ; Frame countdown timer (4..1)
+player_sub_x        = $C9   ; Sub-pixel step divider (0..1 for half-speed 0.5 px/frame)
+
+
