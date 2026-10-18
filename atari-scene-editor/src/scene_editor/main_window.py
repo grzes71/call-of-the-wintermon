@@ -64,6 +64,7 @@ from .commands import (
     ModifyElementPropertiesCommand,
     MoveElementCommand,
     MovePlatformCommand,
+    MovePlayerSpawnCommand,
     MoveSceneObjectCommand,
     RemoveElementCommand,
     RemovePlatformCommand,
@@ -71,6 +72,7 @@ from .commands import (
     ReorderElementCommand,
     ResizePlatformCommand,
     ResizeSceneCommand,
+    SetPlayerSpawnCommand,
     UpdateSceneObjectPropsCommand,
 )
 from .crop_editor import CropEditorWidget
@@ -113,6 +115,9 @@ from .scene_model import (
     PLATFORM_TYPES,
     PlatformCollisionError,
     PlatformElement,
+    PlayerSpawn,
+    PLAYER_HEIGHT,
+    PLAYER_WIDTH,
     Position,
     Rect,
     Scene,
@@ -260,6 +265,8 @@ class MainWindow(QMainWindow):
         self._is_selecting_element: bool = False
         self._is_selecting_platform: bool = False
         self._is_selecting_object: bool = False
+        self._is_selecting_player_spawn: bool = False
+        self._is_updating_player_spawn: bool = False
         self._new_obj_source: Optional[str] = None
         self._new_obj_rect: Optional[Rect] = None
 
@@ -331,6 +338,8 @@ class MainWindow(QMainWindow):
         self.scene_view.platform_moved.connect(self._on_platform_moved_by_view)
         self.scene_view.object_selected.connect(self._on_object_selected)
         self.scene_view.object_moved.connect(self._on_object_moved_by_view)
+        self.scene_view.player_spawn_selected.connect(self._on_player_spawn_selected)
+        self.scene_view.player_spawn_moved.connect(self._on_player_spawn_moved_by_view)
         self.scene_view.delete_requested.connect(self.delete_selected_element)
         self.scene_view.flip_requested.connect(self.toggle_flip_selected)
         self.scene_view.cursor_position_changed.connect(self._on_cursor_coords_changed)
@@ -683,6 +692,68 @@ class MainWindow(QMainWindow):
         o_layout.addWidget(self.obj_list_group, stretch=1)
 
         self.prop_tabs.addTab(obj_widget, "Objects")
+
+        # -------------------------------------------------------------
+        # Tab 4: Player Start (Hero PMG)
+        # -------------------------------------------------------------
+        player_widget = QWidget()
+        pl_layout = QVBoxLayout(player_widget)
+        pl_layout.setContentsMargins(6, 6, 6, 6)
+        pl_layout.setSpacing(6)
+
+        self.player_group = QGroupBox("Player Initial Position")
+        pl_form = QFormLayout(self.player_group)
+
+        self.player_status_lbl = QLabel("Not configured on this scene")
+        self.player_status_lbl.setWordWrap(True)
+        pl_form.addRow("Status:", self.player_status_lbl)
+
+        self.btn_set_player_spawn = QPushButton("+ Set Player Start Position")
+        self.btn_set_player_spawn.clicked.connect(self._on_set_player_spawn_clicked)
+        pl_form.addRow("", self.btn_set_player_spawn)
+
+        self.player_x_spin = QSpinBox()
+        self.player_x_spin.setRange(0, MAX_SCENE_WIDTH - PLAYER_WIDTH)
+        self.player_x_spin.setValue(20)
+        self.player_x_spin.valueChanged.connect(self._on_player_spawn_x_changed)
+        pl_form.addRow("Position X (px):", self.player_x_spin)
+
+        self.player_y_spin = QSpinBox()
+        self.player_y_spin.setRange(0, MAX_SCENE_HEIGHT - PLAYER_HEIGHT)
+        self.player_y_spin.setValue(68)
+        self.player_y_spin.valueChanged.connect(self._on_player_spawn_y_changed)
+        pl_form.addRow("Position Y (px):", self.player_y_spin)
+
+        self.player_snap_plat_combo = QComboBox()
+        pl_form.addRow("Target Platform:", self.player_snap_plat_combo)
+
+        self.btn_snap_player = QPushButton("Snap to Platform Feet")
+        self.btn_snap_player.clicked.connect(self._on_snap_player_to_platform)
+        pl_form.addRow("", self.btn_snap_player)
+
+        self.btn_remove_player_spawn = QPushButton("Remove Player Start")
+        self.btn_remove_player_spawn.setStyleSheet("color: #ff5555;")
+        self.btn_remove_player_spawn.clicked.connect(self._on_remove_player_spawn_clicked)
+        pl_form.addRow("", self.btn_remove_player_spawn)
+
+        pl_layout.addWidget(self.player_group)
+
+        # Info Box Group
+        player_info_group = QGroupBox("Hero Architecture Info")
+        pi_layout = QVBoxLayout(player_info_group)
+        info_text = (
+            "<b>Hardware:</b> Atari Player 0 (Hero)<br>"
+            "<b>Sprite Size:</b> 8 × 20 pixels<br>"
+            "<b>Preservation:</b> Hero PMG registers are isolated.<br>"
+            "Coordinates define the initial spawn location and the point of respawn upon death."
+        )
+        lbl_info = QLabel(info_text)
+        lbl_info.setWordWrap(True)
+        lbl_info.setStyleSheet("color: #a4b0be; font-size: 11px;")
+        pi_layout.addWidget(lbl_info)
+        pl_layout.addWidget(player_info_group, stretch=1)
+
+        self.prop_tabs.addTab(player_widget, "Player Start")
         self.prop_tabs.currentChanged.connect(self._on_prop_tab_changed)
 
         self.right_dock.setWidget(self.prop_tabs)
@@ -692,6 +763,7 @@ class MainWindow(QMainWindow):
         self._update_property_panel(None)
         self._update_platform_property_panel(None)
         self._update_object_property_panel(None)
+        self._update_player_spawn_property_panel()
 
     # -------------------------------------------------------------------------
     # Menus and Toolbars
@@ -1179,10 +1251,12 @@ class MainWindow(QMainWindow):
 
         selected_obj = self.scene_model.get_object(selected_obj_id) if selected_obj_id is not None else None
         self._update_object_property_panel(selected_obj)
+        self._update_player_spawn_property_panel()
 
         self.status_res_lbl.setText(f"Size: {self.scene_model.width}×{self.scene_model.height}")
+        has_spawn = f"({self.scene_model.player_spawn.x}, {self.scene_model.player_spawn.y})" if self.scene_model.player_spawn else "None"
         self.status_elem_count_lbl.setText(
-            f"Tiles: {len(self.scene_model.elements)} | Platforms: {len(self.scene_model.platforms)} | Objects: {len(self.scene_model.objects)}"
+            f"Tiles: {len(self.scene_model.elements)} | Platforms: {len(self.scene_model.platforms)} | Objects: {len(self.scene_model.objects)} | Player: {has_spawn}"
         )
         self._update_window_title()
 
@@ -1368,6 +1442,10 @@ class MainWindow(QMainWindow):
                 self._on_object_selected(eff_id)
             else:
                 self._update_object_property_panel(None)
+        elif index == 3:  # Player Start tab
+            if self.scene_model.player_spawn is not None:
+                self.scene_view.select_player_spawn(True)
+            self._update_player_spawn_property_panel()
 
     def _on_object_command_executed(self, select_id: Optional[Any] = None) -> None:
         self._is_dirty = True
@@ -1958,6 +2036,11 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(cmd)
 
     def delete_selected_element(self) -> None:
+        if self.scene_view.is_player_spawn_selected() or self.prop_tabs.currentIndex() == 3:
+            if self.scene_model.player_spawn is not None:
+                self._on_remove_player_spawn_clicked()
+                return
+
         if self.prop_tabs.currentIndex() == 2:
             selected_obj_id = self._get_effective_selected_object_id()
         else:
@@ -2951,3 +3034,179 @@ class MainWindow(QMainWindow):
         self.scene_view.zoom_out()
         factor = self.scene_view.ZOOM_LEVELS[self.scene_view.zoom_index]
         self.status_zoom_lbl.setText(f"Zoom: {int(factor)}x")
+
+    # -------------------------------------------------------------------------
+    # Player Spawn (Hero Start) Methods
+    # -------------------------------------------------------------------------
+
+    def _on_player_spawn_selected(self, selected: bool) -> None:
+        if self._is_selecting_player_spawn:
+            return
+        self._is_selecting_player_spawn = True
+        try:
+            if selected:
+                self.scene_view.select_player_spawn(True)
+                self._update_property_panel(None)
+                self._update_platform_property_panel(None)
+                self._update_object_property_panel(None)
+                self._update_player_spawn_property_panel()
+                self.prop_tabs.setCurrentIndex(3)
+        finally:
+            self._is_selecting_player_spawn = False
+
+    def _on_player_spawn_moved_by_view(
+        self, old_pos: tuple[int, int], new_pos: tuple[int, int]
+    ) -> None:
+        if old_pos == new_pos:
+            return
+        cmd = MovePlayerSpawnCommand(
+            self.scene_model,
+            old_pos,
+            new_pos,
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_set_player_spawn_clicked(self) -> None:
+        default_x = 20
+        default_y = 68
+        if self.scene_model.platforms:
+            plat = self.scene_model.platforms[0]
+            default_x = plat.position.x
+            default_y = max(0, plat.position.y - PLAYER_HEIGHT)
+
+        cmd = SetPlayerSpawnCommand(
+            self.scene_model,
+            PlayerSpawn(x=default_x, y=default_y),
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+        self.scene_view.select_player_spawn(True)
+
+    def _on_remove_player_spawn_clicked(self) -> None:
+        if self.scene_model.player_spawn is None:
+            return
+        cmd = SetPlayerSpawnCommand(
+            self.scene_model,
+            None,
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_snap_player_to_platform(self) -> None:
+        if self.scene_model.player_spawn is None:
+            return
+        plat_id = self.player_snap_plat_combo.currentData()
+        if not plat_id:
+            return
+        plat = self.scene_model.get_platform(plat_id)
+        if not plat:
+            return
+
+        cur_x = self.scene_model.player_spawn.x
+        cur_y = self.scene_model.player_spawn.y
+        new_x = max(plat.position.x, min(plat.position.x + plat.width - PLAYER_WIDTH, cur_x))
+        new_y = max(0, plat.position.y - PLAYER_HEIGHT)
+
+        if cur_x == new_x and cur_y == new_y:
+            return
+
+        cmd = MovePlayerSpawnCommand(
+            self.scene_model,
+            (cur_x, cur_y),
+            (new_x, new_y),
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_player_spawn_x_changed(self, val: int) -> None:
+        if self._is_updating_player_spawn or self.scene_model.player_spawn is None:
+            return
+        if val == self.scene_model.player_spawn.x:
+            return
+        cmd = MovePlayerSpawnCommand(
+            self.scene_model,
+            (self.scene_model.player_spawn.x, self.scene_model.player_spawn.y),
+            (val, self.scene_model.player_spawn.y),
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_player_spawn_y_changed(self, val: int) -> None:
+        if self._is_updating_player_spawn or self.scene_model.player_spawn is None:
+            return
+        if val == self.scene_model.player_spawn.y:
+            return
+        cmd = MovePlayerSpawnCommand(
+            self.scene_model,
+            (self.scene_model.player_spawn.x, self.scene_model.player_spawn.y),
+            (self.scene_model.player_spawn.x, val),
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_player_spawn_command_executed(self) -> None:
+        self._is_dirty = True
+        self.scene_view.update_player_spawn_item(self.scene_model.player_spawn, self.scene_model)
+        self._update_player_spawn_property_panel()
+        has_spawn = (
+            f"({self.scene_model.player_spawn.x}, {self.scene_model.player_spawn.y})"
+            if self.scene_model.player_spawn
+            else "None"
+        )
+        self.status_elem_count_lbl.setText(
+            f"Tiles: {len(self.scene_model.elements)} | Platforms: {len(self.scene_model.platforms)} | Objects: {len(self.scene_model.objects)} | Player: {has_spawn}"
+        )
+        self._update_window_title()
+
+    def _refresh_player_snap_platforms(self) -> None:
+        if not hasattr(self, "player_snap_plat_combo"):
+            return
+        cur_id = self.player_snap_plat_combo.currentData()
+        self.player_snap_plat_combo.blockSignals(True)
+        self.player_snap_plat_combo.clear()
+        for plat in self.scene_model.platforms:
+            label = f"Platform {plat.id} (x={plat.position.x}, y={plat.position.y}, w={plat.width})"
+            self.player_snap_plat_combo.addItem(label, plat.id)
+        idx = self.player_snap_plat_combo.findData(cur_id)
+        if idx >= 0:
+            self.player_snap_plat_combo.setCurrentIndex(idx)
+        self.player_snap_plat_combo.blockSignals(False)
+
+    def _update_player_spawn_property_panel(self) -> None:
+        if not hasattr(self, "player_status_lbl"):
+            return
+        self._is_updating_player_spawn = True
+        try:
+            self._refresh_player_snap_platforms()
+            spawn = self.scene_model.player_spawn
+            if spawn is None:
+                self.player_status_lbl.setText("<span style='color: #888;'>Not configured (will use engine default)</span>")
+                self.btn_set_player_spawn.setEnabled(True)
+                self.player_x_spin.setEnabled(False)
+                self.player_y_spin.setEnabled(False)
+                self.player_snap_plat_combo.setEnabled(False)
+                self.btn_snap_player.setEnabled(False)
+                self.btn_remove_player_spawn.setEnabled(False)
+            else:
+                self.player_status_lbl.setText(
+                    f"<b style='color: #4cd137;'>Active at ({spawn.x}, {spawn.y})</b><br>"
+                    f"<small>Feet level: Y={spawn.y + PLAYER_HEIGHT}</small>"
+                )
+                self.btn_set_player_spawn.setEnabled(False)
+                self.player_x_spin.setEnabled(True)
+                self.player_y_spin.setEnabled(True)
+                self.player_x_spin.blockSignals(True)
+                self.player_y_spin.blockSignals(True)
+                self.player_x_spin.setValue(spawn.x)
+                self.player_y_spin.setValue(spawn.y)
+                self.player_x_spin.blockSignals(False)
+                self.player_y_spin.blockSignals(False)
+
+                has_plats = len(self.scene_model.platforms) > 0
+                self.player_snap_plat_combo.setEnabled(has_plats)
+                self.btn_snap_player.setEnabled(has_plats)
+                self.btn_remove_player_spawn.setEnabled(True)
+        finally:
+            self._is_updating_player_spawn = False
+

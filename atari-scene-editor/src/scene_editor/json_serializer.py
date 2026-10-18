@@ -15,6 +15,7 @@ from .scene_model import (
     MIN_SCENE_WIDTH,
     ModelValidationError,
     PlatformElement,
+    PlayerSpawn,
     Position,
     Rect,
     Scene,
@@ -116,6 +117,8 @@ class SceneSerializer:
             "platforms": [p.to_dict() for p in scene.platforms],
             "objects": objects_data,
         }
+        if scene.player_spawn is not None:
+            res["player_spawn"] = scene.player_spawn.to_dict()
         if scene.row_color_profiles and any(x is not None for x in scene.row_color_profiles):
             res["row_color_profiles"] = list(scene.row_color_profiles)
         return res
@@ -243,6 +246,17 @@ class SceneSerializer:
                 else:
                     row_color_profiles.append(None)
 
+        raw_player_spawn = data.get("player_spawn")
+        if raw_player_spawn is None and isinstance(data.get("scene"), dict):
+            raw_player_spawn = data["scene"].get("player_spawn")
+
+        player_spawn: Optional[PlayerSpawn] = None
+        if raw_player_spawn is not None and isinstance(raw_player_spawn, dict):
+            try:
+                player_spawn = PlayerSpawn.from_dict(raw_player_spawn)
+            except Exception as exc:
+                raise CorruptedFileError(f"Error parsing player_spawn: {exc}") from exc
+
         scene = Scene(
             name=name,
             schema_version=version,
@@ -254,6 +268,7 @@ class SceneSerializer:
             objects=objects,
             row_color_profiles=row_color_profiles if row_color_profiles else [None] * 6,
             catalogues=catalogues,
+            player_spawn=player_spawn,
         )
         try:
             scene.validate()

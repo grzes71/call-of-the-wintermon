@@ -5,14 +5,6 @@
     "width": 160,
     "height": 96
   },
-  "row_color_profiles": [
-    1,
-    2,
-    3,
-    2,
-    2,
-    1
-  ],
   "elements": [
     {
       "id": "element-001",
@@ -133,7 +125,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 1
     },
     {
       "id": "platform-006",
@@ -166,7 +158,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 2
     },
     {
       "id": "platform-012",
@@ -177,7 +169,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 3
     },
     {
       "id": "platform-013",
@@ -188,7 +180,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 2
     },
     {
       "id": "platform-014",
@@ -210,7 +202,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 2
     },
     {
       "id": "platform-016",
@@ -221,7 +213,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 2
     },
     {
       "id": "platform-017",
@@ -266,5 +258,17 @@
       "platform_id": "platform-016",
       "x": 96
     }
+  ],
+  "player_spawn": {
+    "x": 90,
+    "y": 68
+  },
+  "row_color_profiles": [
+    1,
+    2,
+    3,
+    2,
+    2,
+    1
   ]
 }

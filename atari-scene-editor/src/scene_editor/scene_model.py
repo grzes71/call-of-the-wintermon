@@ -779,6 +779,62 @@ class SceneObjectElement:
         return copy.deepcopy(self)
 
 
+PLAYER_WIDTH = 8
+PLAYER_HEIGHT = 20
+
+
+@dataclass
+class PlayerSpawn:
+    """Initial spawn position for the player character on a scene."""
+    x: int
+    y: int
+
+    @property
+    def width(self) -> int:
+        return PLAYER_WIDTH
+
+    @property
+    def height(self) -> int:
+        return PLAYER_HEIGHT
+
+    @property
+    def right(self) -> int:
+        return self.x + PLAYER_WIDTH
+
+    @property
+    def bottom(self) -> int:
+        return self.y + PLAYER_HEIGHT
+
+    def clone(self) -> PlayerSpawn:
+        return PlayerSpawn(int(self.x), int(self.y))
+
+    def validate(self, scene_width: Optional[int] = None, scene_height: Optional[int] = None) -> None:
+        if not isinstance(self.x, int) or not isinstance(self.y, int):
+            raise ModelValidationError("Player spawn coordinates must be integers.")
+        if scene_width is not None and (self.x < 0 or (self.x + PLAYER_WIDTH) > scene_width):
+            raise ModelValidationError(
+                f"Player spawn x={self.x} (width={PLAYER_WIDTH}) out of scene bounds (scene width={scene_width})."
+            )
+        if scene_height is not None and (self.y < 0 or (self.y + PLAYER_HEIGHT) > scene_height):
+            raise ModelValidationError(
+                f"Player spawn y={self.y} (height={PLAYER_HEIGHT}) out of scene bounds (scene height={scene_height})."
+            )
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "x": int(self.x),
+            "y": int(self.y),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PlayerSpawn:
+        if not isinstance(data, dict):
+            raise ModelValidationError("Player spawn data must be a dictionary.")
+        if "x" not in data or "y" not in data:
+            raise ModelValidationError("Missing required PlayerSpawn fields 'x' and 'y'.")
+        return cls(x=int(data["x"]), y=int(data["y"]))
+
+
 DEFAULT_SCENE_WIDTH = 160
 DEFAULT_SCENE_HEIGHT = 192
 MIN_SCENE_WIDTH = 1
@@ -800,6 +856,7 @@ class Scene:
     objects: list[SceneObjectElement] = field(default_factory=list)
     row_color_profiles: list[Optional[int]] = field(default_factory=lambda: [None] * 6)
     catalogues: Optional[Any] = None
+    player_spawn: Optional[PlayerSpawn] = None
 
     def __post_init__(self) -> None:
         self._sync_z_indices()
@@ -998,6 +1055,23 @@ class Scene:
                             f"Only one secret per unique dependency is allowed per row."
                         )
                     deps_map[dep] = obj
+
+        # Validate player spawn if present
+        if self.player_spawn is not None:
+            self.player_spawn.validate(scene_width=self.width, scene_height=self.height)
+
+    def set_player_spawn(self, x: int, y: int) -> PlayerSpawn:
+        """Set or update player initial spawn position on the scene."""
+        spawn = PlayerSpawn(x=int(x), y=int(y))
+        spawn.validate(scene_width=self.width, scene_height=self.height)
+        self.player_spawn = spawn
+        return spawn
+
+    def remove_player_spawn(self) -> Optional[PlayerSpawn]:
+        """Remove player spawn from the scene."""
+        old = self.player_spawn
+        self.player_spawn = None
+        return old
 
     def resize(self, new_width: int, new_height: int) -> None:
         """Resize scene canvas dimensions (does not scale or reposition elements)."""

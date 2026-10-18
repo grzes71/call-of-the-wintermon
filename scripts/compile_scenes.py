@@ -17,6 +17,15 @@ import re
 import sys
 from typing import Any
 
+try:
+    from compile_sprites import parse_sprites_json, SpriteDefinition
+except ImportError:
+    try:
+        from scripts.compile_sprites import parse_sprites_json, SpriteDefinition
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.resolve()))
+        from compile_sprites import parse_sprites_json, SpriteDefinition
+
 
 # Known tileset mappings matching gen/tiles_data.asm equates
 TILESET_NAME_TO_ID: dict[str, int] = {
@@ -141,6 +150,23 @@ class SceneObjectData:
     dependency_id: int
     atari_color: int
     blink: bool
+
+
+@dataclass
+class SceneSecretData:
+    """Compiled secret instance on a scene."""
+
+    id: int
+    def_id: int
+    sprite_id: int
+    x: int
+    y: int
+    pmg_y: int
+    height: int
+    frame_dur: int
+    frame_count: int
+    atari_color: int
+    active: bool
 
 
 PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
@@ -478,7 +504,7 @@ def compile_scene_dli_data(
     # Zone 0 initial values (applied in VBLANK before Pas 0)
     z0_objs = zone_objects[0]
     z0_enemies = [o for o in z0_objs if o.type_code == 0][:3]
-    z0_secrets = [o for o in z0_objs if o.type_code == 1][:1]
+    z0_secrets = [o for o in z0_objs if o.type_code == 1 and o.dependency_id == 0][:1]
 
     z0_hpos_p1 = min(255, max(0, 48 + z0_enemies[0].x)) if len(z0_enemies) > 0 else 0
     z0_col_p1  = z0_enemies[0].atari_color if len(z0_enemies) > 0 else 0
@@ -522,7 +548,7 @@ def compile_scene_dli_data(
         target_zone = z_idx + 1  # Zones 1..6
         objs = zone_objects[target_zone]
         enemies = [o for o in objs if o.type_code == 0][:3]
-        secrets = [o for o in objs if o.type_code == 1][:1]
+        secrets = [o for o in objs if o.type_code == 1 and o.dependency_id == 0][:1]
 
         if len(enemies) > 0:
             zone_hpos_p1[z_idx] = min(255, max(0, 48 + enemies[0].x))
@@ -608,8 +634,11 @@ class SceneCompiledData:
     elements: list[SceneElementData] = field(default_factory=list)
     platforms: list[PlatformData] = field(default_factory=list)
     objects: list[SceneObjectData] = field(default_factory=list)
+    secrets: list[SceneSecretData] = field(default_factory=list)
     dli_data: SceneDliCompiledData | None = None
     pmg_patterns: ScenePmgPatterns | None = None
+    player_start_x: int = 20
+    player_start_y: int = 68
 
 
 def sanitize_symbol(name: str) -> str:
@@ -774,6 +803,7 @@ def parse_scene_json(
     enemies: dict[int, CatalogueItem],
     secrets: dict[int, CatalogueItem],
     profiles: dict[str, list[int]] | None = None,
+    sprites: dict[int, SpriteDefinition] | None = None,
 ) -> SceneCompiledData:
     """Parse and validate a scene JSON file into structured compiler models."""
     if not scene_file.is_file():
@@ -931,6 +961,7 @@ def parse_scene_json(
     # 3. Objects
     raw_objects = data.get("objects", [])
     objects: list[SceneObjectData] = []
+    scene_secrets: list[SceneSecretData] = []
     row_secret_deps: dict[int, dict[Optional[int], int]] = {}
 
     for obj in raw_objects:
@@ -977,6 +1008,36 @@ def parse_scene_json(
                     f"Only one secret per unique dependency is allowed per row."
                 )
             deps_on_row[dep_val] = oid
+
+            raw_spr = obj.get("sprite_id")
+            spr_id = int(raw_spr) if raw_spr is not None else (cat_item.sprite_id if (cat_item and cat_item.sprite_id is not None) else 1)
+            spr_def = sprites.get(spr_id) if sprites else None
+            spr_h = spr_def.height if spr_def else 16
+            spr_dur = spr_def.frame_duration if spr_def else 4
+            spr_cnt = len(spr_def.frames) if spr_def else 1
+
+            # Platform base scanline in PMG: 32 + (plat_y * 2)
+            # Secret is placed above platform with 2 scanlines margin (1 Mode D pixel row margin >= 1 line)
+            p_base = 32 + (plat_y * 2)
+            margin = 2
+            pmg_y = max(0, p_base - spr_h - margin)
+            active = (dep_id == 0)
+
+            scene_secrets.append(
+                SceneSecretData(
+                    id=oid,
+                    def_id=def_id,
+                    sprite_id=spr_id,
+                    x=ox,
+                    y=oy,
+                    pmg_y=pmg_y,
+                    height=spr_h,
+                    frame_dur=spr_dur,
+                    frame_count=spr_cnt,
+                    atari_color=color,
+                    active=active,
+                )
+            )
         else:
             cat_item = enemies.get(def_id)
             color = cat_item.atari_color if cat_item else 0x42
@@ -999,6 +1060,15 @@ def parse_scene_json(
             )
         )
 
+    # Player start position (defaults to X=20, Y=68 if not defined)
+    player_spawn_raw = data.get("player_spawn") or scene_meta.get("player_spawn")
+    if isinstance(player_spawn_raw, dict):
+        player_start_x = int(player_spawn_raw.get("x", 20))
+        player_start_y = int(player_spawn_raw.get("y", 68))
+    else:
+        player_start_x = 20
+        player_start_y = 68
+
     dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id, scene_name=name)
 
     return SceneCompiledData(
@@ -1011,8 +1081,11 @@ def parse_scene_json(
         elements=elements,
         platforms=platforms,
         objects=objects,
+        secrets=scene_secrets,
         dli_data=dli_data,
         pmg_patterns=dli_data.pmg_patterns if dli_data else None,
+        player_start_x=player_start_x,
+        player_start_y=player_start_y,
     )
 
 
@@ -1058,6 +1131,9 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         lines.append(f"{prefix}_ELEM_COUNT = {len(sc.elements)}")
         lines.append(f"{prefix}_PLAT_COUNT = {len(sc.platforms)}")
         lines.append(f"{prefix}_OBJ_COUNT  = {len(sc.objects)}")
+        lines.append(f"{prefix}_SECRET_COUNT = {len(sc.secrets)}")
+        lines.append(f"{prefix}_PLAYER_START_X = {sc.player_start_x}")
+        lines.append(f"{prefix}_PLAYER_START_Y = {sc.player_start_y}")
     lines.append("")
 
     # Per-scene data blocks
@@ -1183,6 +1259,41 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             ])
         lines.append("")
 
+        # Scene secrets
+        lines.append(f"; --- Secrets ({len(sc.secrets)}) ---")
+        if sc.secrets:
+            lines.append(f"scene_{sym}_secret_active")
+            lines.append("    .byte " + ", ".join(str(1 if s.active else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_def_id")
+            lines.append("    .byte " + ", ".join(str(s.def_id) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_sprite_id")
+            lines.append("    .byte " + ", ".join(str(s.sprite_id) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_x")
+            lines.append("    .byte " + ", ".join(str(s.x) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_pmg_y")
+            lines.append("    .byte " + ", ".join(str(s.pmg_y) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_height")
+            lines.append("    .byte " + ", ".join(str(s.height) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_frame_dur")
+            lines.append("    .byte " + ", ".join(str(s.frame_dur) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_frame_count")
+            lines.append("    .byte " + ", ".join(str(s.frame_count) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_color")
+            lines.append("    .byte " + ", ".join(f"${s.atari_color:02X}" for s in sc.secrets))
+        else:
+            lines.extend([
+                f"scene_{sym}_secret_active      .byte 0",
+                f"scene_{sym}_secret_def_id     .byte 0",
+                f"scene_{sym}_secret_sprite_id  .byte 0",
+                f"scene_{sym}_secret_x          .byte 0",
+                f"scene_{sym}_secret_pmg_y      .byte 0",
+                f"scene_{sym}_secret_height     .byte 0",
+                f"scene_{sym}_secret_frame_dur  .byte 0",
+                f"scene_{sym}_secret_frame_count .byte 0",
+                f"scene_{sym}_secret_color      .byte 0",
+            ])
+        lines.append("")
+
     # Master Table (Structure-of-Arrays across all scenes)
     lines.extend([
         "; " + "=" * 78,
@@ -1203,6 +1314,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(str(sc.height) for sc in scenes),
         "scene_primary_tileset",
         "    .byte " + ", ".join(TILESET_ID_TO_EQUATE[sc.primary_tileset_id] for sc in scenes),
+        "scene_player_start_x",
+        "    .byte " + ", ".join(str(sc.player_start_x) for sc in scenes),
+        "scene_player_start_y",
+        "    .byte " + ", ".join(str(sc.player_start_y) for sc in scenes),
         "",
         "scene_elem_count",
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_ELEM_COUNT" for sc in scenes),
@@ -1210,6 +1325,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_PLAT_COUNT" for sc in scenes),
         "scene_obj_count",
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_OBJ_COUNT" for sc in scenes),
+        "scene_secret_count",
+        "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_SECRET_COUNT" for sc in scenes),
         "",
         "; --- Element Pointer Tables ---",
         "scene_elem_tileset_lo",
@@ -1318,6 +1435,44 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_flags" for sc in scenes),
         "scene_obj_flags_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_flags" for sc in scenes),
+        "",
+        "; --- Secret Pointer Tables ---",
+        "scene_secret_active_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_active" for sc in scenes),
+        "scene_secret_active_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_active" for sc in scenes),
+        "scene_secret_def_id_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_def_id" for sc in scenes),
+        "scene_secret_def_id_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_def_id" for sc in scenes),
+        "scene_secret_sprite_id_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_sprite_id" for sc in scenes),
+        "scene_secret_sprite_id_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_sprite_id" for sc in scenes),
+        "scene_secret_x_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_x" for sc in scenes),
+        "scene_secret_x_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_x" for sc in scenes),
+        "scene_secret_pmg_y_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_pmg_y" for sc in scenes),
+        "scene_secret_pmg_y_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_pmg_y" for sc in scenes),
+        "scene_secret_height_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_height" for sc in scenes),
+        "scene_secret_height_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_height" for sc in scenes),
+        "scene_secret_frame_dur_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_frame_dur" for sc in scenes),
+        "scene_secret_frame_dur_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_frame_dur" for sc in scenes),
+        "scene_secret_frame_count_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_frame_count" for sc in scenes),
+        "scene_secret_frame_count_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_frame_count" for sc in scenes),
+        "scene_secret_color_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_color" for sc in scenes),
+        "scene_secret_color_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_color" for sc in scenes),
         "",
     ])
 
@@ -1435,6 +1590,7 @@ def compile_scenes(
     secrets_path: Path | None = None,
     profiles_path: Path | None = None,
     definitions_path: Path | None = None,
+    sprites_path: Path | None = None,
 ) -> int:
     """Main compilation pipeline: parse manifest, compile scene JSONs, emit ASM."""
     if not manifest_path.is_file():
@@ -1470,8 +1626,14 @@ def compile_scenes(
         elif Path("scenes/platform_profiles.json").is_file():
             pfile = Path("scenes/platform_profiles.json")
 
+    spr_file = sprites_path or Path("sprites/objects.sprite.json")
+    if not spr_file.is_file():
+        if (manifest_path.parent.parent / "sprites" / "objects.sprite.json").is_file():
+            spr_file = manifest_path.parent.parent / "sprites" / "objects.sprite.json"
+
     enemies, secrets = load_catalogues(efile, sfile)
     profiles = load_platform_profiles(pfile)
+    sprites = parse_sprites_json(spr_file) if spr_file.is_file() else {}
 
     try:
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1492,11 +1654,12 @@ def compile_scenes(
             return 1
 
         try:
-            sc_data = parse_scene_json(scene_file, enemies, secrets, profiles)
+            sc_data = parse_scene_json(scene_file, enemies, secrets, profiles, sprites)
             compiled_scenes.append(sc_data)
             print(
                 f"Compiled scene: {sc_data.name} ({fname}) — "
-                f"{len(sc_data.elements)} elems, {len(sc_data.platforms)} plats, {len(sc_data.objects)} objs"
+                f"{len(sc_data.elements)} elems, {len(sc_data.platforms)} plats, "
+                f"{len(sc_data.objects)} objs, {len(sc_data.secrets)} secrets"
             )
         except Exception as exc:
             print(f"Error compiling scene '{scene_file}': {exc}", file=sys.stderr)
@@ -1562,6 +1725,13 @@ def main() -> int:
         default=None,
         help="Path to legacy platform_profiles.json catalogue",
     )
+    parser.add_argument(
+        "--sprites",
+        "-s",
+        type=Path,
+        default=Path("sprites/objects.sprite.json"),
+        help="Path to sprites JSON file",
+    )
 
     args = parser.parse_args()
     return compile_scenes(
@@ -1572,6 +1742,7 @@ def main() -> int:
         secrets_path=args.secrets,
         profiles_path=args.profiles,
         definitions_path=args.definitions,
+        sprites_path=args.sprites,
     )
 
 

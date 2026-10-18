@@ -312,12 +312,16 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
         expected = 0x8D if i in dli_indices else 0x0D
         assert mem[dl_addr + 6 + i] == expected, f"Mode D line {i+1} mismatch: expected {expected:#x}, got {mem[dl_addr + 6 + i]:#x}"
 
-    # Bottom 3 blank scanlines
-    assert list(mem[dl_addr + 101 : dl_addr + 104]) == [0x70, 0x70, 0x70]
+    # Bottom margin & Mode 2 status line:
+    assert mem[dl_addr + 101] == 0xF0  # DL_BLANK8 | DL_DLI
+    assert mem[dl_addr + 102] == 0x42  # DL_MODE_2 | DL_LMS
+    status_target = mem[dl_addr + 103] | (mem[dl_addr + 104] << 8)
+    assert status_target == labels["STATUS_LINE_VRAM"]
+    assert mem[dl_addr + 105] == 0x70  # DL_BLANK8
 
     # JVB instruction ($41) pointing to dlist_game ($3F00)
-    assert mem[dl_addr + 104] == 0x41
-    jvb_target = mem[dl_addr + 105] | (mem[dl_addr + 106] << 8)
+    assert mem[dl_addr + 106] == 0x41
+    jvb_target = mem[dl_addr + 107] | (mem[dl_addr + 108] << 8)
     assert jvb_target == dl_addr
 
     # 3. Simulate game_init with py65

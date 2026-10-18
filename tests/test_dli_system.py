@@ -115,12 +115,19 @@ def test_dlist_game_structure_and_dli_flags():
 
     assert dli_found == expected_dli_lines, f"DLI flags must be exactly on lines {expected_dli_lines}, found {dli_found}"
 
-    # Bottom blank margin: 3x DL_BLANK8 ($70)
-    assert list(mem[dl_addr + 101 : dl_addr + 104]) == [0x70, 0x70, 0x70]
+    # Bottom margin & Mode 2 status line:
+    # DL_BLANK8 | DL_DLI ($F0)
+    assert mem[dl_addr + 101] == 0xF0
+    # DL_MODE_2 | DL_LMS ($42) pointing to status_line_vram ($3F8B)
+    assert mem[dl_addr + 102] == 0x42
+    status_target = mem[dl_addr + 103] | (mem[dl_addr + 104] << 8)
+    assert status_target == labels["STATUS_LINE_VRAM"]
+    # DL_BLANK8 ($70)
+    assert mem[dl_addr + 105] == 0x70
 
     # JVB ($41) jump back to dlist_game
-    assert mem[dl_addr + 104] == 0x41
-    jvb_target = mem[dl_addr + 105] | (mem[dl_addr + 106] << 8)
+    assert mem[dl_addr + 106] == 0x41
+    jvb_target = mem[dl_addr + 107] | (mem[dl_addr + 108] << 8)
     assert jvb_target == dl_addr
 
 
@@ -363,6 +370,28 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mem[labels["COLPF0"]] == 0x94, "Pas 5 must restore background palette to upper ($94) at line 92"
     assert mem[labels["COLPF1"]] == 0xD6
     assert mem[labels["COLPF2"]] == 0xEA
+
+    # Verify VDSLST was hooked to DLI_STATUS_LINE on DLI 6
+    vdslst_dli7 = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)
+    assert vdslst_dli7 == labels["DLI_STATUS_LINE"], "DLI 6 must hook VDSLST to DLI_STATUS_LINE"
+
+    # --- DLI 7 (Status line blank separator, sets Mode 2 text colors & clears PMG) ---
+    invoke_dli(mpu, vdslst_dli7)
+    assert mem[labels["COLPF2"]] == 0x00, "Status line background must be black ($00)"
+    assert mem[labels["COLPF1"]] == 0x0E, "Status line text foreground must be white ($0E)"
+    assert mem[labels["HPOSP1"]] == 0
+    assert mem[labels["HPOSP2"]] == 0
+    assert mem[labels["HPOSP3"]] == 0
+    assert mem[labels["HPOSM0"]] == 0
+    assert mem[labels["HPOSM1"]] == 0
+    assert mem[labels["HPOSM2"]] == 0
+    assert mem[labels["HPOSM3"]] == 0
+    assert mem[labels["SIZEP1"]] == 0
+    assert mem[labels["SIZEM"]]  == 0
+
+    # Verify VDSLST was restored back to DLI_HANDLER for the next frame
+    vdslst_next = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)
+    assert vdslst_next == labels["DLI_HANDLER"], "DLI_STATUS_LINE must restore VDSLST to DLI_HANDLER"
 
     # Invariants verification:
     # 1. Hero P0 was NEVER touched by any DLI

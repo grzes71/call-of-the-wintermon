@@ -18,10 +18,16 @@ from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QWidget
 
 from .asset_manager import AssetManager
 from .catalogue_model import ProjectCatalogues
-from .scene_items import PlatformGraphicsItem, SceneGraphicsItem, SceneObjectGraphicsItem
+from .scene_items import (
+    PlatformGraphicsItem,
+    PlayerSpawnGraphicsItem,
+    SceneGraphicsItem,
+    SceneObjectGraphicsItem,
+)
 from .scene_model import (
     PLATFORM_HEIGHT,
     PlatformElement,
+    PlayerSpawn,
     Scene,
     SceneElement,
     SceneObjectElement,
@@ -123,6 +129,8 @@ class SceneView(QGraphicsView):
     platform_moved = Signal(str, tuple, tuple)
     object_selected = Signal(object)
     object_moved = Signal(object, tuple, tuple)
+    player_spawn_selected = Signal(bool)
+    player_spawn_moved = Signal(tuple, tuple)
     delete_requested = Signal()
     flip_requested = Signal()
     cursor_position_changed = Signal(int, int)
@@ -151,6 +159,7 @@ class SceneView(QGraphicsView):
         self._items_by_id: dict[str, SceneGraphicsItem] = {}
         self._platform_items_by_id: dict[str, PlatformGraphicsItem] = {}
         self._object_items_by_id: dict[str, SceneObjectGraphicsItem] = {}
+        self._player_spawn_item: Optional[PlayerSpawnGraphicsItem] = None
         self._is_updating_selection: bool = False
 
     def _apply_zoom(self) -> None:
@@ -201,6 +210,7 @@ class SceneView(QGraphicsView):
         self._items_by_id.clear()
         self._platform_items_by_id.clear()
         self._object_items_by_id.clear()
+        self._player_spawn_item = None
 
         # Add regular tile elements
         for elem in scene_model.elements:
@@ -251,6 +261,16 @@ class SceneView(QGraphicsView):
             if selected_object_id is not None and (selected_object_id == obj.id or str(selected_object_id) == str(obj.id)):
                 o_item.setSelected(True)
 
+        # Add Player Spawn if present
+        if scene_model.player_spawn is not None:
+            self._player_spawn_item = PlayerSpawnGraphicsItem(
+                player_spawn=scene_model.player_spawn,
+                scene_model=scene_model,
+                on_move_committed=self._on_player_spawn_moved,
+                on_selection_changed=self._on_player_spawn_selected,
+            )
+            self.canvas.addItem(self._player_spawn_item)
+
     def update_element_item(self, element: SceneElement) -> None:
         """Update graphics item for an existing element."""
         if element.id in self._items_by_id:
@@ -295,6 +315,8 @@ class SceneView(QGraphicsView):
                     p_item.setSelected(False)
                 for o_item in self._object_items_by_id.values():
                     o_item.setSelected(False)
+                if self._player_spawn_item is not None:
+                    self._player_spawn_item.setSelected(False)
             self.canvas.blockSignals(False)
         finally:
             self._is_updating_selection = False
@@ -313,6 +335,8 @@ class SceneView(QGraphicsView):
                     item.setSelected(False)
                 for o_item in self._object_items_by_id.values():
                     o_item.setSelected(False)
+                if self._player_spawn_item is not None:
+                    self._player_spawn_item.setSelected(False)
             self.canvas.blockSignals(False)
         finally:
             self._is_updating_selection = False
@@ -332,6 +356,8 @@ class SceneView(QGraphicsView):
                     item.setSelected(False)
                 for p_item in self._platform_items_by_id.values():
                     p_item.setSelected(False)
+                if self._player_spawn_item is not None:
+                    self._player_spawn_item.setSelected(False)
             self.canvas.blockSignals(False)
         finally:
             self._is_updating_selection = False
@@ -373,6 +399,83 @@ class SceneView(QGraphicsView):
 
     def _on_platform_moved(self, platform_id: str, old_pos: tuple, new_pos: tuple) -> None:
         self.platform_moved.emit(platform_id, old_pos, new_pos)
+
+    def select_player_spawn(self, selected: bool = True) -> None:
+        """Programmatically select or deselect the player spawn."""
+        if self._is_updating_selection:
+            return
+        self._is_updating_selection = True
+        try:
+            self.canvas.blockSignals(True)
+            if self._player_spawn_item is not None:
+                self._player_spawn_item.setSelected(selected)
+            if selected:
+                for item in self._items_by_id.values():
+                    item.setSelected(False)
+                for p_item in self._platform_items_by_id.values():
+                    p_item.setSelected(False)
+                for o_item in self._object_items_by_id.values():
+                    o_item.setSelected(False)
+            self.canvas.blockSignals(False)
+        finally:
+            self._is_updating_selection = False
+
+    def is_player_spawn_selected(self) -> bool:
+        """Return True if the player spawn item is currently selected."""
+        return self._player_spawn_item is not None and self._player_spawn_item.isSelected()
+
+    @property
+    def player_spawn_item(self) -> Optional[PlayerSpawnGraphicsItem]:
+        """Return the current PlayerSpawnGraphicsItem on canvas, if any."""
+        return self._player_spawn_item
+
+    def update_player_spawn_item(
+        self,
+        player_spawn: Optional[PlayerSpawn] = ...,
+        scene_model: Optional[Scene] = None,
+    ) -> None:
+        """Update or create/remove the player spawn graphics item on the canvas."""
+        if scene_model is None and hasattr(self.parent(), "scene_model"):
+            scene_model = getattr(self.parent(), "scene_model", None)
+
+        if player_spawn is ...:
+            player_spawn = scene_model.player_spawn if scene_model else None
+
+        if player_spawn is None:
+            if self._player_spawn_item is not None:
+                self.canvas.removeItem(self._player_spawn_item)
+                self._player_spawn_item = None
+        else:
+            if self._player_spawn_item is None:
+                model = scene_model or getattr(self.parent(), "scene_model", None)
+                self._player_spawn_item = PlayerSpawnGraphicsItem(
+                    player_spawn=player_spawn,
+                    scene_model=model,
+                    on_move_committed=self._on_player_spawn_moved,
+                    on_selection_changed=self._on_player_spawn_selected,
+                )
+                self.canvas.addItem(self._player_spawn_item)
+            else:
+                self._player_spawn_item.update_from_spawn(player_spawn)
+
+    def _on_player_spawn_moved(self, old_pos: tuple, new_pos: tuple) -> None:
+        self.player_spawn_moved.emit(old_pos, new_pos)
+
+    def _on_player_spawn_selected(self, is_selected: bool) -> None:
+        if self._is_updating_selection:
+            return
+        if is_selected:
+            self._is_updating_selection = True
+            try:
+                for item in self._items_by_id.values():
+                    item.setSelected(False)
+                for p_item in self._platform_items_by_id.values():
+                    p_item.setSelected(False)
+                for o_item in self._object_items_by_id.values():
+                    o_item.setSelected(False)
+            finally:
+                self._is_updating_selection = False
+        self.player_spawn_selected.emit(is_selected)
 
     def _on_platform_selected(self, platform_id: str, is_selected: bool) -> None:
         if self._is_updating_selection:

@@ -261,6 +261,10 @@
       "movement_strategy": "stationary"
     }
   ],
+  "player_spawn": {
+    "x": 96,
+    "y": 68
+  },
   "row_color_profiles": [
     1,
     1,

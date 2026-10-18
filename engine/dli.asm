@@ -352,6 +352,12 @@ dli_table_ptrs_hi
     jsr dli_apply_pmg_patterns
 
 @no_swap
+    ; Ensure DLI vector points to dli_handler
+    lda <dli_handler
+    sta VDSLST
+    lda >dli_handler
+    sta VDSLST+1
+
     ; Reset DLI pas index to active buffer base offset
     lda dli_active_offset
     sta dli_pas_idx
@@ -596,10 +602,58 @@ dli_table_ptrs_hi
     ; Advance pas index for next DLI
     iny                    ; [2]
     sty dli_pas_idx        ; [3]
+    tya                    ; [2]
+    and #$07               ; [2]
+    cmp #6                 ; [2] Was this pas 5 (DLI 6)?
+    bne @skip_status_hook  ; [2/3]
+    lda <dli_status_line   ; [2]
+    sta VDSLST             ; [4]
+    lda >dli_status_line   ; [2]
+    sta VDSLST+1           ; [4]
+@skip_status_hook
 
     ; --------------------------------------------------------------------------
     ; EXIT: Restore registers from zero page and return
     ; --------------------------------------------------------------------------
+    lda dli_save_a         ; [3]
+    ldy dli_save_y         ; [3]
+    rti                    ; [6]
+.endp
+
+; ==============================================================================
+; DLI STATUS LINE (DLI 7)
+; Executed on the blank scanline right before ANTIC Mode 2 status line.
+; Sets up black background, white text, and clears PMG positions/sizes.
+; Points VDSLST back to dli_handler for the next frame.
+; ==============================================================================
+.proc dli_status_line
+    sta dli_save_a         ; [3]
+    sty dli_save_y         ; [3]
+
+    sta WSYNC              ; [4]
+    lda #0                 ; [2]
+    sta COLPF2             ; [4] Black background for Mode 2 text
+    lda #$0E               ; [2]
+    sta COLPF1             ; [4] Crisp white text
+    lda #0                 ; [2] Clear PMG positions so no sprites bleed into status bar
+    sta HPOSP1             ; [4]
+    sta HPOSP2             ; [4]
+    sta HPOSP3             ; [4]
+    sta HPOSM0             ; [4]
+    sta HPOSM1             ; [4]
+    sta HPOSM2             ; [4]
+    sta HPOSM3             ; [4]
+    sta SIZEP1             ; [4]
+    sta SIZEP2             ; [4]
+    sta SIZEP3             ; [4]
+    sta SIZEM              ; [4]
+
+    ; Point VDSLST back to dli_handler for next frame
+    lda <dli_handler       ; [2]
+    sta VDSLST             ; [4]
+    lda >dli_handler       ; [2]
+    sta VDSLST+1           ; [4]
+
     lda dli_save_a         ; [3]
     ldy dli_save_y         ; [3]
     rti                    ; [6]

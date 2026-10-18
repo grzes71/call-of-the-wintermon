@@ -30,6 +30,9 @@ from .scene_model import (
     OBJECT_TYPE_TREASURE,
     PLATFORM_TYPE_SPRITE,
     PlatformElement,
+    PlayerSpawn,
+    PLAYER_HEIGHT,
+    PLAYER_WIDTH,
     Scene,
     SceneElement,
     SceneObjectElement,
@@ -623,6 +626,151 @@ class SceneObjectGraphicsItem(QGraphicsItem):
             is_selected = bool(value)
             if self.on_selection_changed:
                 self.on_selection_changed(self.scene_object.id, is_selected)
+
+        return super().itemChange(change, value)
+
+
+class PlayerSpawnGraphicsItem(QGraphicsItem):
+    """QGraphicsItem for displaying and positioning the player character's initial spawn on the scene."""
+
+    def __init__(
+        self,
+        player_spawn: PlayerSpawn,
+        scene_model: Scene,
+        on_move_committed: Optional[Callable[[tuple[int, int], tuple[int, int]], None]] = None,
+        on_selection_changed: Optional[Callable[[bool], None]] = None,
+    ) -> None:
+        super().__init__()
+        self.player_spawn = player_spawn
+        self.scene_model = scene_model
+        self.on_move_committed = on_move_committed
+        self.on_selection_changed = on_selection_changed
+
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+        self.setAcceptHoverEvents(True)
+
+        self._drag_start_pos: Optional[tuple[int, int]] = None
+
+        self.setZValue(3000)  # Render Hero spawn on top of platforms and objects
+        self.update_from_spawn(player_spawn)
+
+    def update_from_spawn(self, player_spawn: PlayerSpawn) -> None:
+        """Update graphics item position and tooltips from model spawn."""
+        self.player_spawn = player_spawn
+        self.setPos(QPointF(player_spawn.x, player_spawn.y))
+
+        tip = (
+            f"[Player Start]\n"
+            f"Coordinates: X={player_spawn.x}, Y={player_spawn.y}\n"
+            f"Hardware: Atari Player 0 (Hero, 8×20 px)"
+        )
+        self.setToolTip(tip)
+        self.prepareGeometryChange()
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(-2, -2, PLAYER_WIDTH + 4, PLAYER_HEIGHT + 4)
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionGraphicsItem,
+        widget: Optional[QWidget] = None,
+    ) -> None:
+        w = PLAYER_WIDTH
+        h = PLAYER_HEIGHT
+
+        # 1. Base shadow / silhouette
+        painter.fillRect(QRectF(1, 1, w - 2, h - 2), QColor(20, 24, 30, 220))
+
+        # 2. Hero Head (helmet/hair: cyan #00d2d3, face skin: #f5cd79)
+        painter.fillRect(QRectF(2, 1, 4, 3), QColor(0, 210, 211))     # Helmet
+        painter.fillRect(QRectF(2, 4, 4, 3), QColor(245, 205, 121))   # Face
+        painter.fillRect(QRectF(4, 5, 1, 1), QColor(30, 30, 30))      # Eye
+
+        # 3. Hero Torso (armor/tunic: Player 0 royal cyan #0984e3)
+        painter.fillRect(QRectF(1, 7, 6, 7), QColor(9, 132, 227))
+
+        # 4. Belt / Accent (gold #fed330)
+        painter.fillRect(QRectF(1, 14, 6, 1), QColor(254, 211, 48))
+
+        # 5. Boots / Legs (dark navy #2c3e50)
+        painter.fillRect(QRectF(1, 15, 2, 5), QColor(44, 62, 80))
+        painter.fillRect(QRectF(5, 15, 2, 5), QColor(44, 62, 80))
+
+        # 6. Outline border
+        painter.setPen(QPen(QColor(0, 0, 0, 200), 1))
+        painter.drawRect(0, 0, w, h)
+
+        # 7. "P" badge indicator centered on chest
+        painter.setPen(QPen(QColor(255, 255, 255), 1))
+        f = QFont("Arial", 5)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.drawText(QRectF(1, 7, 6, 7), Qt.AlignmentFlag.AlignCenter, "P")
+
+        # 8. Selection styling
+        if self.isSelected():
+            # Vibrant cyan-gold selection border
+            sel_pen = QPen(QColor(0, 230, 255), 1.0, Qt.PenStyle.SolidLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(-1, -1, w + 2, h + 2))
+
+            # Corner handles
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(255, 220, 0)))
+            for pt in [(-2, -2), (w, -2), (-2, h), (w, h)]:
+                painter.drawRect(QRectF(pt[0], pt[1], 2, 2))
+
+            # Ground baseline indicator
+            painter.setPen(QPen(QColor(0, 230, 255, 180), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(-4, h, w + 4, h)
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = (
+                int(round(self.pos().x())),
+                int(round(self.pos().y())),
+            )
+            if not self.isSelected():
+                self.setSelected(True)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_pos is not None:
+            curr_x = int(round(self.pos().x()))
+            curr_y = int(round(self.pos().y()))
+
+            # Clamp coordinates within scene boundary
+            max_x = max(0, self.scene_model.width - PLAYER_WIDTH)
+            max_y = max(0, self.scene_model.height - PLAYER_HEIGHT)
+            clamped_x = max(0, min(curr_x, max_x))
+            clamped_y = max(0, min(curr_y, max_y))
+
+            self.setPos(QPointF(clamped_x, clamped_y))
+            if (clamped_x, clamped_y) != self._drag_start_pos and self.on_move_committed:
+                self.on_move_committed(self._drag_start_pos, (clamped_x, clamped_y))
+            self._drag_start_pos = None
+
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: any) -> any:
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
+            new_pos: QPointF = value
+            max_x = max(0, self.scene_model.width - PLAYER_WIDTH)
+            max_y = max(0, self.scene_model.height - PLAYER_HEIGHT)
+            clamped_x = max(0, min(round(new_pos.x()), max_x))
+            clamped_y = max(0, min(round(new_pos.y()), max_y))
+            return QPointF(clamped_x, clamped_y)
+
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
+            is_selected = bool(value)
+            if self.on_selection_changed:
+                self.on_selection_changed(is_selected)
 
         return super().itemChange(change, value)
 

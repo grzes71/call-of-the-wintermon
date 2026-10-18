@@ -6,7 +6,15 @@ from typing import Callable, Optional
 
 from PySide6.QtGui import QUndoCommand
 
-from .scene_model import PlatformElement, Position, Rect, Scene, SceneElement, SceneObjectElement
+from .scene_model import (
+    PlatformElement,
+    PlayerSpawn,
+    Position,
+    Rect,
+    Scene,
+    SceneElement,
+    SceneObjectElement,
+)
 
 
 class SceneBaseCommand(QUndoCommand):
@@ -627,5 +635,59 @@ class ChangeSceneObjectIdCommand(SceneBaseCommand):
         obj = self.scene.get_object(self.new_id)
         if obj:
             obj.id = self.old_id
+        self.notify()
+
+
+class SetPlayerSpawnCommand(SceneBaseCommand):
+    """Command to set or remove the player spawn position on the scene."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        new_spawn: Optional[PlayerSpawn],
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        text = f"Set player start at ({new_spawn.x}, {new_spawn.y})" if new_spawn else "Remove player start"
+        super().__init__(text, callback)
+        self.scene = scene
+        self.old_spawn = scene.player_spawn.clone() if scene.player_spawn else None
+        self.new_spawn = new_spawn.clone() if new_spawn else None
+
+    def redo(self) -> None:
+        self.scene.player_spawn = self.new_spawn.clone() if self.new_spawn else None
+        self.notify()
+
+    def undo(self) -> None:
+        self.scene.player_spawn = self.old_spawn.clone() if self.old_spawn else None
+        self.notify()
+
+
+class MovePlayerSpawnCommand(SceneBaseCommand):
+    """Command to move the player spawn coordinates."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        old_pos: tuple[int, int],
+        new_pos: tuple[int, int],
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(f"Move player start to ({new_pos[0]}, {new_pos[1]})", callback)
+        self.scene = scene
+        self.old_x, self.old_y = int(old_pos[0]), int(old_pos[1])
+        self.new_x, self.new_y = int(new_pos[0]), int(new_pos[1])
+
+    def redo(self) -> None:
+        if self.scene.player_spawn:
+            self.scene.player_spawn.x = self.new_x
+            self.scene.player_spawn.y = self.new_y
+        else:
+            self.scene.player_spawn = PlayerSpawn(self.new_x, self.new_y)
+        self.notify()
+
+    def undo(self) -> None:
+        if self.scene.player_spawn:
+            self.scene.player_spawn.x = self.old_x
+            self.scene.player_spawn.y = self.old_y
         self.notify()
 

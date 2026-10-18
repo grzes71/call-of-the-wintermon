@@ -34,6 +34,18 @@ SCENE_TITLE_FADE_STEPS = 8
     lda active_scene_id
     jsr dli_stage_scene
 
+    ; Initialize secrets engine and render active scene secrets
+    lda active_scene_id
+    jsr secrets_init
+
+    ; Initialize status line (lives hearts, scene name, collected CDs)
+    lda player_lives
+    bne @has_lives
+    jsr status_line_reset
+@has_lives
+    lda active_scene_id
+    jsr status_line_init
+
     ; 4. Set up Scene Title Card LMS operand in dlist_scene_title
     ldx active_scene_id
     lda scene_name_line_lo,x
@@ -84,11 +96,12 @@ SCENE_TITLE_FADE_STEPS = 8
     cmp RTCLOK+2
     beq @sync_vblank
 
-    ; If in active playing phase, perform DLI VBLANK update
+    ; If in active playing phase, perform DLI VBLANK update and secret animation
     lda game_phase
     cmp #GAME_PHASE_PLAYING
     bne @skip_dli_vblank
     jsr dli_vblank_update
+    jsr secrets_update
 @skip_dli_vblank
 
     ; Dispatch based on game_phase

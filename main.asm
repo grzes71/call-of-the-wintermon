@@ -239,9 +239,11 @@ dlist_game
     .byte DL_MODE_D | DL_DLI    ; Line 86 (DLI 6: setup Pas 5 at line 88)
     :9 .byte DL_MODE_D          ; Lines 87-95
 
-    .byte DL_BLANK8
-    .byte DL_BLANK8
-    .byte DL_BLANK8
+    ; Bottom spacing & Status Line (ANTIC Mode 2, 40 columns)
+    .byte DL_BLANK8 | DL_DLI    ; 8 blank scanlines; DLI 7 triggers on line 7
+    .byte DL_MODE_2 | DL_LMS    ; 1 line ANTIC Mode 2 (8 scanlines)
+    .word status_line_vram
+    .byte DL_BLANK8             ; 8 blank scanlines bottom margin
 
     ; Jump and wait for vertical blank
     .byte DL_JVB
@@ -269,6 +271,13 @@ dlist_scene_title_addr
     .word dlist_scene_title
 
 ; ==============================================================================
+; STATUS LINE VRAM (40 bytes, ANTIC Mode 2)
+; Strictly within $3F00-$3FFF (never crosses 4 KB boundary)
+; ==============================================================================
+status_line_vram
+    :40 .byte 0
+
+; ==============================================================================
 ; TITLE GRAPHICS DATA SEGMENT ($4000)
 ; ANTIC Mode D (160x95 2bpp, 40 bytes/line * 96 lines = 3,840 bytes: $4000-$4EFF)
 ; Followed by 48-byte Mode 2 scrolling VRAM line buffer ($4F00-$4F2F)
@@ -291,8 +300,11 @@ title_scroll_vram
 ; Relocated from $2C30 and $79D0 into the expanded $5000 block
 ; ==============================================================================
     org SCENES_DATA
+    icl 'gen/sprites_data.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
+    icl 'engine/secrets.asm'
+    icl 'engine/status_line.asm'
 
 ; Title scene handler placed in expanded $5000 block
     icl 'scenes/title.asm'

@@ -1,0 +1,183 @@
+# ==============================================================================
+# Game Manifest — Call of the Wintermon
+# Target: Atari 8-bit XL/XE (MOS 6502, 64 KB RAM)
+#
+# Single Source of Truth (SSOT) for all source / input resources required
+# to build and assemble the game (excluding generated artifacts in gen/).
+# ==============================================================================
+
+name: "Call of the Wintermon"
+version: "0.1.0"
+target:
+  platform: "Atari 8-bit (XL/XE)"
+  cpu: "MOS 6502"
+  memory: "64 KB RAM"
+  assembler: "MADS"
+  binary: "call_of_the_wintermon.xex"
+
+# ------------------------------------------------------------------------------
+# 1. Source Code (6502 Assembly)
+# ------------------------------------------------------------------------------
+source_code:
+  entry_point: "main.asm"
+  system:
+    - path: "hardware.asm"
+      description: "Hardware register equates (ANTIC, GTIA, POKEY, PIA, OS vectors)"
+    - path: "zeropage.asm"
+      description: "Zero Page variable and pointer allocations ($80-$FF)"
+  engine:
+    - path: "engine/dli.asm"
+      description: "Unified DLI engine, scanline timing and double-buffered palette/PMG registers"
+    - path: "engine/render.asm"
+      description: "Playfield rendering engine and fast tile blitter"
+    - path: "engine/render_tables.asm"
+      description: "Bit-reversal and playfield scanline offset lookup tables"
+    - path: "engine/secrets.asm"
+      description: "Collectible secrets runtime engine, animation looping and 5th-player missile rendering"
+    - path: "engine/status_line.asm"
+      description: "In-game HUD status line engine (ANTIC Mode 2, 40 columns)"
+  scenes:
+    - path: "scenes/title.asm"
+      description: "Title screen state machine, scroll text raster driver and fade-in/out logic"
+    - path: "scenes/intro.asm"
+      description: "Intro narrative screen state and text display logic"
+    - path: "scenes/game.asm"
+      description: "Core gameplay loop, player physics, collision detection and level transitions"
+    - path: "scenes/gameover.asm"
+      description: "Game Over and victory screen state handler"
+  libraries:
+    - path: "lib/audio.asm"
+      description: "POKEY 4-channel audio driver and VBLANK tick dispatcher"
+    - path: "lib/player.asm"
+      description: "Player-Missile Graphics (PMG) clearing, positioning and rendering helpers"
+
+# ------------------------------------------------------------------------------
+# 2. Graphics & Visual Assets
+# ------------------------------------------------------------------------------
+graphics:
+  screens:
+    - id: "title"
+      path: "images/title2.png"
+      type: "image/png"
+      target_mode: "ANTIC Mode D (160x95 2bpp)"
+      description: "Title screen background artwork"
+    - id: "title_alt"
+      path: "images/title.png"
+      type: "image/png"
+      description: "Alternative / original title screen artwork"
+    - id: "game_over"
+      path: "images/end.png"
+      type: "image/png"
+      description: "Game over / victory ending illustration"
+    - id: "cover"
+      path: "cover.png"
+      type: "image/png"
+      description: "Game cover art and promotional display"
+  tilesets:
+    - id: "trees"
+      path: "tiles/trees.png"
+      type: "image/png"
+      target_mode: "ANTIC Mode E (160x96 2bpp)"
+      description: "Forest trees and foliage environment tileset"
+    - id: "castles"
+      path: "tiles/castles.png"
+      type: "image/png"
+      target_mode: "ANTIC Mode E (160x96 2bpp)"
+      description: "Wintermon castle stone blocks, towers and ramparts tileset"
+    - id: "depths"
+      path: "tiles/depths.png"
+      type: "image/png"
+      target_mode: "ANTIC Mode E (160x96 2bpp)"
+      description: "Mountain depths, cavern rocks and underground structures tileset"
+    - id: "hell"
+      path: "tiles/hell.png"
+      type: "image/png"
+      target_mode: "ANTIC Mode E (160x96 2bpp)"
+      description: "Hell and fire cavern environment tileset"
+  fonts:
+    - id: "main_font"
+      path: "fonts/font.fnt"
+      type: "binary"
+      size_bytes: 1024
+      description: "Standard 1 KB Atari character generator font (intro narrative & HUD)"
+  sprites:
+    - id: "objects"
+      path: "sprites/objects.sprite.json"
+      type: "sprite_sheet"
+      description: "Collectible secrets (CD, Ladder, Gold Key) animated frames and 5th-player missile bit patterns"
+    - id: "player"
+      path: "sprites/player.sprite.json"
+      type: "sprite_sheet"
+      description: "Player 0 hero animations (walk right/left, jump, kneel, death)"
+
+# ------------------------------------------------------------------------------
+# 3. Audio & Music
+# ------------------------------------------------------------------------------
+audio:
+  music:
+    - id: "title_music"
+      path: "music/title.json"
+      format: "json"
+      channels: 4
+      description: "Title screen music score definition"
+    - id: "intro_music"
+      path: "music/intro.dsl"
+      format: "dsl"
+      channels: 4
+      description: "Intro narrative sequence theme in Atari Music DSL"
+
+# ------------------------------------------------------------------------------
+# 4. Text & Narrative
+# ------------------------------------------------------------------------------
+texts:
+  - id: "intro_text"
+    path: "texts/intro.txt"
+    encoding: "utf-8"
+    description: "Intro story crawl text (converted to ATASCII screen codes)"
+  - id: "title_scroll"
+    path: "scroll/title.txt"
+    encoding: "utf-8"
+    description: "Title screen bottom continuous marquee scroll text"
+
+# ------------------------------------------------------------------------------
+# 5. Scenes & Level Definitions
+# ------------------------------------------------------------------------------
+scenes:
+  manifest: "scenes/scenes.json"
+  catalogues: "scenes/definitions.json"
+  levels:
+    - index: 1
+      id: "forest"
+      path: "scenes/01-forest.json"
+      name: "The Forest Whispers My Name"
+      description: "Introductory forest scene: platforms, tree tiles, player spawn, secrets"
+    - index: 2
+      id: "forest_castle"
+      path: "scenes/02-forest-castle.json"
+      name: "Be Quick or Be Dead"
+      description: "Castle exterior approach: castle ramparts, vertical platforms, secrets"
+
+# ------------------------------------------------------------------------------
+# 6. Build Pipeline Tools (Scripts)
+# ------------------------------------------------------------------------------
+tools:
+  - path: "scripts/convert_image.py"
+    purpose: "Converts PNG title images into ANTIC Mode D 2bpp binary format"
+  - path: "scripts/convert_tiles.py"
+    purpose: "Compiles ANTIC Mode E tilesets from PNG to raw 2bpp binaries and SoA metadata"
+  - path: "scripts/compile_scroll_text.py"
+    purpose: "Compiles scrolling text into ATASCII byte tables with terminator"
+  - path: "scripts/gen_intro_text.py"
+    purpose: "Formats intro story text into 40-column Mode 2 VRAM binary lines"
+  - path: "scripts/compile_music.py"
+    purpose: "Compiles JSON/DSL music sequences into relocatable 6502 POKEY player data"
+  - path: "scripts/compile_sprites.py"
+    purpose: "Packs 2bpp sprite animation frames into GTIA 5th-player missile scanline arrays"
+  - path: "scripts/compile_scenes.py"
+    purpose: "Compiles scene JSON levels into MADS 6502 assembly data tables (platforms, secrets, DLI)"
+  - path: "scripts/check_memory.py"
+    purpose: "Validates segment boundaries and remaining headroom below $C000 OS ROM"
+  - path: "scripts/generate_memory_map.py"
+    purpose: "Generates visual memory map PDF/report from compiled XEX binary"
+  - path: "scripts/png_to_charset.py"
+    purpose: "Converts 4-color indexed PNGs into Atari 8-bit charset (.fnt) and tile mappings"

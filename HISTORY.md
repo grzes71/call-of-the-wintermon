@@ -2,6 +2,112 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-18] - Game Resource Manifest (manifest.yaml)
+
+- **Game Manifest Creation ([manifest.yaml](manifest.yaml))**:
+  - Created master YAML manifest aggregating all input/source assets and tooling for building the game (excluding generated files).
+  - Categorized resources into: `source_code` (entry point, system, engine, scenes, libraries), `graphics` (screens, tilesets, fonts, sprites), `audio` (title JSON score, intro DSL music), `texts` (intro narrative, title scroller), `scenes` (ordering manifest, definition catalogues, levels), and `tools` (build pipeline Python scripts).
+- **Automated Manifest Validation ([tests/test_manifest.py](tests/test_manifest.py))**:
+  - Implemented unit test suite verifying manifest existence, ensuring all referenced files exist in the repository, and guarding against inclusion of generated (`gen/`) build artifacts.
+  - Verified full test suite (`make all`: 399 passed, 3,430 bytes headroom below $C000).
+
+## [2026-10-17] - Player Initial Spawn Configuration in Atari Scene Editor
+
+- **Scene Data Model & Validation ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Added `PlayerSpawn` dataclass representing Player 0 (Hero) initial spawn coordinates (`x`, `y`) with 8x20 pixel dimensions (`PLAYER_WIDTH = 8`, `PLAYER_HEIGHT = 20`).
+  - Added geometric properties (`width`, `height`, `right`, `bottom`) and bounding validation against scene canvas dimensions (`0 <= x <= scene_width - 8`, `0 <= y <= scene_height - 20`).
+  - Integrated `player_spawn: Optional[PlayerSpawn] = None` into `Scene` model with `set_player_spawn(x, y)` and `remove_player_spawn()`.
+- **JSON Serialization & Backward Compatibility ([atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:
+  - Updated `SceneSerializer.to_dict()` and `from_dict()` to serialize `player_spawn: {"x": ..., "y": ...}` when configured.
+  - Maintained full backward compatibility: scenes without `player_spawn` deserialize gracefully with `player_spawn = None`.
+- **Undo / Redo Architecture ([atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - Implemented `SetPlayerSpawnCommand(SceneBaseCommand)` for creating and removing the player spawn position.
+  - Implemented `MovePlayerSpawnCommand(SceneBaseCommand)` for position translations (keyboard arrows, spinboxes, and canvas dragging).
+- **Interactive Canvas Rendering ([atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py), [atari-scene-editor/src/scene_editor/scene_view.py](atari-scene-editor/src/scene_editor/scene_view.py))**:
+  - Implemented `PlayerSpawnGraphicsItem(QGraphicsItem)` rendering the 8x20 pixel-art Hero sprite (cyan body, skin face, brown boots), dashed bounding box, coordinate label, and ground baseline indicator.
+  - Added canvas drag-and-drop with boundary clamping, selection synchronization with other elements/platforms/objects, and dedicated signals `player_spawn_selected` and `player_spawn_moved`.
+- **Editor UI Integration ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Added Tab 4 ("Player Start") to the right property dock with status indicator, `+ Set Player Start Position` button, X/Y spinboxes, platform snap selector (`Snap to Platform Feet`), and `Remove Player Start` button.
+  - Integrated canvas selection, keyboard arrow nudge, and Delete key removal for the player spawn item.
+  - Updated status bar to display active player spawn coordinates `Player: (X, Y)` or `Player: None`.
+- **Scene Compiler & MADS Assembly Generation ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `player_start_x` and `player_start_y` to `SceneCompiledData` and `parse_scene_json` (defaults to X=20, Y=68 if omitted in scene JSON).
+  - Emits per-scene equates (`SCENE_{sym}_PLAYER_START_X`, `SCENE_{sym}_PLAYER_START_Y`) and master index tables (`scene_player_start_x`, `scene_player_start_y`) in `gen/scenes_data.asm`.
+- **Automated Verification ([tests/test_player_spawn.py](tests/test_player_spawn.py))**:
+  - Added 20 comprehensive unit and integration tests covering model validation, JSON serialization/backward compatibility, undo/redo commands, compiler assembly generation, and headless GUI interactions.
+  - Verified full build pipeline via `make all` (all 397 tests passed, 3,430 bytes headroom below $C000).
+
+
+- **Automated Sprite Tests ([tests/test_compile_sprites.py](tests/test_compile_sprites.py))**:
+  - Refactored `test_parse_sprites_json_objects` to dynamically compare parsed sprite attributes (width, height, frames, loop, frame duration) directly against `objects.sprite.json` instead of hardcoded frame counts, preventing test breakage when sprite animations are expanded in Sprite Studio.
+- **Runtime Secret Animation Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Updated `test_secrets_animation_progression` to read frame duration (`SECRETS_FRAME_DUR`) and frame count (`SECRETS_FRAME_COUNT`) dynamically from initialized engine tables.
+  - Validates timer countdown, frame progression up to `key_frame_count - 1`, and loop wrapping back to frame 0 for arbitrary frame counts (such as the new 12-frame Gold Key animation).
+- **Verification**: `make all` passes cleanly (all 377 tests passed, 3,434 bytes headroom below $C000).
+
+## [2026-10-17] - Update Gameplay Mechanics Specification (MECHANIKA.md)
+
+- **Mechanics Documentation ([MECHANIKA.md](MECHANIKA.md))**:
+  - Corrected player sprite source file reference from `objects.sprite.json` to `player.sprite.json`.
+  - Added section `2.5. Linia statusowa (HUD) i licznik płyt CD` detailing the ANTIC 2 bottom status bar, heart icons (decimal code 64) for lives, centered scene title, and 2-digit CD counter (00..99).
+  - Documented CD counter retention across scene transitions and persistence upon player death.
+  - Added status line definition to Section 1 terminology table.
+  - Added acceptance scenarios 19 and 20 covering status line rendering and CD counter behavior.
+
+## [2026-10-17] - Fix DLI Faza A Scanline Alignment & Platform Color Artifact
+
+- **Zero-Overhead Faza A Restoration ([engine/dli.asm](engine/dli.asm))**:
+  - Removed branch/jump instructions from `dli_handler` entry, restoring Faza A to its exact 47-cycle pre-WSYNC budget and eliminating scanline slip.
+  - Resolved artifact where platform top scanline rendered in Zone 0 enemy color (purple) instead of black ($00), ensuring all 8 profile scanlines align cycle-exact to scanlines $2L..2L+7$ (starting with black and ending with black).
+  - Shifted status line DLI vector hooking to DLI 6 Faza C: dynamically updates `VDSLST` to point to dedicated `dli_status_line` only after Pas 5 completes.
+  - Dedicated `dli_status_line` handles DLI 7 (status line blank separator), sets black background (`COLPF2 = $00`), white text (`COLPF1 = $0E`), zeroes PMG positions/sizes, and restores `VDSLST` back to `dli_handler` for the next frame.
+  - Corrected register loading order in `dli_vblank_update` before shifting `dli_active_offset` into `X`.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Verified `VDSLST` dynamic hooking on DLI 6 and restoration on DLI 7.
+  - Confirmed `test_dli_faza_a_cycle_budget_and_faza_b_iter0` passes with cycle-exact pre-WSYNC alignment.
+  - Validated full build pipeline via `make all` (all 377 tests pass, 3,542 bytes headroom).
+
+## [2026-10-17] - In-Game Status Line in ANTIC Mode 2
+
+- **Status Line Engine ([engine/status_line.asm](engine/status_line.asm))**:
+  - Implemented 40-column ANTIC Mode 2 status bar placed at the bottom of the active gameplay screen.
+  - Left side: Player lives (initially 3), rendered as heart glyphs (decimal code 64) at columns 0..2.
+  - Center: Active scene name loaded from pre-centered `scene_{sym}_name_line`.
+  - Right side: Collected CDs counter (0..99) formatted as 2-digit decimal number in screen codes ($10..$19) at columns 38..39.
+  - Routines provided: `status_line_reset`, `status_line_init(A = scene_id)`, `status_line_refresh_lives`, `status_line_refresh_cds`, `status_line_add_cd`, `status_line_lose_life`, and `status_line_update`.
+- **Display List & DLI Architecture ([main.asm](main.asm), [engine/dli.asm](engine/dli.asm), [zeropage.asm](zeropage.asm))**:
+  - Allocated 40-byte `status_line_vram` buffer in segment $3F00-$3FFF (address $3F8B, strictly avoiding ANTIC 4 KB boundary wrap).
+  - Updated `dlist_game` with `DL_BLANK8 | DL_DLI` ($F0, 8 scanlines separator and DLI trigger), `DL_MODE_2 | DL_LMS` ($42, status line, 8 scanlines), and `DL_BLANK8` ($70, 8 scanlines bottom margin), maintaining the deterministic 240-scanline frame timing.
+  - Added DLI 7 in `dli_handler` triggered on the blank scanline before Mode 2: sets `COLPF2 = $00` (black background), `COLPF1 = $0E` (crisp white text), and clears PMG horizontal positions/sizes so sprites do not bleed into the status bar.
+  - Allocated `player_lives` ($C1) and `player_cds` ($C2) in Zero Page.
+- **Scene & State Integration ([scenes/game.asm](scenes/game.asm))**:
+  - Integrated `status_line_init` into `game_init` (initializes 3 lives and 0 CDs on start, preserves counters across scene transitions).
+- **Automated Verification & py65 Test Suites ([tests/test_status_line.py](tests/test_status_line.py), [tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_convert_tiles.py](tests/test_convert_tiles.py))**:
+  - Created [tests/test_status_line.py](tests/test_status_line.py) testing reset, Scene 0/1 layout, heart glyphs at columns 0..2, CD counter at 38..39, clamping at 99, and life decrementation.
+  - Updated Display List assertions in [tests/test_dli_system.py](tests/test_dli_system.py) and [tests/test_convert_tiles.py](tests/test_convert_tiles.py).
+  - Verified full test suite (`make all`: 377 passed in 7.71s, 3,573 bytes headroom below `$C000`).
+
+## [2026-10-17] - Animated Secrets Display via 5th-Player Missiles
+
+- **Sprite Compilation Pipeline ([scripts/compile_sprites.py](scripts/compile_sprites.py))**:
+  - Implemented GTIA 5th-player missile bit-packing (`(p6<<7)|(p7<<6)|(p4<<5)|(p5<<4)|(p2<<3)|(p3<<2)|(p0<<1)|p1`) combining 4 missiles (M0..M3) into an 8-pixel player colored by `COLPF3`.
+  - Exported per-sprite frame scanline byte arrays, `.word` frame pointer arrays, and master 1-based lookup tables (`sprite_height`, `sprite_frame_count`, `sprite_frame_dur`, `sprite_frames_table_lo/hi`) into [gen/sprites_data.asm](gen/sprites_data.asm).
+- **Scene Compiler Integration ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `--sprites` CLI argument to parse sprite definitions and compute PMG Y scanline offsets with 2 scanlines (1 Mode D line $\ge 1$) margin above platform surfaces: `pmg_y = max(0, p_base - spr_h - 2)`.
+  - Filtered initial DLI display to only secrets without dependencies (`dependency is None`), keeping dependent secrets inactive.
+  - Generated Structure-of-Arrays (SoA) per-scene secret tables (`scene_{sym}_secret_active`, `_sprite_id`, `_pmg_y`, `_height`, `_frame_dur`, `_frame_count`) and master address pointer tables in [gen/scenes_data.asm](gen/scenes_data.asm).
+- **Secrets Runtime Engine ([engine/secrets.asm](engine/secrets.asm))**:
+  - Implemented `secrets_init(A = scene_id)`: copies scene SoA tables into RAM buffers, sets `secrets_timer = frame_dur` and `secrets_frame_idx = 0`, and renders Frame 0 into `PMG_MISSILES` (`$6B00`) for active secrets.
+  - Implemented `render_secret_frame(X = secret_idx)`: resolves frame address via `sprite_frames_table_lo/hi` and copies scanlines into `PMG_MISSILES + pmg_y`.
+  - Implemented `secrets_update()`: decrements per-secret timers each frame, advances frame indices with wrap-around at `frame_count`, and re-renders updated frames to `PMG_MISSILES`.
+- **System Integration & Build Pipeline ([main.asm](main.asm), [scenes/game.asm](scenes/game.asm), [Makefile](Makefile))**:
+  - Included `gen/sprites_data.asm` and `engine/secrets.asm` into `SCENES_DATA` ($5000 segment).
+  - Wired `secrets_init` into `game_init` and `secrets_update` into `game_run` per-frame loop.
+  - Updated `Makefile` with `SPRITES_SRC`, `SPRITES_ASM`, compilation target, and automated build dependencies.
+- **Automated Verification & py65 Test Suites ([tests/test_compile_sprites.py](tests/test_compile_sprites.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Validated bit packing, sprite parsing, and ASM generation.
+  - Tested `secrets_init` state initialization, margin $\ge 1$ line above platforms, Frame 0 missile graphics, inactive secret filtering, timer decrementing, and animation frame looping.
+
 ## [2026-10-16] - Sprite Studio Integration in Atari Scene Editor
 
 - **Catalogue Model & Session Loading ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:

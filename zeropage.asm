@@ -62,3 +62,7 @@ dli_pending_offset  = $BD   ; Inactive/staging buffer offset (8 or 0)
 dli_swap_requested  = $BE   ; Mailbox flag: 1 = swap pending for next VBLANK
 dli_scene_pmg_ptr   = $BF   ; 2 bytes ($BF-$C0): Pointer to active scene PMG patterns in ROM
 
+; --- Gameplay Status Variables ($C1-$C2) ---
+player_lives        = $C1   ; Remaining player lives (initially 3, displayed as heart glyphs 64)
+player_cds          = $C2   ; Collected CDs count (0..99, displayed as 2-digit number)
+
