@@ -2,6 +2,18 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-18] - Hero Movement Inertia (Acceleration, Deceleration & Braking)
+
+- **Inertia Physics Engine ([engine/player.asm](engine/player.asm), [zeropage.asm](zeropage.asm))**:
+  - Replaced single-bit divider with a sub-pixel accumulator `player_x_sub` ($C9, 0..255) and speed magnitude `player_speed` ($CA, 0..`PLAYER_MAX_SPEED`).
+  - Set top speed `PLAYER_MAX_SPEED = $80` (0.5 pixels/frame), acceleration rate `PLAYER_ACCEL = $10` (16 subpixels/frame^2, reaching top speed smoothly in 8 frames / ~0.16s), and friction deceleration rate `PLAYER_DECEL = $10` (coasting to a stop over 8 frames / ~0.16s).
+  - Implemented turnaround braking: pushing stick opposite to current travel direction decelerates speed down to 0 before reversing facing direction and accelerating.
+  - Symmetric 16-bit sub-pixel position integration (`player_x_sub += player_speed`, stepping integer `player_x` on carry overflow/borrow) with double-layer boundary clamping (`0 <= player_x <= 152`) that zeroes speed and sub-pixels at edges.
+  - Idle state transitions: walk animation cycles while coasting (`player_speed > 0`); once speed reaches 0, transitions to `PLAYER_STATE_IDLE` with standing frame 0 in the current facing direction.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Updated py65 test suite validating gradual acceleration curves (0x10..0x80), deceleration friction coasting down to 0x00 upon stick release, active reversal braking, and wall clamping.
+  - Ran full build pipeline (`make all`: 406 passed, 2,847 bytes headroom below $C000).
+
 ## [2026-10-18] - Reduce Player Walk Movement Speed by Half
 
 - **Player Engine Physics ([engine/player.asm](engine/player.asm), [zeropage.asm](zeropage.asm))**:

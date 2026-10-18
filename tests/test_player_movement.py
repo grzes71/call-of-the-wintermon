@@ -1,11 +1,11 @@
-"""Automated py65 integration test suite for Atari 8-bit Player 0 (Hero) spawn and movement.
+"""Automated py65 integration test suite for Atari 8-bit Player 0 (Hero) spawn and movement with inertia.
 
 Validates:
 1. player_init initializes Player 0 position, PMG memory, hardware registers and standing frame.
-2. player_update polls STICK0 and moves right when pushed right, advancing walk animation.
-3. player_update moves left when pushed left, advancing walk animation with left frames.
-4. player_update returns to standing frame (frame 0) when joystick is idle, preserving direction.
-5. Boundaries: player_x clamps at PLAYER_MIN_X (0) and PLAYER_MAX_X (152).
+2. player_update accelerates gradually when starting movement (speed increases by $10 up to $80).
+3. player_update decelerates gradually when releasing joystick (coasting down to $00 before full stop).
+4. player_update performs active braking when reversing direction.
+5. Boundaries: player_x clamps at PLAYER_MIN_X (0) and PLAYER_MAX_X (152), zeroing speed.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
 def test_player_init_scene0():
-    """Verify player_init correctly initializes Player 0 state and PMG for Scene 0."""
+    """Verify player_init correctly initializes Player 0 state, inertia vars and PMG for Scene 0."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -38,6 +38,8 @@ def test_player_init_scene0():
     assert mem[labels["PLAYER_STATE"]] == 0
     assert mem[labels["PLAYER_FRAME_IDX"]] == 0
     assert mem[labels["PLAYER_FRAME_TIMER"]] == 4
+    assert mem[labels["PLAYER_X_SUB"]] == 0
+    assert mem[labels["PLAYER_SPEED"]] == 0
 
     # 3. Hardware registers
     assert mem[labels["HPOSP0"]] == 48 + 96  # 144 ($90)
@@ -63,8 +65,8 @@ def test_player_init_scene0():
         assert mem[pmg_p0 + y] == 0x00, f"Scanline {y} after player must be 0"
 
 
-def test_player_walk_right():
-    """Verify player moves right at half speed (1 px every 2 frames)."""
+def test_player_walk_right_acceleration():
+    """Verify player accelerates gradually when moving right up to max speed ($80)."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -74,46 +76,79 @@ def test_player_walk_right():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    initial_x = mem[labels["PLAYER_X"]]
-    assert initial_x == 96
+    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_SPEED"]] == 0
 
     # STICK0 bit 3 is 0 (right pressed): %00000111 = 0x07
     mem[labels["STICK0"]] = 0x07
 
-    # Frame 1: move right 1 pixel (sub_x=1), frame_timer decrements from 4 to 3
+    # Frame 1: speed increases by $10 to $10, x_sub = $10 (no step yet)
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x10
+    assert mem[labels["PLAYER_X_SUB"]] == 0x10
+    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_STATE"]] == 1     # Walk
+    assert mem[labels["PLAYER_DIR"]] == 0       # Right
+
+    # Frame 2: speed = $20, x_sub = $30
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x20
+    assert mem[labels["PLAYER_X_SUB"]] == 0x30
+    assert mem[labels["PLAYER_X"]] == 96
+
+    # Frame 3: speed = $30, x_sub = $60
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x30
+    assert mem[labels["PLAYER_X_SUB"]] == 0x60
+    assert mem[labels["PLAYER_X"]] == 96
+
+    # Frame 4: speed = $40, x_sub = $A0, animation frame advances to 1
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x40
+    assert mem[labels["PLAYER_X_SUB"]] == 0xA0
+    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 1
+
+    # Frame 5: speed = $50, x_sub = $F0
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x50
+    assert mem[labels["PLAYER_X_SUB"]] == 0xF0
+    assert mem[labels["PLAYER_X"]] == 96
+
+    # Frame 6: speed = $60, x_sub = $F0 + $60 = $50 (carry!), steps to x=97!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x60
+    assert mem[labels["PLAYER_X_SUB"]] == 0x50
     assert mem[labels["PLAYER_X"]] == 97
     assert mem[labels["HPOSP0"]] == 48 + 97
-    assert mem[labels["PLAYER_DIR"]] == 0       # Right
-    assert mem[labels["PLAYER_STATE"]] == 1     # Walk
-    assert mem[labels["PLAYER_FRAME_IDX"]] == 0
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 3
 
-    # Frame 2: sub_x=2 (even) -> no movement step (player_x stays 97)
+    # Frame 7: speed = $70, x_sub = $C0
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x70
+    assert mem[labels["PLAYER_X_SUB"]] == 0xC0
     assert mem[labels["PLAYER_X"]] == 97
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 2
 
-    # Frame 3: sub_x=3 (odd) -> move right 1 pixel (player_x=98)
+    # Frame 8: speed reaches max $80, x_sub = $C0 + $80 = $40 (carry!), steps to x=98!
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x80
+    assert mem[labels["PLAYER_X_SUB"]] == 0x40
     assert mem[labels["PLAYER_X"]] == 98
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 1
 
-    # Frame 4: sub_x=4 (even) -> timer reaches 0, resets to 4, frame advances to 1!
+    # Frame 9: speed stays at $80, x_sub = $40 + $80 = $C0
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x80
+    assert mem[labels["PLAYER_X_SUB"]] == 0xC0
     assert mem[labels["PLAYER_X"]] == 98
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 4
-    assert mem[labels["PLAYER_FRAME_IDX"]] == 1
 
-    # PMG memory should now contain frame 1 of right animation
-    pmg_p0 = labels["PMG_PLAYER0"]
-    right_f1_addr = labels["PLAYER_ANIM_RIGHT_FRAME_1"]
-    for i in range(20):
-        assert mem[pmg_p0 + 188 + i] == mem[right_f1_addr + i]
+    # Frame 10: speed stays at $80, x_sub = $C0 + $80 = $40 (carry!), steps to x=99!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_SPEED"]] == 0x80
+    assert mem[labels["PLAYER_X_SUB"]] == 0x40
+    assert mem[labels["PLAYER_X"]] == 99
 
 
-def test_player_walk_left():
-    """Verify player moves left when STICK0 has left bit active (bit 2 = 0)."""
+def test_player_deceleration_and_inertia_stop():
+    """Verify player gradually decelerates before stopping completely when joystick is released."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -123,66 +158,35 @@ def test_player_walk_left():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # STICK0 bit 2 is 0 (left pressed): %00001011 = 0x0B
-    mem[labels["STICK0"]] = 0x0B
-
-    # Frame 1: move left 1 pixel (sub_x=1)
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_X"]] == 95
-    assert mem[labels["HPOSP0"]] == 48 + 95
-    assert mem[labels["PLAYER_DIR"]] == 1       # Left
-    assert mem[labels["PLAYER_STATE"]] == 1     # Walk
-
-    # Frame 2: sub_x=2 (even) -> stays at 95
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_X"]] == 95
-
-    # PMG memory should render using left animation frame
-    pmg_p0 = labels["PMG_PLAYER0"]
-    left_f0_addr = labels["PLAYER_ANIM_LEFT_FRAME_0"]
-    for i in range(20):
-        assert mem[pmg_p0 + 188 + i] == mem[left_f0_addr + i]
-
-
-def test_player_idle_stops_animation_and_keeps_direction():
-    """Verify releasing joystick stops walking animation and resets to standing frame."""
-    mem, labels = load_xex_and_symbols()
-    mpu = MPU(memory=mem)
-    mpu.sp = 0xFD
-    mem[0x01FE] = 0x1F
-    mem[0x01FF] = 0x00
-
-    mpu.a = 0
-    run_subroutine(mpu, labels["PLAYER_INIT"])
-
-    # Walk left for 4 frames so frame_idx = 1
-    mem[labels["STICK0"]] = 0x0B
-    for _ in range(4):
+    # Accelerate to max speed (8 frames right)
+    mem[labels["STICK0"]] = 0x07
+    for _ in range(8):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    assert mem[labels["PLAYER_DIR"]] == 1
-    assert mem[labels["PLAYER_FRAME_IDX"]] == 1
+    assert mem[labels["PLAYER_SPEED"]] == 0x80
+    assert mem[labels["PLAYER_X"]] == 98
 
-    # Release joystick (idle STICK0 = $0F)
+    # Release joystick (STICK0 = 0x0F)
     mem[labels["STICK0"]] = 0x0F
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # Idle state: standing frame 0, but still facing left (dir = 1)!
+    # Deceleration sequence: speed decreases by $10 each frame: $70, $60, $50, $40, $30, $20, $10, $00
+    expected_speeds = [0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, 0x00]
+    for i, exp_speed in enumerate(expected_speeds):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        assert mem[labels["PLAYER_SPEED"]] == exp_speed, f"Frame {i+1} expected speed {exp_speed:#04x}, got {mem[labels['PLAYER_SPEED']]:#04x}"
+        if exp_speed > 0:
+            assert mem[labels["PLAYER_STATE"]] == 1, "Player should remain in WALK state while decelerating"
+
+    # Once speed is 0: player transitions to IDLE state with standing frame 0
+    assert mem[labels["PLAYER_SPEED"]] == 0
     assert mem[labels["PLAYER_STATE"]] == 0
     assert mem[labels["PLAYER_FRAME_IDX"]] == 0
-    assert mem[labels["PLAYER_DIR"]] == 1
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 4
-    assert mem[labels["PLAYER_SUB_X"]] == 0
-
-    # PMG memory should render standing frame facing left
-    pmg_p0 = labels["PMG_PLAYER0"]
-    left_f0_addr = labels["PLAYER_ANIM_LEFT_FRAME_0"]
-    for i in range(20):
-        assert mem[pmg_p0 + 188 + i] == mem[left_f0_addr + i]
+    assert mem[labels["PLAYER_X_SUB"]] == 0
+    assert mem[labels["PLAYER_DIR"]] == 0  # Still facing right
 
 
-def test_player_bounds_clamping():
-    """Verify player cannot move past horizontal screen bounds (0..152)."""
+def test_player_walk_left_and_reversal_braking():
+    """Verify player accelerates left, and brakes before reversing when pushing right."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -192,35 +196,69 @@ def test_player_bounds_clamping():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Set player_x = 1 and move left 3 times
-    mem[labels["PLAYER_X"]] = 1
-    mem[labels["STICK0"]] = 0x0B  # Left
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 1: sub_x=1 -> x=0
-    assert mem[labels["PLAYER_X"]] == 0
-    assert mem[labels["HPOSP0"]] == 48
+    # Accelerate left (STICK0 = 0x0B) for 8 frames
+    mem[labels["STICK0"]] = 0x0B
+    for _ in range(8):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 2: sub_x=2 -> x=0
-    assert mem[labels["PLAYER_X"]] == 0
+    assert mem[labels["PLAYER_DIR"]] == 1       # Left
+    assert mem[labels["PLAYER_SPEED"]] == 0x80  # Max speed left
+    assert mem[labels["PLAYER_X"]] == 94        # Moved left (96 -> 95 -> 94)
 
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 3: sub_x=3 -> clamped at 0
-    assert mem[labels["PLAYER_X"]] == 0
-    assert mem[labels["HPOSP0"]] == 48
+    # Now press RIGHT while moving full speed left -> Active turnaround braking!
+    mem[labels["STICK0"]] = 0x07
 
-    # Reset to idle then test right clamping
-    mem[labels["STICK0"]] = 0x0F
+    # Should brake down: $70, $60, $50, $40, $30, $20, $10, $00
+    for frame in range(8):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        expected_speed = 0x70 - (frame * 0x10)
+        assert mem[labels["PLAYER_SPEED"]] == expected_speed
+
+    # After speed reached 0, direction reversed to RIGHT
+    assert mem[labels["PLAYER_SPEED"]] == 0
+    assert mem[labels["PLAYER_DIR"]] == 0
+
+    # Next frame with RIGHT still held: accelerates right!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_DIR"]] == 0
+    assert mem[labels["PLAYER_SPEED"]] == 0x10
+
+
+def test_player_bounds_clamping_with_inertia():
+    """Verify player clamps at boundaries without speed overflow."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Set player at left boundary (x = 0)
+    mem[labels["PLAYER_X"]] = 0
+    mem[labels["PLAYER_X_SUB"]] = 0
+    mem[labels["PLAYER_SPEED"]] = 0
+
+    # Try moving left (STICK0 = 0x0B)
+    mem[labels["STICK0"]] = 0x0B
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # Set player_x = 151 and move right 3 times
-    mem[labels["PLAYER_X"]] = 151
-    mem[labels["STICK0"]] = 0x07  # Right
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 1: sub_x=1 -> x=152
-    assert mem[labels["PLAYER_X"]] == 152
-    assert mem[labels["HPOSP0"]] == 48 + 152  # 200 ($C8)
+    assert mem[labels["PLAYER_X"]] == 0
+    assert mem[labels["PLAYER_SPEED"]] == 0
+    assert mem[labels["PLAYER_STATE"]] == 0
+    assert mem[labels["HPOSP0"]] == 48
 
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 2: sub_x=2 -> x=152
-    assert mem[labels["PLAYER_X"]] == 152
+    # Set player at right boundary (x = 152)
+    mem[labels["PLAYER_X"]] = 152
+    mem[labels["PLAYER_X_SUB"]] = 0
+    mem[labels["PLAYER_SPEED"]] = 0
 
-    run_subroutine(mpu, labels["PLAYER_UPDATE"])  # frame 3: sub_x=3 -> clamped at 152
-    assert mem[labels["PLAYER_X"]] == 152
-    assert mem[labels["HPOSP0"]] == 200
+    # Try moving right (STICK0 = 0x07)
+    mem[labels["STICK0"]] = 0x07
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
+    assert mem[labels["PLAYER_X"]] == 152
+    assert mem[labels["PLAYER_SPEED"]] == 0
+    assert mem[labels["PLAYER_STATE"]] == 0
+    assert mem[labels["HPOSP0"]] == 48 + 152

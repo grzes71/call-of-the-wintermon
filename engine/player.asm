@@ -18,6 +18,11 @@ PLAYER_MAX_X        = 152       ; 160 - 8 (player width)
 PLAYER_HPOS_OFFSET  = 48        ; Normal playfield starts at HPOS 48 ($30)
 PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
 
+; --- Player Inertia & Speed Constants ---
+PLAYER_MAX_SPEED    = $80       ; Maximum speed: 128/256 = 0.5 pixels/frame
+PLAYER_ACCEL        = $10       ; Acceleration: 16/256 = 0.0625 px/frame^2 (reaches max speed in 8 frames)
+PLAYER_DECEL        = $10       ; Deceleration: 16/256 = 0.0625 px/frame^2 (stops in 8 frames)
+
 ; ==============================================================================
 ; PLAYER_INIT
 ; Initializes Hero Player 0 spawn position, direction, hardware registers and PMG.
@@ -45,7 +50,8 @@ PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
     sta player_state
     lda #0
     sta player_frame_idx
-    sta player_sub_x
+    sta player_x_sub
+    sta player_speed
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
 
@@ -125,8 +131,9 @@ PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
 ; ==============================================================================
 ; PLAYER_UPDATE
 ; Called once per frame during active gameplay (GAME_PHASE_PLAYING).
-; Reads joystick STICK0, handles horizontal walk, updates animation and renders.
-; Speed: 0.5 pixels/frame (moves 1 pixel every 2 frames).
+; Reads joystick STICK0, simulates inertia (acceleration, deceleration, braking),
+; integrates sub-pixel motion, updates animation frames, and updates PMG buffer.
+; Max speed: 0.5 pixels/frame ($80 subpixels/frame).
 ; ==============================================================================
 .proc player_update
     ; 1. Poll Joystick 0
@@ -134,67 +141,173 @@ PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
     lda STICK0
     and #%00001100          ; Mask bits 2 and 3
     cmp #%00001100          ; Neither left nor right pressed?
-    beq @do_idle
+    beq @stick_idle
+    cmp #%00000000          ; Both left and right pressed?
+    beq @stick_idle
 
-    ; Check Left direction (bit 2 == 0)
-    lda STICK0
-    and #%00000100
-    beq @move_left
+    cmp #%00001000          ; Bit 2 is 0 (Left active)?
+    beq @stick_left
 
-    ; Check Right direction (bit 3 == 0)
-    lda STICK0
-    and #%00001000
-    beq @move_right
+    ; Otherwise Bit 3 is 0 (Right active)
+    jmp @stick_right
 
-@do_idle
-    ; Set idle state: stop walk animation, show standing frame (frame 0)
+@stick_idle
+    ; Coast to stop: apply friction deceleration
+    lda player_speed
+    bne @do_decel
+    jmp @apply_motion       ; Already stopped
+@do_decel
+    sec
+    sbc #PLAYER_DECEL
+    bcs @decel_ok
+    lda #0
+@decel_ok
+    sta player_speed
+    jmp @apply_motion
+
+@stick_left
+    ; If currently moving right with speed > 0, brake first
+    lda player_dir
+    bne @stick_left_accel   ; Already facing left
+    lda player_speed
+    beq @stick_left_accel   ; Speed is 0, start left motion immediately
+
+    ; Active turnaround braking while moving right
+    sec
+    lda player_speed
+    sbc #PLAYER_ACCEL
+    bcs @still_braking_right
+    lda #0
+@still_braking_right
+    sta player_speed
+    beq @braked_to_stop_right
+    jmp @apply_motion       ; Still coasting right
+@braked_to_stop_right
+    lda #PLAYER_DIR_LEFT    ; Speed reached 0: reverse direction to left
+    sta player_dir
+    jmp @apply_motion
+
+@stick_left_accel
+    lda #PLAYER_DIR_LEFT
+    sta player_dir
+    lda player_x
+    beq @at_left_wall       ; Cannot accelerate left if already at left boundary
+
+    clc
+    lda player_speed
+    adc #PLAYER_ACCEL
+    cmp #PLAYER_MAX_SPEED
+    bcc @speed_left_ok
+    lda #PLAYER_MAX_SPEED
+@speed_left_ok
+    sta player_speed
+    jmp @apply_motion
+
+@at_left_wall
+    lda #0
+    sta player_speed
+    sta player_x_sub
+    jmp @apply_motion
+
+@stick_right
+    ; If currently moving left with speed > 0, brake first
+    lda player_dir
+    beq @stick_right_accel  ; Already facing right
+    lda player_speed
+    beq @stick_right_accel  ; Speed is 0, start right motion immediately
+
+    ; Active turnaround braking while moving left
+    sec
+    lda player_speed
+    sbc #PLAYER_ACCEL
+    bcs @still_braking_left
+    lda #0
+@still_braking_left
+    sta player_speed
+    beq @braked_to_stop_left
+    jmp @apply_motion       ; Still coasting left
+@braked_to_stop_left
+    lda #PLAYER_DIR_RIGHT   ; Speed reached 0: reverse direction to right
+    sta player_dir
+    jmp @apply_motion
+
+@stick_right_accel
+    lda #PLAYER_DIR_RIGHT
+    sta player_dir
+    lda player_x
+    cmp #PLAYER_MAX_X
+    bcs @at_right_wall      ; Cannot accelerate right if already at right boundary
+
+    clc
+    lda player_speed
+    adc #PLAYER_ACCEL
+    cmp #PLAYER_MAX_SPEED
+    bcc @speed_right_ok
+    lda #PLAYER_MAX_SPEED
+@speed_right_ok
+    sta player_speed
+    jmp @apply_motion
+
+@at_right_wall
+    lda #0
+    sta player_speed
+    sta player_x_sub
+    jmp @apply_motion
+
+@apply_motion
+    ; 2. Determine state (IDLE or WALK) based on current speed
+    lda player_speed
+    bne @is_moving
+
+    ; Speed == 0: transition to IDLE state
     lda #PLAYER_STATE_IDLE
     sta player_state
     lda #0
     sta player_frame_idx
-    sta player_sub_x
+    sta player_x_sub
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
     jmp @finish_update
 
-@move_left
-    lda #PLAYER_DIR_LEFT
-    sta player_dir
+@is_moving
     lda #PLAYER_STATE_WALK
     sta player_state
 
-    ; Half speed: step 1 pixel every 2 frames
-    inc player_sub_x
-    lda player_sub_x
-    lsr
-    bcc @tick_anim
+    ; 3. Integrate sub-pixel position: player_x_sub += player_speed
+    clc
+    lda player_x_sub
+    adc player_speed
+    sta player_x_sub
+    bcc @tick_anim          ; No integer pixel step on this frame
 
-    ; Move left: clamp to PLAYER_MIN_X
-    lda player_x
-    beq @tick_anim
-    dec player_x
-    jmp @tick_anim
+    ; Step 1 pixel in player_dir
+    lda player_dir
+    bne @step_left
 
-@move_right
-    lda #PLAYER_DIR_RIGHT
-    sta player_dir
-    lda #PLAYER_STATE_WALK
-    sta player_state
-
-    ; Half speed: step 1 pixel every 2 frames
-    inc player_sub_x
-    lda player_sub_x
-    lsr
-    bcc @tick_anim
-
-    ; Move right: clamp to PLAYER_MAX_X
+@step_right
     lda player_x
     cmp #PLAYER_MAX_X
-    bcs @tick_anim
+    bcs @clamp_right
     inc player_x
+    jmp @tick_anim
+@clamp_right
+    lda #0
+    sta player_speed
+    sta player_x_sub
+    jmp @tick_anim
+
+@step_left
+    lda player_x
+    beq @clamp_left
+    dec player_x
+    jmp @tick_anim
+@clamp_left
+    lda #0
+    sta player_speed
+    sta player_x_sub
 
 @tick_anim
-    ; Advance animation timer
+    ; 4. Advance animation timer
     dec player_frame_timer
     bne @finish_update
 
@@ -210,13 +323,13 @@ PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
     sta player_frame_idx
 
 @finish_update
-    ; Update hardware horizontal position: HPOSP0 = 48 + player_x
+    ; 5. Update hardware horizontal position: HPOSP0 = 48 + player_x
     lda player_x
     clc
     adc #PLAYER_HPOS_OFFSET
     sta HPOSP0
 
-    ; Re-render current frame into PMG buffer
+    ; 6. Re-render current frame into PMG buffer
     jsr player_render_frame
     rts
 .endp
