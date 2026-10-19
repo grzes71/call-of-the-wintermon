@@ -9,7 +9,6 @@ def validate_project(project: Project) -> List[str]:
         errors.append(f"Root: version must be 1, got {project.version}")
         
     seen_ids = set()
-    
     for s_idx, sprite in enumerate(project.sprites):
         path = f"sprites[{s_idx}]"
         

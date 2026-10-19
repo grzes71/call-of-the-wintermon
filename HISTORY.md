@@ -2,6 +2,37 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-19] - Frame Clipboard Copy and Paste in Sprite Studio
+
+- **Sprite Studio Frame Clipboard ([sprite_studio/main.py](sprite_studio/main.py), [sprite_studio/widgets/timeline.py](sprite_studio/widgets/timeline.py))**:
+  - Implemented `_on_copy_frame(idx)`: copies current frame's pixel rows into `clipboard_frame_pixels` (retaining full pixel data).
+  - Implemented `_on_paste_frame(idx)`: pastes clipboard content into the selected/current active frame with undo/redo command support (`_execute_cmd("Paste Frame", ...)`).
+  - Handled height adjustments automatically: pads with zeroes or slices if clipboard content dimensions differ from target sprite height.
+  - Added "Copy Frame" (`Ctrl+C`) and "Paste Frame" (`Ctrl+V`) actions to the `Edit` menu, yielding politely to text inputs when a `QLineEdit` is focused.
+  - Added dedicated "Copy" and "Paste" buttons in `TimelineWidget` under `transform_layout`, connected via `copy_requested` and `paste_requested` signals.
+- **Sprite Compiler & Memory Architecture ([scripts/compile_sprites.py](scripts/compile_sprites.py), [main.asm](main.asm), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Sanitized animation symbol names in `compile_sprites.py` replacing non-alphanumeric characters (such as hyphens in `jump-right`) with underscores to ensure valid MADS 6502 assembly labels.
+  - Relocated `player_sprites.asm` into the `$2A30` metadata segment (utilizing free headroom before `$3000`), preventing the expanded `$5000` block from overflowing past the `$6000` Title DLIST boundary.
+- **Automated Verification ([tests/test_sprite_studio.py](tests/test_sprite_studio.py), [tests/test_memory_map.py](tests/test_memory_map.py))**:
+  - Added unit and GUI tests for frame copy/paste, undo/redo, empty clipboard safety, and timeline signal routing (13/13 passed in `test_sprite_studio.py`).
+  - Passed full test suite and memory validation (`make all`: 409 passed, 2,715 bytes headroom below $C000).
+
+## [2026-10-19] - Restore Integer Sprite ID and Description in Sprite Studio
+
+- **Sprite Studio Models & Validation ([sprite_studio/models.py](sprite_studio/models.py), [sprite_studio/validation.py](sprite_studio/validation.py))**:
+  - Restored `Sprite.id` to `int` (range 1..255) and `Sprite.description` to `str` (max 40 characters) in `Sprite` dataclass.
+  - Reinstated validation rules verifying non-boolean integer IDs, ID range bounds (1..255), uniqueness among sprites, and description string lengths.
+- **Serialization & Backward Compatibility ([sprite_studio/io.py](sprite_studio/io.py))**:
+  - Maintained safe integer conversion for legacy string IDs during `load_project`.
+  - Saved `id` as integer and `description` as string.
+- **User Interface & Undo/Redo ([sprite_studio/widgets/properties.py](sprite_studio/widgets/properties.py), [sprite_studio/widgets/sprite_list.py](sprite_studio/widgets/sprite_list.py), [sprite_studio/main.py](sprite_studio/main.py))**:
+  - Restored `spin_id` (`QSpinBox`, 1..255) and `edit_description` (`QLineEdit`) in `PropertiesWidget`.
+  - Reinstated sprite list item labeling format (`"{id}: {description}"`) and `update_sprite_display`.
+  - Updated auto-generation of unique integer IDs upon adding or duplicating sprites in `MainWindow`.
+- **Automated Verification ([tests/test_sprite_studio.py](tests/test_sprite_studio.py))**:
+  - Verified all 10 unit and GUI integration tests pass in `tests/test_sprite_studio.py`.
+  - Passed full test suite and memory validation (`make all`: 406 passed, 2,847 bytes headroom below $C000).
+
 ## [2026-10-18] - Hero Movement Inertia (Acceleration, Deceleration & Braking)
 
 - **Inertia Physics Engine ([engine/player.asm](engine/player.asm), [zeropage.asm](zeropage.asm))**:

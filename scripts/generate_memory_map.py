@@ -116,21 +116,21 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
 
 def describe_free_gap(start: int, end: int, size: int) -> str:
     """Provide clear human-readable context for what borders this free gap."""
-    if start == 0x2C1E:
+    if end == 0x2FFF:
         return "Low RAM gap before Gameplay VRAM ($3000) — vacated by scenes data"
-    if start == 0x5C6B:
+    if end == 0x5FFF:
         return "Free expansion headroom in $5000 block before Title DLIST ($6000)"
-    if start == 0x7D8C:
+    if end == 0x7FFF:
         return "Free headroom in $7000 block before ANTIC Mode E Tilesets ($8000)"
-    if start == 0x22D0:
+    if end == 0x23FF:
         return "Free headroom in $2000 block before Intro Font ($2400) — vacated by title code"
-    if start == 0x606D:
+    if start == 0x606D or end == 0x60FF:
         return "Free space after Title DLIST before DLI double buffers ($6100)"
-    if start == 0xBF6D:
+    if end == 0xBFFF:
         return "Headroom below OS ROM Kernel boundary ($C000)"
-    if start == 0x3F89:
+    if end == 0x3EFF or start == 0x3F89:
         return "Free headroom in $3000 block after Gameplay DLIST"
-    if start == 0x4FC7:
+    if end == 0x4FFF or start == 0x4FC7:
         return "Free space after Title Scroller before $5000 boundary"
     return f"Unallocated headroom: {size} bytes"
 

@@ -6,7 +6,7 @@ Projekt gry platformowej na komputery **Atari 8-bit (XL/XE)** w architekturze 65
 
 To miał być rutynowy koncert.
 
-Wombbath dawał popis growlu
+Wommbath dawał popis growlu
 
 na scenie zamku Wintermon.
 
@@ -20,7 +20,7 @@ usłyszała jego śpiew i zażądała płyt CD
 
 z najlepszym metalem na świecie.
 
-Teraz Wombbath musi zebrać albumy
+Teraz Wommbath musi zebrać albumy
 
 i dostarczyć je, zanim skończy się noc!
 

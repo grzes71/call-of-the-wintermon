@@ -201,6 +201,7 @@ dlist_intro
 ; ==============================================================================
     org TILES_META
     icl 'gen/tiles_data.asm'
+    icl 'gen/player_sprites.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
@@ -301,7 +302,6 @@ title_scroll_vram
 ; ==============================================================================
     org SCENES_DATA
     icl 'gen/sprites_data.asm'
-    icl 'gen/player_sprites.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
     icl 'engine/secrets.asm'

@@ -227,3 +227,69 @@ def test_main_window_add_copy_and_undo_redo(qapp):
     copied = window.project.sprites[2]
     assert copied.id == 1  # IDs used were {50, 2}, next smallest available ID is 1
     assert "Main Hero (Copy)" in copied.description
+
+
+def test_frame_copy_and_paste(qapp):
+    window = MainWindow()
+    window._on_add_sprite()
+    spr = window.project.sprites[0]
+    window._on_sprite_selected(spr)
+    window._on_add_frame()
+    assert len(spr.frames) == 2
+
+    # Set distinct patterns in frame 0 and frame 1
+    spr.frames[0].pixels = ["11000000"] * spr.height
+    spr.frames[1].pixels = ["00000011"] * spr.height
+
+    # Copy frame 0 to clipboard
+    window._on_frame_selected(0)
+    window._on_copy_frame()
+    assert window.clipboard_frame_pixels == ["11000000"] * spr.height
+
+    # Paste into frame 1
+    window._on_frame_selected(1)
+    window._on_paste_frame()
+    assert spr.frames[1].pixels == ["11000000"] * spr.height
+
+    # Undo should restore original frame 1 content
+    window._undo()
+    assert spr.frames[1].pixels == ["00000011"] * spr.height
+
+    # Redo should re-apply pasted content
+    window._redo()
+    assert spr.frames[1].pixels == ["11000000"] * spr.height
+
+
+def test_frame_copy_paste_empty_or_no_frame(qapp):
+    MainWindow.clipboard_frame_pixels = None
+    window = MainWindow()
+    # With no sprite selected, copy and paste should safely do nothing
+    window._on_copy_frame()
+    assert window.clipboard_frame_pixels is None
+    window._on_paste_frame()
+
+    # Add sprite but empty clipboard
+    window._on_add_sprite()
+    spr = window.project.sprites[0]
+    window._on_sprite_selected(spr)
+    original_pixels = list(spr.frames[0].pixels)
+    window._on_paste_frame()
+    assert spr.frames[0].pixels == original_pixels
+
+
+def test_timeline_copy_paste_signals(qapp):
+    from sprite_studio.widgets.timeline import TimelineWidget
+    widget = TimelineWidget()
+    widget.set_frames(3, 1)
+
+    copy_calls = []
+    paste_calls = []
+    widget.copy_requested.connect(copy_calls.append)
+    widget.paste_requested.connect(paste_calls.append)
+
+    widget.btn_copy.click()
+    assert copy_calls == [1]
+
+    widget.btn_paste.click()
+    assert paste_calls == [1]
+

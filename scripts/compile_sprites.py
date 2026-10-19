@@ -159,7 +159,8 @@ def generate_player_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
 
     for sid in sorted(sprites.keys()):
         spr = sprites[sid]
-        anim_name = spr.description.lower().strip().replace(" ", "_")
+        raw_name = spr.description.lower().strip()
+        anim_name = "".join(c if (c.isalnum() or c == "_") else "_" for c in raw_name)
         sym_name = f"player_anim_{anim_name}"
         anim_symbols[anim_name] = sym_name
 
