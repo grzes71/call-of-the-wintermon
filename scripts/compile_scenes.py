@@ -639,6 +639,7 @@ class SceneCompiledData:
     pmg_patterns: ScenePmgPatterns | None = None
     player_start_x: int = 20
     player_start_y: int = 68
+    player_color: int = 0x98
 
 
 def sanitize_symbol(name: str) -> str:
@@ -1060,14 +1061,27 @@ def parse_scene_json(
             )
         )
 
-    # Player start position (defaults to X=20, Y=68 if not defined)
+    # Player start position and color (defaults to X=20, Y=68, Color=$98 if not defined)
     player_spawn_raw = data.get("player_spawn") or scene_meta.get("player_spawn")
     if isinstance(player_spawn_raw, dict):
         player_start_x = int(player_spawn_raw.get("x", 20))
         player_start_y = int(player_spawn_raw.get("y", 68))
+        raw_color = player_spawn_raw.get("color", player_spawn_raw.get("atari_color", 0x98))
+        if isinstance(raw_color, str):
+            cleaned = raw_color.strip()
+            if cleaned.startswith("$"):
+                player_color = int(cleaned[1:], 16)
+            elif cleaned.startswith("0x") or cleaned.startswith("0X"):
+                player_color = int(cleaned[2:], 16)
+            else:
+                player_color = int(cleaned, 16)
+        else:
+            player_color = int(raw_color)
+        player_color = player_color & 0xFE
     else:
         player_start_x = 20
         player_start_y = 68
+        player_color = 0x98
 
     dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id, scene_name=name)
 
@@ -1086,7 +1100,9 @@ def parse_scene_json(
         pmg_patterns=dli_data.pmg_patterns if dli_data else None,
         player_start_x=player_start_x,
         player_start_y=player_start_y,
+        player_color=player_color,
     )
+
 
 
 def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
@@ -1134,7 +1150,9 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         lines.append(f"{prefix}_SECRET_COUNT = {len(sc.secrets)}")
         lines.append(f"{prefix}_PLAYER_START_X = {sc.player_start_x}")
         lines.append(f"{prefix}_PLAYER_START_Y = {sc.player_start_y}")
+        lines.append(f"{prefix}_PLAYER_COLOR   = ${sc.player_color:02X}")
     lines.append("")
+
 
     # Per-scene data blocks
     for idx, sc in enumerate(scenes):
@@ -1318,7 +1336,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(str(sc.player_start_x) for sc in scenes),
         "scene_player_start_y",
         "    .byte " + ", ".join(str(sc.player_start_y) for sc in scenes),
+        "scene_player_color",
+        "    .byte " + ", ".join(f"${sc.player_color:02X}" for sc in scenes),
         "",
+
         "scene_elem_count",
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_ELEM_COUNT" for sc in scenes),
         "scene_plat_count",

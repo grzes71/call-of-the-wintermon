@@ -781,13 +781,15 @@ class SceneObjectElement:
 
 PLAYER_WIDTH = 8
 PLAYER_HEIGHT = 20
+DEFAULT_PLAYER_COLOR = 0x98  # Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
 
 
 @dataclass
 class PlayerSpawn:
-    """Initial spawn position for the player character on a scene."""
+    """Initial spawn position and color for the player character on a scene."""
     x: int
     y: int
+    color: int = DEFAULT_PLAYER_COLOR
 
     @property
     def width(self) -> int:
@@ -806,11 +808,19 @@ class PlayerSpawn:
         return self.y + PLAYER_HEIGHT
 
     def clone(self) -> PlayerSpawn:
-        return PlayerSpawn(int(self.x), int(self.y))
+        return PlayerSpawn(int(self.x), int(self.y), int(self.color))
 
     def validate(self, scene_width: Optional[int] = None, scene_height: Optional[int] = None) -> None:
         if not isinstance(self.x, int) or not isinstance(self.y, int):
             raise ModelValidationError("Player spawn coordinates must be integers.")
+        if not isinstance(self.color, int) or not (0 <= self.color <= 255):
+            raise ModelValidationError(
+                f"Player color must be an integer between 0 and 255 ($00-$FF), got {self.color}."
+            )
+        if (self.color & 1) != 0:
+            raise ModelValidationError(
+                f"Invalid Atari player color 0x{self.color:02X}: lowest bit must be 0 (even luminance step)."
+            )
         if scene_width is not None and (self.x < 0 or (self.x + PLAYER_WIDTH) > scene_width):
             raise ModelValidationError(
                 f"Player spawn x={self.x} (width={PLAYER_WIDTH}) out of scene bounds (scene width={scene_width})."
@@ -820,10 +830,11 @@ class PlayerSpawn:
                 f"Player spawn y={self.y} (height={PLAYER_HEIGHT}) out of scene bounds (scene height={scene_height})."
             )
 
-    def to_dict(self) -> dict[str, int]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "x": int(self.x),
             "y": int(self.y),
+            "color": int(self.color),
         }
 
     @classmethod
@@ -832,7 +843,24 @@ class PlayerSpawn:
             raise ModelValidationError("Player spawn data must be a dictionary.")
         if "x" not in data or "y" not in data:
             raise ModelValidationError("Missing required PlayerSpawn fields 'x' and 'y'.")
-        return cls(x=int(data["x"]), y=int(data["y"]))
+
+        color_val = DEFAULT_PLAYER_COLOR
+        raw_color = data.get("color") if "color" in data else data.get("atari_color")
+        if raw_color is not None:
+            if isinstance(raw_color, str):
+                cleaned = raw_color.strip()
+                if cleaned.startswith("$"):
+                    color_val = int(cleaned[1:], 16)
+                elif cleaned.startswith("0x") or cleaned.startswith("0X"):
+                    color_val = int(cleaned[2:], 16)
+                else:
+                    color_val = int(cleaned, 16)
+            else:
+                color_val = int(raw_color)
+            color_val = color_val & 0xFE
+
+        return cls(x=int(data["x"]), y=int(data["y"]), color=color_val)
+
 
 
 DEFAULT_SCENE_WIDTH = 160
@@ -1060,12 +1088,21 @@ class Scene:
         if self.player_spawn is not None:
             self.player_spawn.validate(scene_width=self.width, scene_height=self.height)
 
-    def set_player_spawn(self, x: int, y: int) -> PlayerSpawn:
-        """Set or update player initial spawn position on the scene."""
-        spawn = PlayerSpawn(x=int(x), y=int(y))
+    def set_player_spawn(self, x: int, y: int, color: Optional[int] = None) -> PlayerSpawn:
+        """Set or update player initial spawn position and color on the scene."""
+        if color is None:
+            color = self.player_spawn.color if self.player_spawn else DEFAULT_PLAYER_COLOR
+        spawn = PlayerSpawn(x=int(x), y=int(y), color=int(color))
         spawn.validate(scene_width=self.width, scene_height=self.height)
         self.player_spawn = spawn
         return spawn
+
+    def set_player_spawn_color(self, color: int) -> None:
+        """Set or update player initial color on the scene."""
+        if self.player_spawn is not None:
+            self.player_spawn.color = int(color) & 0xFE
+            self.player_spawn.validate(scene_width=self.width, scene_height=self.height)
+
 
     def remove_player_spawn(self) -> Optional[PlayerSpawn]:
         """Remove player spawn from the scene."""

@@ -691,3 +691,30 @@ class MovePlayerSpawnCommand(SceneBaseCommand):
             self.scene.player_spawn.y = self.old_y
         self.notify()
 
+
+class ChangePlayerSpawnColorCommand(SceneBaseCommand):
+    """Command to change the player spawn color."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        old_color: int,
+        new_color: int,
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(f"Change player color to ${new_color:02X}", callback)
+        self.scene = scene
+        self.old_color = int(old_color) & 0xFE
+        self.new_color = int(new_color) & 0xFE
+
+    def redo(self) -> None:
+        if self.scene.player_spawn:
+            self.scene.player_spawn.color = self.new_color
+        self.notify()
+
+    def undo(self) -> None:
+        if self.scene.player_spawn:
+            self.scene.player_spawn.color = self.old_color
+        self.notify()
+
+

@@ -168,3 +168,133 @@ def is_valid_atari_color_string(value: str) -> bool:
         return True
     except (ValueError, TypeError):
         return False
+
+
+HUE_NAMES = [
+    "Grayscale", "Gold", "Orange", "Red-Orange",
+    "Pink", "Magenta", "Purple", "Blue-Violet",
+    "Blue", "Cyan", "Aqua", "Green-Cyan",
+    "Green", "Yellow-Green", "Olive", "Brown",
+]
+
+
+try:
+    from PySide6.QtCore import Qt, Signal
+    from PySide6.QtGui import QColor, QFont
+    from PySide6.QtWidgets import (
+        QDialog,
+        QDialogButtonBox,
+        QGridLayout,
+        QHBoxLayout,
+        QLabel,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
+    )
+
+    class AtariColorPickerDialog(QDialog):
+        """Interactive visual dialog for selecting an Atari 8-bit GTIA register color (16 hues x 8 luminances)."""
+
+        def __init__(self, parent: Optional[QWidget] = None, initial_color: int = 0x98) -> None:
+            super().__init__(parent)
+            self.setWindowTitle("Select Atari GTIA Color")
+            self.setModal(True)
+            self.setFixedSize(540, 380)
+
+            self._selected_color = int(initial_color) & 0xFE
+            self._color_buttons: dict[int, QPushButton] = {}
+
+            layout = QVBoxLayout(self)
+            layout.setSpacing(10)
+            layout.setContentsMargins(12, 12, 12, 12)
+
+            # Header / Selected color preview
+            header_widget = QWidget()
+            h_layout = QHBoxLayout(header_widget)
+            h_layout.setContentsMargins(0, 0, 0, 0)
+            h_layout.setSpacing(10)
+
+            self.preview_swatch = QLabel()
+            self.preview_swatch.setFixedSize(48, 32)
+            self.preview_swatch.setStyleSheet("border: 2px solid #555; border-radius: 3px;")
+            h_layout.addWidget(self.preview_swatch)
+
+            self.info_label = QLabel()
+            f = self.info_label.font()
+            f.setBold(True)
+            self.info_label.setFont(f)
+            h_layout.addWidget(self.info_label)
+            h_layout.addStretch()
+
+            layout.addWidget(header_widget)
+
+            # Palette grid (8 rows = luminances 0, 2, 4, 6, 8, 10, 12, 14; 16 columns = hues 0..15)
+            grid_widget = QWidget()
+            grid = QGridLayout(grid_widget)
+            grid.setSpacing(2)
+            grid.setContentsMargins(0, 0, 0, 0)
+
+            for lum_idx, lum in enumerate(range(0, 16, 2)):
+                for hue in range(16):
+                    c_val = (hue << 4) | lum
+                    btn = QPushButton()
+                    btn.setFixedSize(28, 24)
+                    hex_rgb = atari_color_to_hex_rgb(c_val)
+                    hue_name = HUE_NAMES[hue]
+                    tip = f"${c_val:02X} ({c_val})\nHue {hue} ({hue_name}), Lum {lum}\n{hex_rgb}"
+                    btn.setToolTip(tip)
+                    btn.clicked.connect(lambda checked=False, val=c_val: self._select_color(val))
+                    self._color_buttons[c_val] = btn
+                    grid.addWidget(btn, lum_idx, hue)
+
+            layout.addWidget(grid_widget)
+
+            # Dialog buttons (OK / Cancel)
+            button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            button_box.accepted.connect(self.accept)
+            button_box.rejected.connect(self.reject)
+            layout.addWidget(button_box)
+
+            self._update_ui()
+
+        def _select_color(self, val: int) -> None:
+            self._selected_color = val & 0xFE
+            self._update_ui()
+
+        def _update_ui(self) -> None:
+            hex_rgb = atari_color_to_hex_rgb(self._selected_color)
+            self.preview_swatch.setStyleSheet(
+                f"background-color: {hex_rgb}; border: 2px solid #ffffff; border-radius: 4px;"
+            )
+            hue = (self._selected_color >> 4) & 0x0F
+            lum = self._selected_color & 0x0E
+            hue_name = HUE_NAMES[hue]
+            self.info_label.setText(
+                f"Selected: ${self._selected_color:02X} ({self._selected_color}) | "
+                f"RGB: {hex_rgb} | {hue_name} (Lum: {lum})"
+            )
+
+            for c_val, btn in self._color_buttons.items():
+                c_hex = atari_color_to_hex_rgb(c_val)
+                if c_val == self._selected_color:
+                    btn.setStyleSheet(
+                        f"background-color: {c_hex}; border: 2px solid #ffffff; border-radius: 2px;"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        f"background-color: {c_hex}; border: 1px solid #222; border-radius: 2px;"
+                    )
+
+        def selected_color(self) -> int:
+            return self._selected_color
+
+        @classmethod
+        def get_color(cls, parent: Optional[QWidget] = None, initial_color: int = 0x98) -> tuple[int, bool]:
+            dlg = cls(parent=parent, initial_color=initial_color)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                return dlg.selected_color(), True
+            return initial_color, False
+
+except ImportError:
+    pass
+

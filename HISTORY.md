@@ -2,7 +2,33 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-19] - Frame Clipboard Copy and Paste in Sprite Studio
+## [2026-10-19] - Per-Scene Player 0 Color Configuration in Scene Editor and Engine
+
+- **Scene Model & Serialization ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:
+  - Added `DEFAULT_PLAYER_COLOR = 0x98` and `color` attribute to [PlayerSpawn](atari-scene-editor/src/scene_editor/scene_model.py) dataclass.
+  - Implemented GTIA register validation for `color` (integer in range 0..255, lowest bit must be 0 for even luminance step).
+  - Updated `to_dict` and `from_dict` to serialize/deserialize player color (supporting both integer and `$XX`/`0xXX` hex string formats, defaulting to `$98`).
+  - Added `set_player_spawn_color(color)` helper to [Scene](atari-scene-editor/src/scene_editor/scene_model.py) and updated `set_player_spawn` to retain/accept color.
+- **Palette Dialog & Commands ([atari-scene-editor/src/scene_editor/atari_palette.py](atari-scene-editor/src/scene_editor/atari_palette.py), [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - Added [AtariColorPickerDialog](atari-scene-editor/src/scene_editor/atari_palette.py) providing an interactive 16x8 GTIA matrix (16 hues x 8 luminances) with live preview swatch, hex/RGB labels, and `get_color()` modal helper.
+  - Implemented [ChangePlayerSpawnColorCommand](atari-scene-editor/src/scene_editor/commands.py) with full Undo/Redo stack integration.
+  - Ensured [MovePlayerSpawnCommand](atari-scene-editor/src/scene_editor/commands.py) and [SetPlayerSpawnCommand](atari-scene-editor/src/scene_editor/commands.py) preserve the configured color.
+- **Graphics Item & Editor UI ([atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py), [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Updated [PlayerSpawnGraphicsItem](atari-scene-editor/src/scene_editor/scene_items.py) to dynamically paint the hero torso and helmet using the active scene color converted via `atari_color_to_rgb`, and appended color details to the tooltip.
+  - Added Hero Color controls to [MainWindow](atari-scene-editor/src/scene_editor/main_window.py) Player Start property panel (even-step `QSpinBox`, hex label, live color swatch button, and "Palette..." dialog button).
+- **Scene Compiler & Data Generation ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Extended `SceneCompiledData` with `player_color` (defaulting to `$98`).
+  - Parsed `color`/`atari_color` from `player_spawn` in `parse_scene_json`.
+  - Emitted per-scene equates (`SCENE_{sym}_PLAYER_COLOR = $XX`) and master Structure-of-Arrays table `scene_player_color` in `gen/scenes_data.asm`.
+- **6502 Memory & Engine Architecture ([zeropage.asm](zeropage.asm), [engine/player.asm](engine/player.asm))**:
+  - Allocated `player_color = $CB` in Zero Page.
+  - Updated `player_init` in [engine/player.asm](engine/player.asm) to load `scene_player_color,x`, initializing `player_color`, `COLPM0`, and shadow `PCOLR0` dynamically per scene.
+  - Renamed constant `PLAYER_COLOR` to `PLAYER_DEFAULT_COLOR` in `engine/player.asm` to avoid MADS symbol collision.
+- **Scene Assets & Automated Verification ([scenes/01-forest.json](scenes/01-forest.json), [scenes/02-forest-castle.json](scenes/02-forest-castle.json), [tests/test_player_spawn.py](tests/test_player_spawn.py), [tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Dynamically assert player initialization colors against the active ROM table (`scene_player_color`), verifying distinct colors across scenes without breaking when scenes are reconfigured via editor.
+  - Added unit, integration, and py65 emulation tests verifying model validation, command undo/redo, UI interaction, compilation to assembly, and 6502 `player_init` execution loading distinct colors per scene (413/413 passed).
+
+
 
 - **Sprite Studio Frame Clipboard ([sprite_studio/main.py](sprite_studio/main.py), [sprite_studio/widgets/timeline.py](sprite_studio/widgets/timeline.py))**:
   - Implemented `_on_copy_frame(idx)`: copies current frame's pixel rows into `clipboard_frame_pixels` (retaining full pixel data).

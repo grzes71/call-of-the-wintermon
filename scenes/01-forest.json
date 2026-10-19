@@ -263,7 +263,8 @@
   ],
   "player_spawn": {
     "x": 96,
-    "y": 68
+    "y": 68,
+    "color": 14
   },
   "row_color_profiles": [
     1,

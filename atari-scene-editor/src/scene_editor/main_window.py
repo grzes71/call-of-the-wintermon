@@ -73,8 +73,10 @@ from .commands import (
     ResizePlatformCommand,
     ResizeSceneCommand,
     SetPlayerSpawnCommand,
+    ChangePlayerSpawnColorCommand,
     UpdateSceneObjectPropsCommand,
 )
+from .atari_palette import AtariColorPickerDialog, atari_color_to_hex_rgb
 from .crop_editor import CropEditorWidget
 from .json_serializer import (
     CorruptedFileError,
@@ -84,8 +86,10 @@ from .json_serializer import (
     find_project_root,
 )
 from .scene_model import (
+    DEFAULT_PLAYER_COLOR,
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
+
     ENEMY_SPEED_FAST,
     ENEMY_SPEED_LABELS,
     ENEMY_SPEED_MEDIUM,
@@ -724,8 +728,41 @@ class MainWindow(QMainWindow):
         self.player_y_spin.valueChanged.connect(self._on_player_spawn_y_changed)
         pl_form.addRow("Position Y (px):", self.player_y_spin)
 
+        # Player 0 Hero Color Controls
+        color_row_widget = QWidget()
+        color_row_layout = QHBoxLayout(color_row_widget)
+        color_row_layout.setContentsMargins(0, 0, 0, 0)
+        color_row_layout.setSpacing(6)
+
+        self.player_color_spin = QSpinBox()
+        self.player_color_spin.setRange(0, 254)
+        self.player_color_spin.setSingleStep(2)
+        self.player_color_spin.setValue(DEFAULT_PLAYER_COLOR)
+        self.player_color_spin.valueChanged.connect(self._on_player_color_spin_changed)
+
+        self.player_color_hex_lbl = QLabel("$98")
+        self.player_color_hex_lbl.setMinimumWidth(32)
+
+        self.player_color_swatch_btn = QPushButton()
+        self.player_color_swatch_btn.setFixedSize(32, 22)
+        self.player_color_swatch_btn.setToolTip("Click to pick color from Atari GTIA palette")
+        self.player_color_swatch_btn.clicked.connect(self._on_pick_player_color_clicked)
+
+        self.btn_pick_player_color = QPushButton("Palette...")
+        self.btn_pick_player_color.setToolTip("Open Atari GTIA color palette dialog")
+        self.btn_pick_player_color.clicked.connect(self._on_pick_player_color_clicked)
+
+        color_row_layout.addWidget(self.player_color_spin)
+        color_row_layout.addWidget(self.player_color_hex_lbl)
+        color_row_layout.addWidget(self.player_color_swatch_btn)
+        color_row_layout.addWidget(self.btn_pick_player_color)
+        color_row_layout.addStretch()
+
+        pl_form.addRow("Hero Color (GTIA):", color_row_widget)
+
         self.player_snap_plat_combo = QComboBox()
         pl_form.addRow("Target Platform:", self.player_snap_plat_combo)
+
 
         self.btn_snap_player = QPushButton("Snap to Platform Feet")
         self.btn_snap_player.clicked.connect(self._on_snap_player_to_platform)
@@ -3173,6 +3210,41 @@ class MainWindow(QMainWindow):
             self.player_snap_plat_combo.setCurrentIndex(idx)
         self.player_snap_plat_combo.blockSignals(False)
 
+    def _on_player_color_spin_changed(self, val: int) -> None:
+        if self._is_updating_player_spawn or self.scene_model.player_spawn is None:
+            return
+        val_even = val & 0xFE
+        if val != val_even:
+            self.player_color_spin.blockSignals(True)
+            self.player_color_spin.setValue(val_even)
+            self.player_color_spin.blockSignals(False)
+            val = val_even
+
+        if val == self.scene_model.player_spawn.color:
+            return
+
+        cmd = ChangePlayerSpawnColorCommand(
+            self.scene_model,
+            self.scene_model.player_spawn.color,
+            val,
+            callback=self._on_player_spawn_command_executed,
+        )
+        self.undo_stack.push(cmd)
+
+    def _on_pick_player_color_clicked(self) -> None:
+        if self.scene_model.player_spawn is None:
+            return
+        cur_color = self.scene_model.player_spawn.color
+        new_color, ok = AtariColorPickerDialog.get_color(self, cur_color)
+        if ok and new_color != cur_color:
+            cmd = ChangePlayerSpawnColorCommand(
+                self.scene_model,
+                cur_color,
+                new_color,
+                callback=self._on_player_spawn_command_executed,
+            )
+            self.undo_stack.push(cmd)
+
     def _update_player_spawn_property_panel(self) -> None:
         if not hasattr(self, "player_status_lbl"):
             return
@@ -3185,6 +3257,11 @@ class MainWindow(QMainWindow):
                 self.btn_set_player_spawn.setEnabled(True)
                 self.player_x_spin.setEnabled(False)
                 self.player_y_spin.setEnabled(False)
+                self.player_color_spin.setEnabled(False)
+                self.player_color_swatch_btn.setEnabled(False)
+                self.btn_pick_player_color.setEnabled(False)
+                self.player_color_hex_lbl.setText("$--")
+                self.player_color_swatch_btn.setStyleSheet("background-color: #333; border: 1px solid #555; border-radius: 2px;")
                 self.player_snap_plat_combo.setEnabled(False)
                 self.btn_snap_player.setEnabled(False)
                 self.btn_remove_player_spawn.setEnabled(False)
@@ -3196,12 +3273,27 @@ class MainWindow(QMainWindow):
                 self.btn_set_player_spawn.setEnabled(False)
                 self.player_x_spin.setEnabled(True)
                 self.player_y_spin.setEnabled(True)
+                self.player_color_spin.setEnabled(True)
+                self.player_color_swatch_btn.setEnabled(True)
+                self.btn_pick_player_color.setEnabled(True)
+
                 self.player_x_spin.blockSignals(True)
                 self.player_y_spin.blockSignals(True)
+                self.player_color_spin.blockSignals(True)
+
                 self.player_x_spin.setValue(spawn.x)
                 self.player_y_spin.setValue(spawn.y)
+                self.player_color_spin.setValue(spawn.color)
+
                 self.player_x_spin.blockSignals(False)
                 self.player_y_spin.blockSignals(False)
+                self.player_color_spin.blockSignals(False)
+
+                hex_rgb = atari_color_to_hex_rgb(spawn.color)
+                self.player_color_hex_lbl.setText(f"${spawn.color:02X}")
+                self.player_color_swatch_btn.setStyleSheet(
+                    f"background-color: {hex_rgb}; border: 1px solid #888; border-radius: 2px;"
+                )
 
                 has_plats = len(self.scene_model.platforms) > 0
                 self.player_snap_plat_combo.setEnabled(has_plats)
@@ -3209,4 +3301,5 @@ class MainWindow(QMainWindow):
                 self.btn_remove_player_spawn.setEnabled(True)
         finally:
             self._is_updating_player_spawn = False
+
 

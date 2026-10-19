@@ -15,7 +15,11 @@ from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QApplication
 import pytest
 
-from scene_editor.commands import MovePlayerSpawnCommand, SetPlayerSpawnCommand
+from scene_editor.commands import (
+    ChangePlayerSpawnColorCommand,
+    MovePlayerSpawnCommand,
+    SetPlayerSpawnCommand,
+)
 from scene_editor.json_serializer import SceneSerializer
 from scene_editor.main_window import MainWindow
 from scene_editor.scene_items import PlayerSpawnGraphicsItem
@@ -78,25 +82,42 @@ class TestPlayerSpawnModel:
             PlayerSpawn(x=20, y=96 - PLAYER_HEIGHT + 1).validate(160, 96)
 
     def test_clone_and_to_dict_from_dict(self):
-        spawn = PlayerSpawn(x=32, y=50)
+        spawn = PlayerSpawn(x=32, y=50, color=0x38)
         clone = spawn.clone()
         assert clone == spawn
         assert clone is not spawn
 
         d = spawn.to_dict()
-        assert d == {"x": 32, "y": 50}
+        assert d == {"x": 32, "y": 50, "color": 0x38}
 
         spawn_from_d = PlayerSpawn.from_dict(d)
         assert spawn_from_d == spawn
+        assert spawn_from_d.color == 0x38
+
+    def test_color_validation(self):
+        # Valid even colors
+        PlayerSpawn(x=10, y=10, color=0x00).validate(160, 96)
+        PlayerSpawn(x=10, y=10, color=0xFE).validate(160, 96)
+
+        # Invalid: odd luminance
+        with pytest.raises(ModelValidationError, match="lowest bit must be 0"):
+            PlayerSpawn(x=10, y=10, color=0x99).validate(160, 96)
+
+        # Invalid: out of range
+        with pytest.raises(ModelValidationError, match="between 0 and 255"):
+            PlayerSpawn(x=10, y=10, color=-2).validate(160, 96)
+        with pytest.raises(ModelValidationError, match="between 0 and 255"):
+            PlayerSpawn(x=10, y=10, color=256).validate(160, 96)
 
     def test_scene_model_player_spawn_helpers(self):
         scene = Scene(name="Test", width=160, height=96)
         assert scene.player_spawn is None
 
-        scene.set_player_spawn(30, 40)
+        scene.set_player_spawn(30, 40, color=0x28)
         assert scene.player_spawn is not None
         assert scene.player_spawn.x == 30
         assert scene.player_spawn.y == 40
+        assert scene.player_spawn.color == 0x28
 
         scene.validate()
 
@@ -116,16 +137,18 @@ class TestPlayerSpawnSerialization:
 
     def test_round_trip_with_player_spawn(self):
         scene = Scene(name="Forest Spawn", width=160, height=96)
-        scene.set_player_spawn(44, 52)
+        scene.set_player_spawn(44, 52, color=0x78)
 
         data = SceneSerializer.to_dict(scene)
         assert "player_spawn" in data
-        assert data["player_spawn"] == {"x": 44, "y": 52}
+        assert data["player_spawn"] == {"x": 44, "y": 52, "color": 0x78}
 
         restored = SceneSerializer.from_dict(data)
         assert restored.player_spawn is not None
         assert restored.player_spawn.x == 44
         assert restored.player_spawn.y == 52
+        assert restored.player_spawn.color == 0x78
+
 
     def test_backward_compatibility_when_omitted(self):
         raw_json = {
@@ -184,6 +207,18 @@ class TestPlayerSpawnCommands:
         assert scene.player_spawn.x == 10
         assert scene.player_spawn.y == 20
 
+    def test_change_player_spawn_color_command(self):
+        scene = Scene(name="ColorTest", width=160, height=96)
+        scene.set_player_spawn(10, 20, color=0x98)
+
+        cmd = ChangePlayerSpawnColorCommand(scene, 0x98, 0x38)
+        cmd.redo()
+        assert scene.player_spawn.color == 0x38
+
+        cmd.undo()
+        assert scene.player_spawn.color == 0x98
+
+
 
 class TestSceneCompilerPlayerSpawn:
     """Tests for compiler parsing and assembly generation of player start tables."""
@@ -235,6 +270,7 @@ class TestSceneCompilerPlayerSpawn:
             primary_tileset_id=3,
             player_start_x=24,
             player_start_y=68,
+            player_color=0x98,
         )
         sc2 = SceneCompiledData(
             file_stem="02-castle",
@@ -245,16 +281,20 @@ class TestSceneCompilerPlayerSpawn:
             primary_tileset_id=0,
             player_start_x=40,
             player_start_y=52,
+            player_color=0x28,
         )
 
         asm = generate_scenes_asm([sc1, sc2])
         assert "SCENE_FOREST_PLAYER_START_X = 24" in asm
         assert "SCENE_FOREST_PLAYER_START_Y = 68" in asm
+        assert "SCENE_FOREST_PLAYER_COLOR   = $98" in asm
         assert "SCENE_CASTLE_PLAYER_START_X = 40" in asm
         assert "SCENE_CASTLE_PLAYER_START_Y = 52" in asm
+        assert "SCENE_CASTLE_PLAYER_COLOR   = $28" in asm
 
         assert "scene_player_start_x\n    .byte 24, 40" in asm
         assert "scene_player_start_y\n    .byte 68, 52" in asm
+        assert "scene_player_color\n    .byte $98, $28" in asm
 
 
 class TestMainWindowPlayerSpawnUI:
@@ -271,6 +311,7 @@ class TestMainWindowPlayerSpawnUI:
         assert window.btn_set_player_spawn.isEnabled()
         assert not window.player_x_spin.isEnabled()
         assert not window.player_y_spin.isEnabled()
+        assert not window.player_color_spin.isEnabled()
         assert not window.btn_remove_player_spawn.isEnabled()
         assert window.scene_view.player_spawn_item is None
 
@@ -282,11 +323,14 @@ class TestMainWindowPlayerSpawnUI:
         assert window.scene_model.player_spawn is not None
         assert window.scene_model.player_spawn.x == 20
         assert window.scene_model.player_spawn.y == 68
+        assert window.scene_model.player_spawn.color == 0x98
         assert not window.btn_set_player_spawn.isEnabled()
         assert window.player_x_spin.isEnabled()
         assert window.player_y_spin.isEnabled()
+        assert window.player_color_spin.isEnabled()
         assert window.player_x_spin.value() == 20
         assert window.player_y_spin.value() == 68
+        assert window.player_color_spin.value() == 0x98
         assert window.scene_view.player_spawn_item is not None
 
         # Click remove spawn button
@@ -315,6 +359,28 @@ class TestMainWindowPlayerSpawnUI:
         assert window.scene_model.player_spawn.y == 68
         window.undo_stack.undo()
         assert window.scene_model.player_spawn.x == 20
+
+    def test_player_color_controls_in_ui(self, test_app: MainWindow):
+        window = test_app
+        window.btn_set_player_spawn.click()
+        assert window.player_color_spin.value() == 0x98
+        assert window.player_color_hex_lbl.text() == "$98"
+
+        # Change color via spinbox to $28 (40)
+        window.player_color_spin.setValue(0x28)
+        assert window.scene_model.player_spawn.color == 0x28
+        assert window.player_color_hex_lbl.text() == "$28"
+        assert "$28" in window.scene_view.player_spawn_item.toolTip()
+
+        # Odd value is clamped to even
+        window.player_color_spin.setValue(0x29)
+        assert window.scene_model.player_spawn.color == 0x28
+        assert window.player_color_spin.value() == 0x28
+
+        # Undo changes color back to $98
+        window.undo_stack.undo()
+        assert window.scene_model.player_spawn.color == 0x98
+        assert window.player_color_spin.value() == 0x98
 
     def test_snap_to_platform(self, test_app: MainWindow):
         window = test_app
@@ -363,3 +429,4 @@ class TestMainWindowPlayerSpawnUI:
         assert window.scene_model.player_spawn.y == 40
         assert window.player_x_spin.value() == 50
         assert window.player_y_spin.value() == 40
+

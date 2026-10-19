@@ -6,7 +6,7 @@
       "description": "right",
       "width": 8,
       "height": 20,
-      "color": 0,
+      "color": 255,
       "animation": {
         "frame_duration": 4,
         "loop": true
@@ -139,7 +139,7 @@
       "description": "left",
       "width": 8,
       "height": 20,
-      "color": 0,
+      "color": 255,
       "animation": {
         "frame_duration": 4,
         "loop": true
@@ -272,7 +272,7 @@
       "description": "jump-right",
       "width": 8,
       "height": 20,
-      "color": 0,
+      "color": 255,
       "animation": {
         "frame_duration": 10,
         "loop": true
@@ -357,7 +357,7 @@
       "description": "jump-left",
       "width": 8,
       "height": 20,
-      "color": 0,
+      "color": 255,
       "animation": {
         "frame_duration": 10,
         "loop": true
@@ -433,6 +433,43 @@
             "01100000",
             "11100000",
             "11000000"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "description": "fall",
+      "width": 8,
+      "height": 20,
+      "color": 0,
+      "animation": {
+        "frame_duration": 4,
+        "loop": true
+      },
+      "frames": [
+        {
+          "pixels": [
+            "00001000",
+            "00001000",
+            "00011000",
+            "00111110",
+            "11111111",
+            "00011000",
+            "10000001",
+            "11100111",
+            "01111110",
+            "00111100",
+            "00011000",
+            "00111000",
+            "00111000",
+            "00111000",
+            "01111100",
+            "01111100",
+            "01101100",
+            "11000110",
+            "11000110",
+            "11000110"
           ]
         }
       ]

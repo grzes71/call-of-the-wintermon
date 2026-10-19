@@ -663,9 +663,11 @@ class PlayerSpawnGraphicsItem(QGraphicsItem):
         self.player_spawn = player_spawn
         self.setPos(QPointF(player_spawn.x, player_spawn.y))
 
+        color_val = getattr(player_spawn, "color", 0x98)
         tip = (
             f"[Player Start]\n"
             f"Coordinates: X={player_spawn.x}, Y={player_spawn.y}\n"
+            f"Hero Color: ${color_val:02X} ({color_val})\n"
             f"Hardware: Atari Player 0 (Hero, 8×20 px)"
         )
         self.setToolTip(tip)
@@ -684,16 +686,22 @@ class PlayerSpawnGraphicsItem(QGraphicsItem):
         w = PLAYER_WIDTH
         h = PLAYER_HEIGHT
 
+        # Resolve dynamic hero color from scene model
+        color_val = getattr(self.player_spawn, "color", 0x98) if self.player_spawn else 0x98
+        r, g, b = atari_color_to_rgb(color_val)
+        hero_color = QColor(r, g, b)
+        helmet_color = hero_color.lighter(120) if hero_color.lightness() < 200 else hero_color.darker(120)
+
         # 1. Base shadow / silhouette
         painter.fillRect(QRectF(1, 1, w - 2, h - 2), QColor(20, 24, 30, 220))
 
-        # 2. Hero Head (helmet/hair: cyan #00d2d3, face skin: #f5cd79)
-        painter.fillRect(QRectF(2, 1, 4, 3), QColor(0, 210, 211))     # Helmet
+        # 2. Hero Head (helmet/hair: tinted with hero color, face skin: #f5cd79)
+        painter.fillRect(QRectF(2, 1, 4, 3), helmet_color)             # Helmet
         painter.fillRect(QRectF(2, 4, 4, 3), QColor(245, 205, 121))   # Face
         painter.fillRect(QRectF(4, 5, 1, 1), QColor(30, 30, 30))      # Eye
 
-        # 3. Hero Torso (armor/tunic: Player 0 royal cyan #0984e3)
-        painter.fillRect(QRectF(1, 7, 6, 7), QColor(9, 132, 227))
+        # 3. Hero Torso (armor/tunic: Player 0 active Atari color)
+        painter.fillRect(QRectF(1, 7, 6, 7), hero_color)
 
         # 4. Belt / Accent (gold #fed330)
         painter.fillRect(QRectF(1, 14, 6, 1), QColor(254, 211, 48))
@@ -701,6 +709,7 @@ class PlayerSpawnGraphicsItem(QGraphicsItem):
         # 5. Boots / Legs (dark navy #2c3e50)
         painter.fillRect(QRectF(1, 15, 2, 5), QColor(44, 62, 80))
         painter.fillRect(QRectF(5, 15, 2, 5), QColor(44, 62, 80))
+
 
         # 6. Outline border
         painter.setPen(QPen(QColor(0, 0, 0, 200), 1))

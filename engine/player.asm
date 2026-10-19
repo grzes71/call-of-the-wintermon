@@ -16,7 +16,7 @@ PLAYER_STATE_WALK   = 1
 PLAYER_MIN_X        = 0
 PLAYER_MAX_X        = 152       ; 160 - 8 (player width)
 PLAYER_HPOS_OFFSET  = 48        ; Normal playfield starts at HPOS 48 ($30)
-PLAYER_COLOR        = $98       ; Royal cyan/blue for Player 0 (COLPM0 / PCOLR0)
+PLAYER_DEFAULT_COLOR = $98       ; Royal cyan/blue default for Player 0 (COLPM0 / PCOLR0)
 
 ; --- Player Inertia & Speed Constants ---
 PLAYER_MAX_SPEED    = $80       ; Maximum speed: 128/256 = 0.5 pixels/frame
@@ -55,10 +55,12 @@ PLAYER_DECEL        = $10       ; Deceleration: 16/256 = 0.0625 px/frame^2 (stop
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
 
-    ; 3. Setup GTIA hardware registers for Player 0
-    lda #PLAYER_COLOR
+    ; 3. Setup GTIA hardware registers for Player 0 from active scene data
+    lda scene_player_color,x
+    sta player_color
     sta COLPM0
     sta PCOLR0
+
 
     lda #0                  ; Normal width 1x (8 color clocks)
     sta SIZEP0

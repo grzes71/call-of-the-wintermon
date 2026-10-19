@@ -42,10 +42,13 @@ def test_player_init_scene0():
     assert mem[labels["PLAYER_SPEED"]] == 0
 
     # 3. Hardware registers
+    expected_color_0 = mem[labels["SCENE_PLAYER_COLOR"]]
     assert mem[labels["HPOSP0"]] == 48 + 96  # 144 ($90)
     assert mem[labels["SIZEP0"]] == 0        # 1x normal width
-    assert mem[labels["COLPM0"]] == 0x98     # Cyan / blue hero color
-    assert mem[labels["PCOLR0"]] == 0x98
+    assert mem[labels["COLPM0"]] == expected_color_0
+    assert mem[labels["PCOLR0"]] == expected_color_0
+    assert mem[labels["PLAYER_COLOR"]] == expected_color_0
+
 
     # 4. PMG memory verification
     # Scanlines before 188 must be $00
@@ -63,6 +66,33 @@ def test_player_init_scene0():
     # Scanlines after 207 must be $00
     for y in range(208, 256):
         assert mem[pmg_p0 + y] == 0x00, f"Scanline {y} after player must be 0"
+
+
+def test_player_init_scene1_custom_color():
+    """Verify player_init initializes Player 0 on Scene 1 with scene-specific player color."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    scene0_color = mem[labels["SCENE_PLAYER_COLOR"]]
+    scene1_color = mem[labels["SCENE_PLAYER_COLOR"] + 1]
+
+    # Verify that Scene 1 has a distinct color configured compared to Scene 0
+    assert scene1_color != scene0_color
+
+    # Initialize Player 0 on Scene 1 (Forest Castle: start_x=90, start_y=68)
+    mem[labels["ACTIVE_SCENE_ID"]] = 1
+    mpu.a = 1
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    assert mem[labels["PLAYER_X"]] == 90
+    assert mem[labels["COLPM0"]] == scene1_color
+    assert mem[labels["PCOLR0"]] == scene1_color
+    assert mem[labels["PLAYER_COLOR"]] == scene1_color
+
+
 
 
 def test_player_walk_right_acceleration():
