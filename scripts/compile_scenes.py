@@ -167,6 +167,7 @@ class SceneSecretData:
     frame_count: int
     atari_color: int
     active: bool
+    dep_id: int = 0
 
 
 PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
@@ -1037,6 +1038,7 @@ def parse_scene_json(
                     frame_count=spr_cnt,
                     atari_color=color,
                     active=active,
+                    dep_id=dep_id,
                 )
             )
         else:
@@ -1282,6 +1284,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         if sc.secrets:
             lines.append(f"scene_{sym}_secret_active")
             lines.append("    .byte " + ", ".join(str(1 if s.active else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_dep_id")
+            lines.append("    .byte " + ", ".join(str(s.dep_id) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_def_id")
             lines.append("    .byte " + ", ".join(str(s.def_id) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_sprite_id")
@@ -1301,6 +1305,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
+                f"scene_{sym}_secret_dep_id     .byte 0",
                 f"scene_{sym}_secret_def_id     .byte 0",
                 f"scene_{sym}_secret_sprite_id  .byte 0",
                 f"scene_{sym}_secret_x          .byte 0",
@@ -1462,6 +1467,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_active" for sc in scenes),
         "scene_secret_active_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_active" for sc in scenes),
+        "scene_secret_dep_id_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_dep_id" for sc in scenes),
+        "scene_secret_dep_id_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_dep_id" for sc in scenes),
         "scene_secret_def_id_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_def_id" for sc in scenes),
         "scene_secret_def_id_hi",

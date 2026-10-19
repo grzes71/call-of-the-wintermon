@@ -170,3 +170,163 @@ def test_secrets_init_scene1():
     assert mem[act_addr + 0] == 1, "Secret 0 (Gold Key on platform-003) must be active"
     assert mem[act_addr + 1] == 1, "Secret 1 (Gold Key on platform-004) must be active"
     assert mem[act_addr + 2] == 0, "Secret 2 (Ladder on platform-016) must be inactive"
+
+
+def test_secret_collection_and_stage_progression_scene0():
+    """Verify hardware collision triggers secret collection, clearing PMG rows and unlocking dependent stages."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Initialize scene 0 and game
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    act_addr = labels["SECRETS_ACTIVE"]
+    coll_addr = labels["SECRETS_COLLECTED"]
+    pmg_m = labels["PMG_MISSILES"]
+    m0pl_addr = labels["M0PL"]
+
+    # In Scene 0:
+    # Secret 0: Gold Key at x=20, pmg_y=126, height=16 (active)
+    # Secret 1: Gold Key at x=119, pmg_y=62, height=16 (active)
+    # Secret 2: Ladder at x=68, pmg_y=64, height=14 (inactive, dep on 1)
+    assert mem[act_addr + 0] == 1
+    assert mem[act_addr + 1] == 1
+    assert mem[act_addr + 2] == 0
+    assert mem[coll_addr + 0] == 0
+    assert mem[coll_addr + 1] == 0
+    assert mem[coll_addr + 2] == 0
+
+    # 1. False positive check: player at x=10, y=188 (on missile platform), touches missile
+    mem[labels["PLAYER_X"]] = 10
+    mem[labels["PLAYER_PMG_Y"]] = 188
+    mem[m0pl_addr] = 1  # Hardware collision with missile platform
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # No secret should be collected
+    assert mem[coll_addr + 0] == 0
+    assert mem[coll_addr + 1] == 0
+    assert mem[coll_addr + 2] == 0
+    assert mem[act_addr + 0] == 1
+
+    # 2. Collect Secret 0: player moves to x=20, pmg_y=126
+    mem[labels["PLAYER_X"]] = 20
+    mem[labels["PLAYER_PMG_Y"]] = 126
+    mem[m0pl_addr] = 1  # Hardware collision
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # Secret 0 is collected and inactive
+    assert mem[coll_addr + 0] == 1
+    assert mem[act_addr + 0] == 0
+    # Secret 0 PMG scanlines 126..141 are now cleared ($00)
+    assert all(b == 0 for b in mem[pmg_m + 126 : pmg_m + 142])
+
+    # Secret 1 is still active; Secret 2 is STILL inactive (not all keys collected yet)
+    assert mem[act_addr + 1] == 1
+    assert mem[act_addr + 2] == 0
+
+    # 3. Collect Secret 1: player moves to x=119, pmg_y=62
+    mem[labels["PLAYER_X"]] = 119
+    mem[labels["PLAYER_PMG_Y"]] = 62
+    mem[m0pl_addr] = 1  # Hardware collision
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # Secret 1 is collected and inactive
+    assert mem[coll_addr + 1] == 1
+    assert mem[act_addr + 1] == 0
+    # Secret 1 was cleared, and in the same step Ladder (secret 2) was unlocked and rendered at 64..77!
+    assert mem[pmg_m + 62] == 0
+    assert mem[pmg_m + 63] == 0
+
+    # Now ALL keys (def 1) are collected! Ladder (secret 2, dep 1) must be UNLOCKED!
+    assert mem[act_addr + 2] == 1, "Ladder (Secret 2) must be unlocked after all keys collected"
+    assert mem[coll_addr + 2] == 0
+
+    # Verify Ladder Frame 0 is rendered into PMG_MISSILES at pmg_y=64..77
+    ladder_f0 = labels["SPRITE_2_FRAME_0"]
+    exp_ladder_bytes = list(mem[ladder_f0 : ladder_f0 + 14])
+    actual_ladder_bytes = list(mem[pmg_m + 64 : pmg_m + 64 + 14])
+    assert actual_ladder_bytes == exp_ladder_bytes, "Ladder sprite Frame 0 not rendered on unlock"
+
+    # Scene 0 is not complete yet (ladder still active)
+    assert mem[labels["ACTIVE_SCENE_ID"]] == 0
+
+    # 4. Collect Secret 2 (Ladder): player moves to x=68, pmg_y=64
+    mem[labels["PLAYER_X"]] = 68
+    mem[labels["PLAYER_PMG_Y"]] = 64
+    mem[m0pl_addr] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # All secrets in Scene 0 collected -> game_next_scene automatically triggered!
+    # active_scene_id must now be 1 (Scene 1: Be Quick or Be Dead)
+    assert mem[labels["ACTIVE_SCENE_ID"]] == 1
+    # game_phase reset to GAME_PHASE_TITLE_IN for new scene title card
+    assert mem[labels["GAME_PHASE"]] == 0
+    # Lives (3) preserved across scenes
+    assert mem[labels["PLAYER_LIVES"]] == 3
+    # Scene 1 secrets initialized fresh (Keys active, Ladder inactive, collected all 0)
+    assert mem[act_addr + 0] == 1
+    assert mem[act_addr + 1] == 1
+    assert mem[act_addr + 2] == 0
+    assert mem[coll_addr + 0] == 0
+
+
+def test_game_success_on_final_scene_completion():
+    """Verify that collecting all secrets in the final scene sets GAME_SUCCESS and STATE_OVER."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Start directly on Scene 1 (Forest Castle, final scene)
+    mem[labels["ACTIVE_SCENE_ID"]] = 1
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mpu.a = 1
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = 1
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    mpu.a = 1
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    m0pl_addr = labels["M0PL"]
+
+    # Scene 1 secrets:
+    # 0: Key at x=8, pmg_y=126, h=16 (active)
+    # 1: Key at x=129, pmg_y=158, h=16 (active)
+    # 2: Ladder at x=96, pmg_y=128, h=14 (dep: 1)
+
+    # Collect Key 0
+    mem[labels["PLAYER_X"]] = 8
+    mem[labels["PLAYER_PMG_Y"]] = 126
+    mem[m0pl_addr] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # Collect Key 1
+    mem[labels["PLAYER_X"]] = 129
+    mem[labels["PLAYER_PMG_Y"]] = 158
+    mem[m0pl_addr] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # Ladder (secret 2) unlocked
+    act_addr = labels["SECRETS_ACTIVE"]
+    assert mem[act_addr + 2] == 1
+
+    # Collect Ladder 2
+    mem[labels["PLAYER_X"]] = 96
+    mem[labels["PLAYER_PMG_Y"]] = 128
+    mem[m0pl_addr] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # All scenes finished! Must set GAME_SUCCESS (2) and STATE_OVER (3)
+    assert mem[labels["GAME_RESULT"]] == 2  # GAME_SUCCESS = 2
+    assert mem[labels["GAME_STATE"]] == 3   # STATE_OVER = 3

@@ -272,5 +272,184 @@ SCENE_TITLE_FADE_STEPS = 8
 
     ; Update Hero Player 0 (joystick input, horizontal movement, animation & PMG render)
     jsr player_update
+    jsr secrets_check_player_collision
+    rts
+.endp
+
+; ==============================================================================
+; SECRETS HARDWARE COLLISION & PROGRESSION ENGINE
+; Checks GTIA Player 0 - Missile collisions (M0PL..M3PL), bounding boxes,
+; erases collected secrets, handles stage unlocking, and scene progression.
+; ==============================================================================
+secret_coll_def .byte 0
+
+.proc secrets_check_player_collision
+    ; 1. Check GTIA hardware collision between Player 0 and any Missile (M0..M3)
+    lda M0PL
+    ora M1PL
+    ora M2PL
+    ora M3PL
+    and #1
+    beq @clear_hit
+
+    ; 2. Iterate through all secrets of active scene
+    ldx #0
+@loop
+    cpx secrets_count
+    bcs @clear_hit
+
+    ; Secret must be active and not yet collected
+    lda secrets_active,x
+    beq @next
+    lda secrets_collected,x
+    bne @next
+
+    ; Check horizontal overlap: abs(player_x - secrets_x) < 8
+    lda player_x
+    sec
+    sbc secrets_x,x
+    bcs @x_pos
+    eor #$FF
+    clc
+    adc #1
+@x_pos
+    cmp #8
+    bcs @next
+
+    ; Check vertical overlap:
+    ; secrets_pmg_y + secrets_height > player_pmg_y
+    lda secrets_pmg_y,x
+    clc
+    adc secrets_height,x
+    sec
+    sbc player_pmg_y
+    beq @next
+    bcc @next
+
+    ; player_pmg_y + 20 > secrets_pmg_y
+    lda player_pmg_y
+    clc
+    adc #20
+    sec
+    sbc secrets_pmg_y,x
+    beq @next
+    bcc @next
+
+    ; Hero collided with Secret X! Collect it!
+    jsr secret_collect
+    jmp @clear_hit
+
+@next
+    inx
+    jmp @loop
+
+@clear_hit
+    sta HITCLR
+    rts
+.endp
+
+.proc secret_collect
+    ; 1. Erase secret scanlines from PMG_MISSILES memory
+    txa
+    pha
+    jsr clear_secret_rows
+    pla
+    tax
+
+    ; 2. Mark this secret as collected and inactive
+    lda #1
+    sta secrets_collected,x
+    lda #0
+    sta secrets_active,x
+
+    ; 3. Record def_id of collected secret
+    lda secrets_def_id,x
+    sta secret_coll_def
+
+    ; 4. Check if any active secrets remain on the scene
+    ldy #0
+@chk_act
+    cpy secrets_count
+    bcs @stage_cleared
+    lda secrets_active,y
+    bne @done               ; At least one active secret remains in current stage
+    iny
+    jmp @chk_act
+
+@stage_cleared
+    ; All active secrets of this stage have been collected!
+    ; Unlock dependent secrets where dep_id == secret_coll_def
+    ldy #0
+    lda #0
+    sta zp_temp_x           ; Unlocked count
+@unl_loop
+    cpy secrets_count
+    bcs @chk_unlocked
+    lda secrets_collected,y
+    bne @next_unl
+
+    lda secrets_dep_id,y
+    cmp secret_coll_def
+    bne @next_unl
+
+    ; Match! Activate dependent secret and render initial Frame 0
+    lda #1
+    sta secrets_active,y
+    lda secrets_frame_dur,y
+    sta secrets_timer,y
+    lda #0
+    sta secrets_frame_idx,y
+
+    tya
+    pha
+    tax
+    jsr render_secret_frame
+    pla
+    tay
+
+    inc zp_temp_x
+
+@next_unl
+    iny
+    jmp @unl_loop
+
+@chk_unlocked
+    lda zp_temp_x
+    bne @done               ; Newly unlocked stage is now active on screen!
+
+    ; No dependent secrets unlocked. Check if ALL scene secrets are collected!
+    ldy #0
+@chk_all
+    cpy secrets_count
+    bcs @all_cleared
+    lda secrets_collected,y
+    beq @done               ; Uncollected secret remains
+    iny
+    jmp @chk_all
+
+@all_cleared
+    ; All secrets on level collected: proceed to next scene!
+    jsr game_next_scene
+
+@done
+    rts
+.endp
+
+.proc game_next_scene
+    inc active_scene_id
+    lda active_scene_id
+    cmp #SCENE_COUNT
+    bcc @load_next
+
+    ; Completed all scenes: GAME_SUCCESS!
+    lda #GAME_SUCCESS
+    sta game_result
+    lda #STATE_OVER
+    sta game_state
+    rts
+
+@load_next
+    ; Initialize next scene (preserves lives & CD count)
+    jsr game_init
     rts
 .endp

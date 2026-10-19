@@ -100,25 +100,7 @@ TITLE_SCROLL_SPEED    = 1     ; Step fine scroll every 1 frame (smooth 50/60 fps
     lda #0
     sta fire_released
 
-    ; Check if this is the first time the title screen is shown
-    lda title_first_run
-    beq @show_immediate
-
-    ; --- First run: 28-frame fade-in from black ($00) ---
-    lda #0
-    sta COLOR0
-    sta COLPF0
-    sta COLOR1
-    sta COLPF1
-    sta COLOR2
-    sta COLPF2
-    sta fade_frame
-    rts
-
-@show_immediate
-    ; --- Return from Game Over: show immediately at full brightness ---
-    lda #28
-    sta fade_frame
+    ; Show immediately at full brightness (no fade-in)
     lda #TITLE_COLOR_PF0
     sta COLOR0
     sta COLPF0
@@ -129,19 +111,19 @@ TITLE_SCROLL_SPEED    = 1     ; Step fine scroll every 1 frame (smooth 50/60 fps
     sta COLOR2
     sta COLPF2
 
-    ; Start music immediately on re-entry
+    ; Enable playfield DMA in Narrow mode ($21: 128px Mode D title image)
+    lda #$21
+    sta SDMCTL
+    sta DMACTL
+
+    ; Start music immediately
     jsr audio_play_title
     rts
 .endp
 
-; 8-step fade tables for 28-frame fade-in (fade_frame >> 2 = 0..7)
-title_fade_c0  .byte $00, $C0, $C0, $C2, $C2, $C4, $C4, $C4
-title_fade_c1  .byte $00, $C2, $C4, $C6, $C8, $CA, $CA, $CA
-title_fade_c2  .byte $00, $E2, $E4, $E6, $E8, $EA, $EC, $EE
-
 .proc title_run
-    ; Enable playfield DMA (normal width 160px/40-byte playfield)
-    lda #$22
+    ; Maintain Narrow playfield DMA ($21)
+    lda #$21
     sta SDMCTL
     sta DMACTL
 
@@ -155,53 +137,15 @@ title_fade_c2  .byte $00, $E2, $E4, $E6, $E8, $EA, $EC, $EE
     cmp RTCLOK+2
     beq @sync_vblank
 
-    ; --- Handle 28-frame fade-in ---
-    lda fade_frame
-    cmp #28
-    bcs @fade_completed
+    ; Reset DLI vector to first DLI at the start of each frame
+    lda <dli_title_scroll
+    sta VDSLST
+    lda >dli_title_scroll
+    sta VDSLST+1
 
-    ; Still fading: advance fade frame
-    inc fade_frame
-    lda fade_frame
-    lsr @
-    lsr @
-    tax
-    lda title_fade_c0,x
-    sta COLOR0
-    sta COLPF0
-    lda title_fade_c1,x
-    sta COLOR1
-    sta COLPF1
-    lda title_fade_c2,x
-    sta COLOR2
-    sta COLPF2
-
-    ; Check if fade finished on this frame
-    lda fade_frame
-    cmp #28
-    bcc @check_input
-
-    ; Fade-in complete: lock to full brightness, clear first_run flag, and start music
-    lda #TITLE_COLOR_PF0
-    sta COLOR0
-    sta COLPF0
-    lda #TITLE_COLOR_PF1
-    sta COLOR1
-    sta COLPF1
-    lda #TITLE_COLOR_PF2
-    sta COLOR2
-    sta COLPF2
-    lda #0
-    sta title_first_run
-
-    jsr audio_play_title
-    jmp @check_input
-
-@fade_completed
     ; Advance music player by 1 frame
     jsr audio_update
 
-@check_input
     ; Update smooth scrolling ticker (once per frame)
     jsr update_title_scroll
 
@@ -250,15 +194,16 @@ title_fade_c2  .byte $00, $E2, $E4, $E6, $E8, $EA, $EC, $EE
 .endp
 
 ; ==============================================================================
-; DLI ROUTINE — Triggered on DL_BLANK1 right before ANTIC Mode 2 scroll line
-; Sets fine horizontal scroll (HSCROL) and playfield colors for text line:
-; In ANTIC Mode 2:
-;   Foreground pixels = COLPF1 (set to current COLOR1 green / fade)
-;   Background pixels = COLPF2 (set to $00 black to match black background)
+; DLI 1 — Triggered on DL_BLANK1 right before ANTIC Mode 2 scroll line
+; Switches ANTIC to Normal playfield ($22) for 40-char scrolling text,
+; sets fine horizontal scroll (HSCROL) and text colors, and points VDSLST to DLI 2.
 ; ==============================================================================
 .proc dli_title_scroll
     pha                         ; Save accumulator
     sta WSYNC                   ; Wait for horizontal sync at end of blank line
+
+    lda #$22
+    sta DMACTL                  ; Switch to Normal playfield (40 columns / 48 fetched)
 
     lda title_scroll_fine       ; Load fine scroll offset (3..0 color clocks)
     sta HSCROL                  ; Set ANTIC fine horizontal scroll
@@ -266,8 +211,44 @@ title_fade_c2  .byte $00, $E2, $E4, $E6, $E8, $EA, $EC, $EE
     lda #0
     sta COLPF2                  ; Text background: Black ($00)
 
-    lda COLOR1                  ; Text foreground: current green (tracks fade-in!)
+    lda #TITLE_COLOR_PF1        ; Text foreground: medium green ($CA)
     sta COLPF1
+
+    ; Point VDSLST to DLI 2 (restore narrow playfield after scroll line)
+    lda <dli_title_restore
+    sta VDSLST
+    lda >dli_title_restore
+    sta VDSLST+1
+
+    pla                         ; Restore accumulator
+    rti
+.endp
+
+; ==============================================================================
+; DLI 2 — Triggered on DL_BLANK1 right after ANTIC Mode 2 scroll line
+; Restores ANTIC to Narrow playfield ($21) for 128px Mode D title image,
+; resets HSCROL, restores image colors, and points VDSLST back to DLI 1.
+; ==============================================================================
+.proc dli_title_restore
+    pha                         ; Save accumulator
+    sta WSYNC                   ; Wait for horizontal sync at end of blank line
+
+    lda #$21
+    sta DMACTL                  ; Switch back to Narrow playfield (128 pixels / 32 bytes)
+
+    lda #0
+    sta HSCROL                  ; Reset fine horizontal scroll
+
+    lda #TITLE_COLOR_PF1        ; Restore Mode D playfield colors
+    sta COLPF1
+    lda #TITLE_COLOR_PF2
+    sta COLPF2
+
+    ; Point VDSLST back to DLI 1 for next frame
+    lda <dli_title_scroll
+    sta VDSLST
+    lda >dli_title_scroll
+    sta VDSLST+1
 
     pla                         ; Restore accumulator
     rti

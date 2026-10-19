@@ -2,7 +2,50 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-19] - Set Vertical Jump Height to Match Long Jump (18-Line Apex)
+## [2026-10-19] - Title Screen Narrow Playfield Switch & Immediate Full Brightness
+
+- **Image Converter & Asset Pipeline ([scripts/convert_image.py](scripts/convert_image.py), [Makefile](Makefile), [manifest.yaml](manifest.yaml))**:
+  - Updated `convert_image_to_antic_d` to convert 128-pixel narrow images (32 bytes/line) for 96 or 102 lines into ANTIC Mode D format.
+  - Replaced title screen image source in `Makefile` and `manifest.yaml` with `images/title3.png` (128x96 2bpp indexed Mode P), compiling to `gen/title.bin` (3,072 bytes vs former 3,840 bytes, saving 768 bytes of VRAM).
+- **Display List & DLI Architecture ([main.asm](main.asm), [scenes/title.asm](scenes/title.asm))**:
+  - Rebuilt `dlist_title` in `main.asm` to display 96 lines of ANTIC Mode D in Narrow playfield (128 pixels wide, 32 bytes/line), vertically centered (14 blank lines top, 11 blank lines bottom) with 229 total scanlines.
+  - Resolved visible horizontal color glitch above scroll line by placing a 1-scanline blank buffer (`DL_BLANK1`) between DLI 1 and `DL_MODE_2`:
+    - **DLI 1 (`dli_title_scroll`)**: Triggers on `DL_BLANK1 | DL_DLI`, synchronizes with `WSYNC` to the dedicated blank buffer scanline, and configures `DMACTL = $22`, `HSCROL`, and `COLPF2 = $00` (black background for Mode 2 text) before `DL_MODE_2` scanline 0 begins.
+    - **DLI 2 (`dli_title_restore`)**: Triggers on `DL_BLANK1 | DL_DLI` immediately following Mode 2; waits for `WSYNC`, restores `DMACTL = $21`, resets `HSCROL = 0`, restores Mode D playfield colors, and points `VDSLST` back to DLI 1.
+- **Immediate Brightness & State Machine ([scenes/title.asm](scenes/title.asm))**:
+  - Removed title screen fade-in logic, step tables (`title_fade_c0..c2`), and frame delay counters.
+  - In `title_init`: sets full brightness palette immediately (`COLOR0`/`COLPF0 = $C4`, `COLOR1`/`COLPF1 = $CA`, `COLOR2`/`COLPF2 = $EE`), initializes Narrow playfield DMA (`SDMCTL = $21`, `DMACTL = $21`), and starts title music immediately.
+  - In `title_run`: maintains `SDMCTL = $21`, restores `VDSLST = dli_title_scroll` at top of frame, and directly updates audio, scroller, and input.
+- **Memory Footprint & Validation ([scripts/check_memory.py](scripts/check_memory.py))**:
+  - `TITLE_VRAM` segment shrunk from 4,039 bytes to 3,271 bytes ($4000-$4CC6), freeing 768 bytes of headroom below `$5000`.
+  - Total allocated user RAM reduced to 39,093 bytes (1,867 bytes available below `$C000`).
+- **Automated Verification ([tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py), [tests/test_title_scroll.py](tests/test_title_scroll.py))**:
+  - Added test `test_title_init_immediate_full_brightness_and_narrow_playfield` asserting immediate colors and `SDMCTL = $21`.
+  - Added test `test_title_dual_dli_chain` verifying DLI 1 transitions `DMACTL` to `$22` + points to DLI 2, and DLI 2 restores `DMACTL` to `$21` + points to DLI 1.
+  - All 428 automated py65 emulation and python unit tests passed in `make all`.
+
+- **Data Pipeline & Pointer Tables ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `dep_id` field to `SceneSecretData` and populated it from scene object definitions.
+  - Exported `scene_{sym}_secret_dep_id` arrays in per-scene ASM blocks and added `scene_secret_dep_id_lo` and `scene_secret_dep_id_hi` pointer tables in master scenes metadata.
+- **Secrets Runtime Engine ([engine/secrets.asm](engine/secrets.asm))**:
+  - Added SoA arrays: `secrets_collected`, `secrets_def_id`, `secrets_dep_id`, and `secrets_x`.
+  - Updated `secrets_init` to copy `def_id`, `dep_id`, and `x` tables, reset `secrets_collected` array to zero, clear PMG missile scanlines for all secrets, and render Frame 0 for initially active secrets.
+- **Hardware Collision & Stage Unlocking Engine ([scenes/game.asm](scenes/game.asm))**:
+  - Implemented `secrets_check_player_collision`: reads GTIA hardware registers `M0PL..M3PL` bit 0 for Player 0 - Missile contact; filters against false positives (such as standing on missile platforms) using 2D bounding-box checks (`abs(player_x - secrets_x) < 8` and vertical PMG overlap `player_pmg_y < secrets_pmg_y + height` & `secrets_pmg_y < player_pmg_y + 20`); clears `HITCLR` at the end of each evaluation.
+  - Implemented `secret_collect`: clears touched secret's scanlines from `PMG_MISSILES` via `clear_secret_rows`, marks `secrets_collected = 1` and `secrets_active = 0`.
+  - When all active secrets in the current stage are collected, scans uncollected secrets for matching `dep_id == collected_def_id`, unlocks them (`secrets_active = 1`), and renders initial Frame 0 into PMG memory.
+  - When all possible secrets on the scene are collected, triggers `game_next_scene`.
+- **Level & Victory Progression ([scenes/game.asm](scenes/game.asm))**:
+  - Implemented `game_next_scene`: advances `active_scene_id`; if more scenes exist, calls `game_init` (initiating scene title card fade-in/out and spawning player at new level position while preserving lives and CD count); if all scenes are complete, sets `game_result = GAME_SUCCESS` and `game_state = STATE_OVER`.
+  - Integrated `secrets_check_player_collision` into `@do_playing` loop in `game_run`.
+- **Memory Architecture & Segment Layout ([main.asm](main.asm), [engine/player.asm](engine/player.asm), [scripts/check_memory.py](scripts/check_memory.py))**:
+  - Aliased duplicate jump trajectory tables (`jump_up_dy = jump_long_dy`, `jump_up_anim = jump_long_anim`) in `engine/player.asm`, saving 44 bytes in `SCENES_DATA` segment ($5000-$5FFC).
+  - Relocated `scenes/gameover.asm` to dedicated `GAMEOVER_ADDR` ($6710), keeping `CODE_ADDR` ($2000-$238A) strictly below `$2400` font boundary and maintaining strictly ascending `org` order without segment backtracking or overlaps.
+  - Updated `scripts/check_memory.py` to validate strictly ascending segments and prevent XEX segment overwrites.
+- **Automated Verification ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), [tests/test_memory_map.py](tests/test_memory_map.py))**:
+  - Added py65 test `test_secret_collection_and_stage_progression_scene0` verifying hardware collision collection, PMG scanline clearing, missile platform collision rejection, sequential stage unlocking (Keys $\to$ Ladder), Frame 0 rendering on unlock, and automatic level transition to Scene 1 with preserved lives.
+  - Added py65 test `test_game_success_on_final_scene_completion` verifying completion of the final scene sets `game_result = GAME_SUCCESS` and `game_state = STATE_OVER`.
+  - All 429 tests passed in `make all`.
 
 - **Vertical Jump Profile Update ([engine/player.asm](engine/player.asm))**:
   - Increased vertical jump length `JUMP_UP_LEN` from 16 to 22 steps.

@@ -19,7 +19,8 @@ GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB a
 TITLE_VRAM  = $4000     ; Title VRAM: ANTIC Mode D 160x95 2bpp (3,800 bytes: $4000-$4ED7, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene definitions, platforms, objects & DLI data SoA tables (~1,500 bytes: $5000-$5600)
 DLIST_ADDR  = $6000     ; Title Display List (~105 bytes: $6000-$6068)
-DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$67F4)
+DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
+GAMEOVER_ADDR = $6710   ; Game Over / Victory screen handler (~157 bytes: $6710-$67AD)
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
 AUDIO_ADDR  = $7000     ; Audio Player & Music Buffers
 RENDER_TABLES = $7A00   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) + blitter
@@ -118,11 +119,10 @@ main_loop
     jmp main_loop
 
 ; ==============================================================================
-; SCENE MODULES (Intro, Game, Game Over)
+; SCENE MODULES (Intro, Game)
 ; ==============================================================================
     icl 'scenes/intro.asm'
     icl 'scenes/game.asm'
-    icl 'scenes/gameover.asm'
 
 ; ==============================================================================
 ; INTRO FONT SEGMENT ($2400) - 1024 bytes (1 KB boundary aligned)
@@ -281,9 +281,9 @@ status_line_vram
 
 ; ==============================================================================
 ; TITLE GRAPHICS DATA SEGMENT ($4000)
-; ANTIC Mode D (160x95 2bpp, 40 bytes/line * 96 lines = 3,840 bytes: $4000-$4EFF)
-; Followed by 48-byte Mode 2 scrolling VRAM line buffer ($4F00-$4F2F)
-; and marquee scroll text data ($4F30-$4FC6).
+; ANTIC Mode D Narrow (128x96 2bpp, 32 bytes/line * 96 lines = 3,072 bytes: $4000-$4BFF)
+; Followed by 48-byte Mode 2 scrolling VRAM line buffer ($4C00-$4C2F)
+; and marquee scroll text data ($4C30-$4CC6).
 ; 4 KB aligned: strictly within $4000-$4FFF (never crosses 4 KB boundary)
 ; ==============================================================================
     org TITLE_VRAM
@@ -310,32 +310,41 @@ title_scroll_vram
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)
-; ANTIC Mode D (160x95 2bpp, 96 lines = 192 scanlines) + 1 line ANTIC Mode 2 (8 scanlines)
-; Centered vertically: 16 blank scanlines top, 96 lines Mode D,
-; 4 blank scanlines spacing, 1 blank scanline with DLI,
-; 1 line ANTIC Mode 2 with LMS & HSCROL, 8 blank scanlines bottom = 229 scanlines total
+; ANTIC Mode D (128x96 2bpp Narrow, 96 lines = 192 scanlines) + 1 line ANTIC Mode 2 (8 scanlines Normal)
+; Centered vertically: 14 blank scanlines top, 96 lines Mode D Narrow,
+; 2 blank scanlines spacing, 1 blank scanline with DLI 1 (switches to Normal $22),
+; 1 line ANTIC Mode 2 with LMS & HSCROL (40 chars visible, 48 fetched with DL_HSCROL),
+; 1 blank scanline with DLI 2 (restores Narrow $21), 11 blank scanlines bottom = 229 scanlines total
 ; ==============================================================================
     org DLIST_ADDR
 dlist_title
     .byte DL_BLANK8
-    .byte DL_BLANK8
+    .byte DL_BLANK6
 
-    ; Title graphics: 96 lines of ANTIC Mode D (192 scanlines)
-    .byte DL_MODE_D | DL_LMS    ; Line 0 with LMS (starts at $4000, 3840 bytes -> ends at $4EFF)
+    ; Title graphics: 96 lines of ANTIC Mode D Narrow (192 scanlines)
+    .byte DL_MODE_D | DL_LMS    ; Line 0 with LMS (starts at $4000, 3072 bytes: $4000-$4BFF)
     .word TITLE_VRAM
-    :95 .byte DL_MODE_D         ; Lines 1-95 (96 lines total)
+    :95 .byte DL_MODE_D         ; Lines 1-95 (96 lines total, 32 bytes/line = 3,072 bytes)
 
     ; Blank spacing lines between Mode D graphics and scroll line
-    .byte DL_BLANK4
+    .byte DL_BLANK1
 
-    ; 1 blank scanline with DLI right before ANTIC Mode 2 scroll line
+    ; 1 blank scanline with DLI 1 (fires here; WSYNC waits for the following blank scanline)
     .byte DL_BLANK1 | DL_DLI
 
-    ; 1 line ANTIC Mode 2 (40 chars visible, 48 fetched with DL_HSCROL)
+    ; 1 blank scanline buffer where DLI 1 sets DMACTL=$22, HSCROL, and COLPF2=$00 before Mode 2 starts
+    .byte DL_BLANK1
+
+    ; 1 line ANTIC Mode 2 (40 chars visible, 48 fetched with DL_HSCROL in Normal playfield)
     .byte DL_MODE_2 | DL_LMS | DL_HSCROL
     .word title_scroll_vram
 
+    ; 1 blank scanline with DLI 2 right after ANTIC Mode 2 scroll line (switches to Narrow playfield $21)
+    .byte DL_BLANK1 | DL_DLI
+
+    ; Bottom blank margin
     .byte DL_BLANK8
+    .byte DL_BLANK3
 
     ; End of display list: Jump and wait for vertical blank
     .byte DL_JVB
@@ -347,6 +356,13 @@ dlist_title
 ; ==============================================================================
     org DLI_BUFFERS
     icl 'engine/dli.asm'
+
+; ==============================================================================
+; GAMEOVER SCENE MODULE ($6710)
+; Placed in free space between DLI buffers ($6706) and PMG ($6800)
+; ==============================================================================
+    org GAMEOVER_ADDR
+    icl 'scenes/gameover.asm'
 
 ; ==============================================================================
 ; PLAYER-MISSILE GRAPHICS (PMG) MEMORY SEGMENT ($6800)

@@ -17,7 +17,7 @@ TARGET           := call_of_the_wintermon.xex
 GEN_DIR          := gen
 
 # Assets sources and artifacts
-TITLE_IMG        := images/title2.png
+TITLE_IMG        := images/title3.png
 TITLE_BIN        := $(GEN_DIR)/title.bin
 TITLE_SCROLL_SRC := scroll/title.txt
 TITLE_SCROLL_ASM := $(GEN_DIR)/title_scroll_text.asm

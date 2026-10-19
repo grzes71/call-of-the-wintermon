@@ -30,8 +30,9 @@ JUMP_LONG_LEN       = 22        ; Long jump: 22 steps, apex 18 lines (higher pla
 ; ==============================================================================
 ; JUMP TRAJECTORY TABLES
 ; ==============================================================================
-; 1. Vertical Jump (JUMP_TYPE_UP = 0): neutral Fire, apex 18 lines, dx=0
+; 1. Vertical & Long Jump Shared Trajectory (apex 18 lines, 22 steps)
 jump_up_dy
+jump_long_dy
     .byte -2, -2, -2, -2        ; Steps 0..3: fast ascent (up 8)
     .byte -2, -2, -2            ; Steps 4..6: mid ascent (up 6 -> up 14)
     .byte -1, -1, -1, -1        ; Steps 7..10: apex approach (up 4 -> peak 18 lines)
@@ -39,13 +40,14 @@ jump_up_dy
     .byte  1,  1,  1            ; Steps 12..14: initial descent (down 3)
     .byte  2,  2,  2,  2,  2,  2,  3 ; Steps 15..21: fast descent (down 15 -> net 0)
 
-jump_up_dx
-    :22 .byte 0
-
 jump_up_anim
+jump_long_anim
     .byte 0, 0, 0, 0, 0, 0, 0, 0; Steps 0..7: Frame 0 (fast ascent)
     .byte 1, 1, 1, 1, 1, 1      ; Steps 8..13: Frame 1 (apex & landing)
     .byte 2, 2, 2, 2, 2, 2, 2, 2; Steps 14..21: Frame 2 (fast descent)
+
+jump_up_dx
+    :22 .byte 0
 
 ; 2. Short Jump (JUMP_TYPE_SHORT = 1): across ~16px gap
 jump_short_dy
@@ -61,23 +63,10 @@ jump_short_anim
     .byte 1, 1, 1, 1, 1, 1, 1   ; Frame 1 (apex & transition)
     .byte 2, 2, 2, 2, 2, 2      ; Frame 2 (fast descent)
 
-; 3. Long Jump (JUMP_TYPE_LONG = 2): jumps to platform 16 lines above, max 8px horizontal, apex 18 lines
-jump_long_dy
-    .byte -2, -2, -2, -2        ; Steps 0..3: fast ascent (up 8)
-    .byte -2, -2, -2            ; Steps 4..6: mid ascent (up 6 -> up 14)
-    .byte -1, -1, -1, -1        ; Steps 7..10: apex approach (up 4 -> peak 18 lines)
-    .byte  0                    ; Step 11: apex (peak 18 lines)
-    .byte  1,  1,  1            ; Steps 12..14: initial descent (down 3)
-    .byte  2,  2,  2,  2,  2,  2,  3 ; Steps 15..21: fast descent (down 15 -> net 0)
-
+; 3. Long Jump Horizontal Trajectory (max 8px horizontal)
 jump_long_dx
     .byte 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 ; Steps 0..10: 8 px horizontal
     :11 .byte 0                           ; Steps 11..21: 0 px (landed or falling)
-
-jump_long_anim
-    .byte 0, 0, 0, 0, 0, 0, 0, 0; Steps 0..7: Frame 0 (fast ascent)
-    .byte 1, 1, 1, 1, 1, 1      ; Steps 8..13: Frame 1 (apex & landing)
-    .byte 2, 2, 2, 2, 2, 2, 2, 2; Steps 14..21: Frame 2 (fast descent if missed)
 
 ; Directional frame tables for jump animations
 player_jump_anim_table_lo

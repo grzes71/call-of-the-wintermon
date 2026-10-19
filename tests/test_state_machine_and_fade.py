@@ -58,6 +58,24 @@ def run_subroutine(mpu: MPU, addr: int, max_steps: int = 100_000) -> None:
     assert mpu.pc == 0x0100, f"Subroutine at 0x{addr:04X} did not return within {max_steps} steps (PC=0x{mpu.pc:04X})"
 
 
+def run_dli_interrupt(mpu: MPU, addr: int, max_cycles: int = 50_000) -> int:
+    """Simulate hardware NMI pushing PC and P to stack before jumping to DLI handler."""
+    sp = mpu.sp
+    mpu.memory[0x0100 + sp] = 0x01      # PC high ($01)
+    mpu.memory[0x0100 + sp - 1] = 0x00  # PC low ($00) -> return to $0100
+    mpu.memory[0x0100 + sp - 2] = 0x30  # P status
+    mpu.sp = sp - 3
+    mpu.pc = addr
+    cycles = 0
+    while cycles < max_cycles:
+        opcode = mpu.memory[mpu.pc]
+        mpu.step()
+        cycles += 1
+        if opcode == 0x40 and mpu.sp == sp:  # RTI
+            return cycles
+    raise TimeoutError(f"DLI handler at PC=${mpu.pc:04X} timed out")
+
+
 @pytest.fixture
 def emu_env():
     xex_file = Path("call_of_the_wintermon.xex")
@@ -72,67 +90,56 @@ def emu_env():
     return mpu, labels
 
 
-def test_title_init_first_run_starts_at_black(emu_env):
-    """When title_first_run == 1, title_init must set colors to $00 and fade_frame to 0."""
+def test_title_init_immediate_full_brightness_and_narrow_playfield(emu_env):
+    """title_init must set colors to full brightness immediately and configure Narrow playfield ($21)."""
     mpu, labels = emu_env
 
-    # Setup first run state
-    mpu.memory[labels["TITLE_FIRST_RUN"]] = 1
-    mpu.memory[labels["FADE_FRAME"]] = 99
-    mpu.memory[labels["COLOR0"]] = 0xC4
-    mpu.memory[labels["COLOR1"]] = 0xCA
-    mpu.memory[labels["COLOR2"]] = 0xEE
-
-    run_subroutine(mpu, labels["TITLE_INIT"])
-
-    assert mpu.memory[labels["FADE_FRAME"]] == 0
-    assert mpu.memory[labels["COLOR0"]] == 0x00
-    assert mpu.memory[labels["COLPF0"]] == 0x00
-    assert mpu.memory[labels["COLOR1"]] == 0x00
-    assert mpu.memory[labels["COLPF1"]] == 0x00
-    assert mpu.memory[labels["COLOR2"]] == 0x00
-    assert mpu.memory[labels["COLPF2"]] == 0x00
-    assert mpu.memory[labels["COLBK"]] == 0x00
-
-
-def test_title_init_subsequent_run_skips_fade(emu_env):
-    """When title_first_run == 0 (e.g. returning from game over), colors must be full brightness immediately."""
-    mpu, labels = emu_env
-
-    # Setup return from game over (title_first_run == 0)
-    mpu.memory[labels["TITLE_FIRST_RUN"]] = 0
-    mpu.memory[labels["FADE_FRAME"]] = 0
     mpu.memory[labels["COLOR0"]] = 0x00
     mpu.memory[labels["COLOR1"]] = 0x00
     mpu.memory[labels["COLOR2"]] = 0x00
 
     run_subroutine(mpu, labels["TITLE_INIT"])
 
-    # Must be set directly to full brightness ($C4, $CA, $EE), fade_frame to 28
-    assert mpu.memory[labels["FADE_FRAME"]] == 28
     assert mpu.memory[labels["COLOR0"]] == 0xC4
     assert mpu.memory[labels["COLPF0"]] == 0xC4
     assert mpu.memory[labels["COLOR1"]] == 0xCA
     assert mpu.memory[labels["COLPF1"]] == 0xCA
     assert mpu.memory[labels["COLOR2"]] == 0xEE
     assert mpu.memory[labels["COLPF2"]] == 0xEE
+    assert mpu.memory[labels["COLBK"]] == 0x00
+    assert mpu.memory[labels["SDMCTL"]] == 0x21
+    assert mpu.memory[labels["DMACTL"]] == 0x21
 
 
-def test_fade_frame_progression_over_28_frames():
-    """Verify the 8-step fade progression for 28-frame title screen fade-in."""
-    title_fade_c0 = [0x00, 0xC0, 0xC0, 0xC2, 0xC2, 0xC4, 0xC4, 0xC4]
-    title_fade_c1 = [0x00, 0xC2, 0xC4, 0xC6, 0xC8, 0xCA, 0xCA, 0xCA]
-    title_fade_c2 = [0x00, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE]
+def test_title_dual_dli_chain(emu_env):
+    """Verify DLI 1 switches to Normal playfield ($22) and DLI 2 restores Narrow playfield ($21)."""
+    mpu, labels = emu_env
 
-    for frame in range(1, 29):
-        step = frame >> 2
-        c0 = title_fade_c0[step]
-        c1 = title_fade_c1[step]
-        c2 = title_fade_c2[step]
-        if frame < 4:
-            assert (c0, c1, c2) == (0x00, 0x00, 0x00)
-        if frame >= 28:
-            assert (c0, c1, c2) == (0xC4, 0xCA, 0xEE)
+    # 1. Run DLI 1 (dli_title_scroll)
+    mpu.memory[labels["DMACTL"]] = 0x21
+    mpu.memory[labels["HSCROL"]] = 0
+    mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
+
+    run_dli_interrupt(mpu, labels["DLI_TITLE_SCROLL"])
+
+    # DLI 1 must switch to Normal playfield ($22) and set HSCROL
+    assert mpu.memory[labels["DMACTL"]] == 0x22
+    assert mpu.memory[labels["HSCROL"]] == 2
+    assert mpu.memory[labels["COLPF2"]] == 0x00
+    assert mpu.memory[labels["COLPF1"]] == 0xCA
+    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
+    assert vdslst == labels["DLI_TITLE_RESTORE"]
+
+    # 2. Run DLI 2 (dli_title_restore)
+    run_dli_interrupt(mpu, labels["DLI_TITLE_RESTORE"])
+
+    # DLI 2 must restore Narrow playfield ($21) and reset HSCROL
+    assert mpu.memory[labels["DMACTL"]] == 0x21
+    assert mpu.memory[labels["HSCROL"]] == 0
+    assert mpu.memory[labels["COLPF1"]] == 0xCA
+    assert mpu.memory[labels["COLPF2"]] == 0xEE
+    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
+    assert vdslst == labels["DLI_TITLE_SCROLL"]
 
 
 def test_scene_title_card_frame_progression(emu_env):

@@ -14,7 +14,11 @@ MAX_SECRETS = 6
 ; --- Active Scene Secrets State (Structure-of-Arrays) ---
 secrets_count       .byte 0
 secrets_active      :MAX_SECRETS .byte 0
+secrets_collected   :MAX_SECRETS .byte 0
+secrets_def_id      :MAX_SECRETS .byte 0
+secrets_dep_id      :MAX_SECRETS .byte 0
 secrets_sprite_id   :MAX_SECRETS .byte 0
+secrets_x           :MAX_SECRETS .byte 0
 secrets_pmg_y       :MAX_SECRETS .byte 0
 secrets_height      :MAX_SECRETS .byte 0
 secrets_frame_dur   :MAX_SECRETS .byte 0
@@ -206,7 +210,72 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     dey
     bpl @copy_cnt
 
-    ; 7. Initial render for active secrets (PMG_MISSILES already cleared)
+    ; 7. Copy def_ids
+    ldx active_scene_id
+    lda scene_secret_def_id_lo,x
+    sta zp_ptr_src
+    lda scene_secret_def_id_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_def
+    lda (zp_ptr_src),y
+    sta secrets_def_id,y
+    dey
+    bpl @copy_def
+
+    ; 8. Copy dep_ids
+    ldx active_scene_id
+    lda scene_secret_dep_id_lo,x
+    sta zp_ptr_src
+    lda scene_secret_dep_id_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_dep
+    lda (zp_ptr_src),y
+    sta secrets_dep_id,y
+    dey
+    bpl @copy_dep
+
+    ; 9. Copy X coordinates
+    ldx active_scene_id
+    lda scene_secret_x_lo,x
+    sta zp_ptr_src
+    lda scene_secret_x_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_x
+    lda (zp_ptr_src),y
+    sta secrets_x,y
+    dey
+    bpl @copy_x
+
+    ; 10. Clear secrets_collected array
+    ldy secrets_count
+    dey
+    lda #0
+@clr_coll
+    sta secrets_collected,y
+    dey
+    bpl @clr_coll
+
+    ; 11. Clear PMG rows for all scene secrets
+    ldx #0
+@clear_all_loop
+    cpx secrets_count
+    bcs @start_render
+    txa
+    pha
+    jsr clear_secret_rows
+    pla
+    tax
+    inx
+    jmp @clear_all_loop
+
+@start_render
+    ; 12. Render Frame 0 for active secrets
     ldx #0
 @init_render_loop
     cpx secrets_count

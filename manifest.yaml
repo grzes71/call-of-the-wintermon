@@ -59,10 +59,10 @@ source_code:
 graphics:
   screens:
     - id: "title"
-      path: "images/title2.png"
+      path: "images/title3.png"
       type: "image/png"
-      target_mode: "ANTIC Mode D (160x95 2bpp)"
-      description: "Title screen background artwork"
+      target_mode: "ANTIC Mode D (128x96 2bpp Narrow)"
+      description: "Title screen background artwork (narrow width 128px, 96 lines)"
     - id: "title_alt"
       path: "images/title.png"
       type: "image/png"

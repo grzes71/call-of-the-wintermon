@@ -17,11 +17,11 @@ def convert_image_to_antic_d(
     input_path: Path,
     output_path: Path,
 ) -> int:
-    """Convert an image (160x95..97) into ANTIC Mode D binary (160x96, 3,840 bytes).
+    """Convert an image (128x102 Narrow or 160x95..97 Normal) into ANTIC Mode D binary.
 
     Args:
-        input_path: Path to source image (160x95..97).
-        output_path: Destination binary file (3,840 bytes).
+        input_path: Path to source image.
+        output_path: Destination binary file.
 
     Returns:
         0 on success, non-zero on failure.
@@ -33,9 +33,15 @@ def convert_image_to_antic_d(
     img = Image.open(input_path)
     width, height = img.size
 
-    if width != 160 or height not in (95, 96, 97):
+    if width == 128 and height in (96, 102):
+        target_lines = height
+        line_bytes = 32
+    elif width == 160 and height in (95, 96, 97):
+        target_lines = 96
+        line_bytes = 40
+    else:
         print(
-            f"Error: Expected 160x95..97 image, got {width}x{height}.",
+            f"Error: Expected 128x96/102 (Narrow) or 160x95..97 (Normal) image, got {width}x{height}.",
             file=sys.stderr,
         )
         return 1
@@ -48,11 +54,10 @@ def convert_image_to_antic_d(
         print("Error: Could not load pixel data.", file=sys.stderr)
         return 1
 
-    TARGET_LINES = 96
     raw_bytes = bytearray()
-    for y in range(TARGET_LINES):
+    for y in range(target_lines):
         if y < height:
-            for byte_idx in range(width // 4):
+            for byte_idx in range(line_bytes):
                 x = byte_idx * 4
                 p0 = pixels[x + 0, y] & 3
                 p1 = pixels[x + 1, y] & 3
@@ -61,17 +66,17 @@ def convert_image_to_antic_d(
                 byte_val = (p0 << 6) | (p1 << 4) | (p2 << 2) | p3
                 raw_bytes.append(byte_val)
         else:
-            # Pad with zero bytes if source has 95 lines
-            raw_bytes.extend(bytes(width // 4))
+            raw_bytes.extend(bytes(line_bytes))
 
-    assert len(raw_bytes) == 3840, f"Invalid binary size: {len(raw_bytes)}"
+    expected_size = target_lines * line_bytes
+    assert len(raw_bytes) == expected_size, f"Invalid binary size: {len(raw_bytes)}"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(raw_bytes)
 
     print(
         f"Converted '{input_path}' ({width}x{height}) -> '{output_path}' ({len(raw_bytes)} bytes: "
-        f"160x96 ANTIC Mode D)"
+        f"{width}x{target_lines} ANTIC Mode D)"
     )
     return 0
 

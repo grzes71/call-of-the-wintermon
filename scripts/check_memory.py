@@ -60,6 +60,7 @@ def check_memory(xex_path: Path) -> int:
 
     errors: list[str] = []
     total_user_bytes = 0
+    prev_end: int | None = None
 
     for start, end, size in segments:
         seg_type = "DATA/CODE"
@@ -80,11 +81,13 @@ def check_memory(xex_path: Path) -> int:
         elif start == 0x3F00:
             seg_type = "Gameplay Display List"
         elif start == 0x4000:
-            seg_type = "Title Screen VRAM (ANTIC Mode D 160x95)"
+            seg_type = "Title Screen VRAM (ANTIC Mode D 128x96 Narrow)"
         elif start == 0x6000:
             seg_type = "Title Display List"
         elif start == 0x6100:
             seg_type = "Unified DLI Double Buffers"
+        elif start == 0x6710:
+            seg_type = "Game Over / Victory State Handler"
         elif start == 0x6800:
             seg_type = "Player-Missile Graphics (PMG 2 KB) + Audio"
         elif start == 0x7000:
@@ -104,6 +107,13 @@ def check_memory(xex_path: Path) -> int:
         # Skip vector targets for memory boundary checks
         if start == 0x02E0 or start == 0x02E2:
             continue
+
+        # Rule 3: Strictly ascending segments (prevent XEX segment overwrites)
+        if prev_end is not None and start <= prev_end:
+            errors.append(
+                f"Segment ${start:04X}-${end:04X} overlaps or backtracks over previous segment ending at ${prev_end:04X}!"
+            )
+        prev_end = end
 
         # Rule 1 & 2: Boundary checks
         if start >= 0xC000:
