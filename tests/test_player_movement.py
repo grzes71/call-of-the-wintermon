@@ -505,3 +505,372 @@ def test_player_fall_death_game_over_when_zero_lives():
     # Game over defeat status set
     assert mem[labels["GAME_RESULT"]] == 1      # GAME_FAILED
     assert mem[labels["GAME_STATE"]] == 3       # STATE_OVER
+
+
+def test_player_jump_up_vertical():
+    """Verify neutral joystick + Fire triggers vertical jump, peaks, and lands back on same platform."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Hero starts at x=96, y=68 on Platform 0 (plat_y=88)
+    assert mem[labels["PLAYER_STATE"]] == 0     # IDLE
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0
+
+    # Release fire first, then press Fire with neutral joystick (STICK0 = 0x0F)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0                   # Fire pressed
+    mem[labels["STICK0"]] = 0x0F                # Neutral joystick
+
+    # Frame 1: Jump triggers
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
+    assert mem[labels["PLAYER_JUMP_TYPE"]] == 0 # JUMP_TYPE_UP
+    assert mem[labels["PLAYER_JUMP_LEN"]] == 22
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 0 # Phase 0 (Frame 0: fast ascent)
+    assert mem[labels["PLAYER_X"]] == 96        # No horizontal motion
+    assert mem[labels["PLAYER_Y"]] == 66        # First step: dy = -2
+
+    # Step through remaining frames of the 22-step jump
+    # Fire can now be released or held:
+    mem[labels["STRIG0"]] = 1
+    for step in range(2, 12):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        assert mem[labels["PLAYER_STATE"]] == 3 # Still in jump
+        assert mem[labels["PLAYER_X"]] == 96    # Strictly vertical
+
+    # At step 11: apex reached (total dy = -18 -> y = 68 - 18 = 50)
+    assert mem[labels["PLAYER_Y"]] == 50
+
+    # Steps 12..21: descent
+    for step in range(12, 22):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        assert mem[labels["PLAYER_STATE"]] == 3
+        assert mem[labels["PLAYER_X"]] == 96
+
+    # Step 22: Lands back on Platform 0!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0  # Landed on Platform 0
+    assert mem[labels["PLAYER_Y"]] == 68        # Exact return to starting Y
+    assert mem[labels["PLAYER_X"]] == 96
+
+
+def test_player_jump_short_crosses_gap():
+    """Verify Fire + Left/Right triggers short jump (~18px) to clear a 16px gap between platforms."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Position player at x=33, y=68 (standing on Platform 10 at y=88: plat_x=7..39)
+    # Right of Platform 10 is a gap (x=39..48), then Platform 0 begins at x=48..144
+    mem[labels["PLAYER_X"]] = 33
+    mem[labels["PLAYER_Y"]] = 68
+    mem[labels["PLAYER_PLAT_IDX"]] = 10         # On platform 10
+
+    # Ensure open sky above gap by moving Platform 1 out of the way
+    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    mem[plat_ptr_y + 1] = 0
+
+    # Release fire, then press Fire + Right (STICK0 bit 3=0 -> 0x07)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0                   # Fire pressed
+    mem[labels["STICK0"]] = 0x07                # Right active
+
+    # Frame 1: Jump triggers
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
+    assert mem[labels["PLAYER_JUMP_TYPE"]] == 1 # JUMP_TYPE_SHORT
+    assert mem[labels["PLAYER_JUMP_LEN"]] == 18
+    assert mem[labels["PLAYER_DIR"]] == 0       # Facing Right
+    assert mem[labels["PLAYER_X"]] == 34        # dx = 1
+
+    # Advance through remaining steps (17 more steps)
+    mem[labels["STRIG0"]] = 1
+    for _ in range(17):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # At the end of 18 steps: total dx = 18 px (x = 33 + 18 = 51)
+    # At x=51, Hero is on Platform 0 (x=48..144, y=88) across the gap!
+    assert mem[labels["PLAYER_X"]] == 51
+    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed on platform across gap!)
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0  # Platform 0
+
+
+def test_player_jump_long_reaches_higher_platform():
+    """Verify Fire + Up+Left triggers high jump (apex 20 lines) to land on platform 16 lines above."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Hero on lower platform 0 (plat_y=88) at x=76, y=68
+    # Higher platform is Platform 1 at plat_x=32..80, plat_y=72 (16 lines higher)
+    mem[labels["PLAYER_X"]] = 76
+    mem[labels["PLAYER_Y"]] = 68
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+
+    # Release fire, then press Fire + Up+Left (STICK0 bit 0=0 up, bit 2=0 left -> 0x0A)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0                   # Fire pressed
+    mem[labels["STICK0"]] = 0x0A                # Up+Left active
+
+    # Frame 1: Long jump triggers
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
+    assert mem[labels["PLAYER_JUMP_TYPE"]] == 2 # JUMP_TYPE_LONG
+    assert mem[labels["PLAYER_JUMP_LEN"]] == 22
+    assert mem[labels["PLAYER_DIR"]] == 1       # Facing Left
+
+    # Step through frames until landing on the higher platform at plat_y=72 (y=52)
+    mem[labels["STRIG0"]] = 1
+    landed = False
+    for step in range(2, 23):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        if mem[labels["PLAYER_STATE"]] == 0:    # IDLE -> Landed!
+            landed = True
+            break
+
+    assert landed, "Hero must land on higher platform 1"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 1  # Landed on Platform 1!
+    assert mem[labels["PLAYER_Y"]] == 52        # 72 - 20 = 52 (exact platform surface!)
+    # Horizontal displacement must be <= 8px:
+    dx_traveled = 76 - mem[labels["PLAYER_X"]]
+    assert 0 < dx_traveled <= 8, f"Horizontal displacement ({dx_traveled}) must be <= 8px"
+
+
+def test_player_jump_long_does_not_hit_ceiling_two_tiers_above():
+    """Verify long jump to a platform 16 lines above does not trigger ceiling bounce when a ceiling is 2 tiers above."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Hero on lower platform 0 (plat_y=88) at x=76, y=68
+    # Target platform: Platform 1 at plat_x=32..80, plat_y=72 (surface at y=52)
+    # Put a ceiling platform at plat_y=56 (thickness 4: lines 56..59, bottom=60, 32px above lower platform)
+    mem[labels["PLAYER_X"]] = 76
+    mem[labels["PLAYER_Y"]] = 68
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+
+    # Overwrite Platform 7 in scene data to be a ceiling directly above the jump path at y=56 (bottom=60)
+    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+    mem[plat_ptr_x + 7] = 60
+    mem[plat_ptr_w + 7] = 30
+    mem[plat_ptr_y + 7] = 56  # Bottom is at 56 + 4 = 60
+
+    # Trigger long jump Up+Left
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0A
+
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3  # PLAYER_STATE_JUMP
+
+    mem[labels["STRIG0"]] = 1
+    landed = False
+    for _ in range(21):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        # Must NEVER bounce into fall state during this jump
+        assert mem[labels["PLAYER_STATE"]] != 2, "Must not bounce off ceiling at y=56!"
+        if mem[labels["PLAYER_STATE"]] == 0:
+            landed = True
+            break
+
+    assert landed, "Hero must land on target platform"
+    assert mem[labels["PLAYER_Y"]] == 52
+
+
+def test_player_jump_blocked_when_platform_directly_overhead():
+    """Verify Hero standing on a platform with another platform directly overhead (16px above) cannot jump."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Hero on lower Platform 0 (plat_y=88) at x=60 (standing under Platform 1 at plat_x=32..80, plat_y=72)
+    mem[labels["PLAYER_X"]] = 60
+    mem[labels["PLAYER_Y"]] = 68
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+
+    # Fire + neutral (JUMP_UP)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0F
+
+    # Jump must be blocked! Hero remains standing in IDLE on Platform 0 at y=68
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 0      # PLAYER_STATE_IDLE (not JUMP, not FALL!)
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0   # Still securely on Platform 0
+    assert mem[labels["PLAYER_Y"]] == 68         # Never moved down or penetrated platform
+
+    # Re-release fire and try Fire + Right (short jump attempt under ceiling)
+    mem[labels["STRIG0"]] = 1
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x07                 # Right
+
+    # Jump must still be blocked!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] != 3      # Not jumping
+    assert mem[labels["PLAYER_STATE"]] != 2      # Not falling through platform!
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0   # Still on Platform 0
+    assert mem[labels["PLAYER_Y"]] == 68
+
+
+
+def test_player_jump_ceiling_collision_bounces_to_fall():
+    """Verify Hero jumping into a platform ceiling from below bounces off and falls straight down."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # In Scene 0: Platform 4 is at plat_x=1..17, plat_y=40 (thickness 4: lines 40..43, bottom=44).
+    # Position Hero directly under Platform 4 at x=8, y=46 (head at 46, below bottom 44).
+    mem[labels["PLAYER_X"]] = 8
+    mem[labels["PLAYER_Y"]] = 46
+    mem[labels["PLAYER_PLAT_IDX"]] = 0          # On some platform below
+
+    # Release fire, then press Fire + neutral (JUMP_UP)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0F
+
+    # Frame 1: Jump triggers, dy = -2, player_y goes 46 -> 44 (hits bottom at 44!)
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # Hero bumps ceiling: bounces immediately into PLAYER_STATE_FALL!
+    assert mem[labels["PLAYER_STATE"]] == 2     # PLAYER_STATE_FALL
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0xFF
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 0 # Fall animation frame
+    assert mem[labels["PLAYER_SPEED"]] == 0     # Speed 0 (falls vertically)
+
+    # Next frame: regular fall update drops by 1 line
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 2     # Still falling
+    assert mem[labels["PLAYER_Y"]] == 45        # Dropping down
+
+
+def test_player_jump_animation_frames_in_pmg():
+    """Verify jump animation frames 0, 1, 2 are rendered into PMG memory during jump phases."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Start jump-right from x=96, y=68
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0F                # Neutral -> JUMP_UP (facing Right)
+
+    # Frame 1: Phase 0 (Frame 0)
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 0
+    pmg_p0 = labels["PMG_PLAYER0"]
+    frame0_addr = labels["PLAYER_ANIM_JUMP_RIGHT_FRAME_0"]
+    pmg_y = mem[labels["PLAYER_PMG_Y"]]
+    # Compare first scanline
+    assert mem[pmg_p0 + pmg_y] == mem[frame0_addr]
+
+    # Advance to Phase 1 (Frame 1) at step 8 (steps 8..13)
+    mem[labels["STRIG0"]] = 1
+    for _ in range(8):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 1
+    frame1_addr = labels["PLAYER_ANIM_JUMP_RIGHT_FRAME_1"]
+    pmg_y = mem[labels["PLAYER_PMG_Y"]]
+    assert mem[pmg_p0 + pmg_y + 2] == mem[frame1_addr + 2]
+
+    # Advance to Phase 2 (Frame 2) at step 14 (6 more steps, steps 14..21)
+    for _ in range(6):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 2
+    frame2_addr = labels["PLAYER_ANIM_JUMP_RIGHT_FRAME_2"]
+    pmg_y = mem[labels["PLAYER_PMG_Y"]]
+    assert mem[pmg_p0 + pmg_y + 4] == mem[frame2_addr + 4]
+
+
+def test_player_jump_on_row_1_full_height():
+    """Verify Hero jumping from Row 1 (y=24) reaches full apex without being clamped at y=0."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Platform 6 ("platform-010") in Scene 0 is at x=96, y=24, w=32. Standing head is at player_y = 4
+    mem[labels["PLAYER_X"]] = 100
+    mem[labels["PLAYER_Y"]] = 4
+    mem[labels["PLAYER_PLAT_IDX"]] = 6
+
+    # Trigger vertical jump (apex 18 lines)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0F
+
+    # Step 1: y = 2
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3
+    assert mem[labels["PLAYER_Y"]] == 2
+
+    # Step 2: y = 0
+    mem[labels["STRIG0"]] = 1
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_Y"]] == 0
+
+    # Step 3: y crosses into negative (-2 = 254 / 0xFE) - must NOT be clamped to 0!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_Y"]] == 254  # -2 in two's complement
+
+    # Step through remaining steps to apex (step 11: total dy = -18, y = 4 - 18 = -14 = 242 / 0xF2)
+    for _ in range(8):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_Y"]] == 242  # -14 in two's complement (apex 18 lines reached!)
+
+    # PMG scanline at apex: (-14 * 2) + 52 = 24 (valid PMG scanline)
+    assert mem[labels["PLAYER_PMG_Y"]] == 24
+
+    # Complete jump (11 descent steps) and verify clean landing back on Platform 6 at y=4
+    for _ in range(11):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 6  # Platform 6
+    assert mem[labels["PLAYER_Y"]] == 4         # Exactly returned to starting Y
+

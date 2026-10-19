@@ -71,6 +71,12 @@ GAME_SUCCESS        = 2
 PLAYER_STATE_IDLE   = 0
 PLAYER_STATE_WALK   = 1
 PLAYER_STATE_FALL   = 2
+PLAYER_STATE_JUMP   = 3
+
+; --- Player 0 Jump Type Equates ---
+JUMP_TYPE_UP        = 0
+JUMP_TYPE_SHORT     = 1
+JUMP_TYPE_LONG      = 2
 
 ; --- Gameplay Status Variables ($C1-$C2) ---
 player_lives        = $C1   ; Remaining player lives (initially 3, displayed as heart glyphs 64)
@@ -80,7 +86,7 @@ player_cds          = $C2   ; Collected CDs count (0..99, displayed as 2-digit n
 player_x            = $C3   ; Player horizontal position on canvas (0..152)
 player_pmg_y        = $C4   ; Player top scanline in PMG memory ($6C00 + Y)
 player_dir          = $C5   ; Movement direction (0 = right, 1 = left)
-player_state        = $C6   ; Movement state (0 = idle, 1 = walk, 2 = fall)
+player_state        = $C6   ; Movement state (0 = idle, 1 = walk, 2 = fall, 3 = jump)
 player_frame_idx    = $C7   ; Animation frame index (0..PLAYER_FRAME_COUNT-1)
 player_frame_timer  = $C8   ; Frame countdown timer (4..1)
 player_x_sub        = $C9   ; Sub-pixel position accumulator (0..255)
@@ -96,3 +102,10 @@ zp_plat_ptr_x       = $D0   ; 2 bytes ($D0-$D1): Pointer to scene platform X tab
 zp_plat_ptr_y       = $D2   ; 2 bytes ($D2-$D3): Pointer to scene platform Y table
 zp_plat_ptr_w       = $D4   ; 2 bytes ($D4-$D5): Pointer to scene platform W table
 zp_plat_count       = $D6   ; Platform count in active scene
+
+; --- Player 0 Jump Engine Variables ($D7-$DB) ---
+player_jump_type    = $D7   ; Jump type (0 = up, 1 = short, 2 = long)
+player_jump_step    = $D8   ; Step index within active jump trajectory
+player_jump_len     = $D9   ; Total length in steps for active jump
+player_fire_released= $DA   ; Fire button debounce flag (1 = released)
+player_prev_y       = $DB   ; Previous canvas Y coordinate before trajectory step

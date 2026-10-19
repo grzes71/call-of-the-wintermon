@@ -302,15 +302,10 @@ title_scroll_vram
 ; Relocated from $2C30 and $79D0 into the expanded $5000 block
 ; ==============================================================================
     org SCENES_DATA
-    icl 'gen/sprites_data.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
     icl 'engine/secrets.asm'
     icl 'engine/player.asm'
-    icl 'engine/status_line.asm'
-
-
-; Intro music data placed in expanded $5000 block
     icl 'gen/intro_music.asm'
 
 ; ==============================================================================
@@ -381,6 +376,8 @@ pmg_memory
     org RENDER_TABLES
     icl 'engine/render_tables.asm'
     icl 'engine/render.asm'
+    icl 'gen/sprites_data.asm'
+    icl 'engine/status_line.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader

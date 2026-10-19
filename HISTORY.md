@@ -2,6 +2,91 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-19] - Set Vertical Jump Height to Match Long Jump (18-Line Apex)
+
+- **Vertical Jump Profile Update ([engine/player.asm](engine/player.asm))**:
+  - Increased vertical jump length `JUMP_UP_LEN` from 16 to 22 steps.
+  - Updated `jump_up_dy` to match the 18-line apex trajectory of `jump_long_dy` (`-2, -2, -2, -2, -2, -2, -2, -1, -1, -1, -1, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3`), reaching peak ascent at step 11 (-18 lines) with net $\Delta Y = 0$.
+  - Expanded `jump_up_dx` to 22 bytes (`:22 .byte 0`) and aligned `jump_up_anim` to matching 3-phase timing (steps 0..7 Frame 0, steps 8..13 Frame 1, steps 14..21 Frame 2).
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Updated `test_player_jump_up_trajectory` verifying full 22-step vertical trajectory, 18-line peak ascent ($Y = 68 \to 50$), and landing back on Platform 0 at $Y=68$.
+  - Updated `test_player_jump_animation_frames_in_pmg` and `test_player_jump_on_row_1_full_height` to verify updated step boundaries and 18-line apex ($Y = 4 \to -14$) with PMG scanline 24.
+  - All 427 tests passed in `make all`.
+
+## [2026-10-19] - Fix Jump Height Restriction on Top Platform Row (Row 1, Y=24)
+
+- **Signed Player Coordinate Clamping ([engine/player.asm](engine/player.asm))**:
+  - Identified cause of artificial jump height truncation on Row 1 platforms ($Y=24$, standing head at $Y=4$): `player_jump_update` previously clamped `player_y` at $0$ upon underflow, freezing upward ascent after only 4 lines of rise.
+  - Replaced zero-clamp with signed limit down to $Y=-24$ (`$E8`, PMG scanline 4): allows full vertical/short jump ascent (apex $Y=-6$) and long jump ascent (apex $Y=-14$) into open sky above the playfield without wrapping.
+  - Added negative $Y$ guard (`bmi @do_render`) to `player_fall_update` before death check against `PLAYER_DEATH_Y`, preventing negative two's-complement values from falsely triggering bottom-of-screen death.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added `test_player_jump_on_row_1_full_height` verifying full 10-line vertical rise to apex $Y=-6$ ($250 / \$FA$) with valid PMG scanline 40, followed by exact return to starting platform ($Y=4$) in `PLAYER_STATE_IDLE`.
+  - All 427 tests passed in `make all`.
+
+## [2026-10-19] - Block Jump Initiation Under Directly Overhead Platforms
+
+- **Jump Initiation Validation ([engine/player.asm](engine/player.asm))**:
+  - Implemented overhead platform detection in `player_initiate_jump`: before starting any jump trajectory, iterates through scene platforms to check if any platform is directly overhead (`plat_x <= mid_x < plat_x + plat_w`, `overhead_y < floor_y`, and `overhead_y + 20 >= floor_y`).
+  - When standing directly beneath a platform 16 lines above, Hero has insufficient clearance to jump; jumping is completely blocked without modifying `player_state` or transitioning to fall, preventing the ceiling bounce routine from snapping the player through the floor.
+  - In `player_update`, verified `player_state == PLAYER_STATE_JUMP` after `player_initiate_jump` before routing to `player_jump_update`, allowing normal movement handling to proceed seamlessly when jump is blocked.
+- **Ceiling Bounce Snapping Safeguard ([engine/player.asm](engine/player.asm))**:
+  - In `player_jump_update`, clamped ceiling bounce snap `plat_y + 4` against `player_prev_y` (`cmp player_prev_y; bcc @snap_ok; lda player_prev_y`), guaranteeing `player_y` never increases (moves downwards) during ceiling collisions.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Updated `test_player_jump_blocked_when_platform_directly_overhead` verifying that pressing Fire (or Fire + directional input) while standing directly under an overhead platform keeps Hero securely in `PLAYER_STATE_IDLE` on his standing platform without movement or state corruption.
+  - All 426 tests passed in `make all`.
+
+## [2026-10-19] - Set Long Jump Apex to 18 Lines and Fix Ceiling Collision Detection
+
+- **Ceiling Collision Overhaul ([engine/player.asm](engine/player.asm))**:
+  - Fixed false-negative ceiling collision when a platform is directly overhead (16px above floor, e.g. `plat_y = 72` for floor `88`): previously checked `player_prev_y >= plat_y`, which falsely evaluated to false because Hero's standing head at $Y=68$ is numerically $< 72$.
+  - Replaced with robust condition: verified platform is above Hero's feet (`player_y + 20 > plat_y`) and Hero's head penetrated the platform underside (`player_y <= plat_y + 4`).
+  - Bypassed ceiling collision during `JUMP_TYPE_LONG` so jumping to an adjacent higher tier is not obstructed by ceilings 2 tiers higher ($Y - 32$).
+- **Long Jump Trajectory Adjusted to 18-Line Apex ([engine/player.asm](engine/player.asm))**:
+  - Re-profiled `jump_long_dy` to 22 steps with peak ascent of -18 lines at step 11 (`-2, -2, -2, -2, -2, -2, -2, -1, -1, -1, -1, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3`), returning net $\Delta Y = 0$.
+  - Adjusted horizontal step distribution in `jump_long_dx` across steps 0..10 for 8px total displacement.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added `test_player_jump_ceiling_directly_above_hero_bounces` verifying immediate bounce into `PLAYER_STATE_FALL` when jumping directly beneath a platform 16px higher.
+  - Updated `test_player_jump_long_does_not_hit_ceiling_two_tiers_above` and `test_player_jump_short_crosses_gap`.
+  - Full test suite passed (426 tests).
+
+## [2026-10-19] - Tune Long Jump Trajectory to Prevent Ceiling Collision with Higher Platforms
+
+- **Long Jump Trajectory Optimization ([engine/player.asm](engine/player.asm))**:
+  - Reduced `jump_long_dy` apex height from 20 lines to exactly 16 lines (`steps 0..3: dy=-2`, `steps 4..5: dy=-2`, `steps 6..9: dy=-1`, `steps 10..11: dy=0`, `steps 12..15: dy=+1`, `steps 16..21: dy=+2`).
+  - Matches the exact 16-line distance between platform tiers, eliminating vertical overshoot (4 lines lower) and preventing Hero's head from bumping into ceilings located 2 tiers above (e.g. at $Y - 32$).
+  - Front-loaded horizontal displacement in `jump_long_dx` across steps 0..11 (traversing the full 8px before or at apex), ensuring Hero immediately moves away from any platform overhang above his spawn point before cresting onto the destination platform.
+  - Adjusted `jump_long_anim` phase markers: Frame 0 (fast ascent, steps 0..7), Frame 1 (apex & landing, steps 8..13), Frame 2 (accelerating descent if falling, steps 14..21).
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added `test_player_jump_long_does_not_hit_ceiling_two_tiers_above`, confirming that with a ceiling platform at scanline 46 (bottom 50), the long jump to a tier at scanline 72 cleanly lands without triggering ceiling collision.
+  - All 425 unit and py65 tests passing.
+
+## [2026-10-19] - Hero Jumping Physics, Trajectory Profiles, Ceiling Bounce, and Three-Phase Animation
+
+- **Zero Page Architecture & Equates ([zeropage.asm](zeropage.asm))**:
+  - Added player movement state equate `PLAYER_STATE_JUMP = 3`.
+  - Added jump type equates: `JUMP_TYPE_UP = 0` (vertical), `JUMP_TYPE_SHORT = 1` (forward ~16px), `JUMP_TYPE_LONG = 2` (upward to higher platform, max 8px horizontal).
+  - Allocated zero page jump registers: `player_jump_type = $D7`, `player_jump_step = $D8`, `player_jump_len = $D9`, `player_fire_released = $DA` (single-press fire debounce), `player_prev_y = $DB` (for ceiling and landing collision detection).
+- **Trajectory Profiles & Three-Phase Animation Selection ([engine/player.asm](engine/player.asm))**:
+  - Defined trajectory profiles for vertical jump (16 steps, apex 10 lines, net dy=0, dx=0), short forward jump (18 steps, apex 10 lines, net dy=0, dx=18px across gaps), and long upward jump (22 steps, apex 20 lines, reaching platforms 16 lines above, dx=8px).
+  - Configured three-phase animation lookup tables (`jump_up_anim`, `jump_short_anim`, `jump_long_anim`): Frame 0 during initial fast ascent, Frame 1 at apex transition and initial descent, and Frame 2 during accelerating descent.
+  - Added directional frame address tables `player_jump_anim_table_lo/hi` selecting `player_anim_jump_right_frames` and `player_anim_jump_left_frames`.
+- **Joystick Jump Dispatch & Debounce ([engine/player.asm](engine/player.asm))**:
+  - In `player_update`: tracks joystick Fire button release (`STRIG0 == 1`) in `player_fire_released` to ensure a deliberate, single-press trigger per jump.
+  - Implemented `player_initiate_jump`: evaluates joystick direction:
+    - Neutral joystick (or Up only) + Fire -> `JUMP_TYPE_UP`.
+    - Left or Right + Fire -> `JUMP_TYPE_SHORT` in the corresponding direction.
+    - Up+Left or Up+Right + Fire -> `JUMP_TYPE_LONG` in the corresponding direction.
+- **Jump Physics & Collision Engine ([engine/player.asm](engine/player.asm))**:
+  - Implemented `player_jump_update`: steps through active trajectory table, updates canvas coordinates `player_x` (clamped to `PLAYER_MAX_X`) and `player_y` (clamped to 0), and updates PMG scanline `player_pmg_y`.
+  - Ascent ceiling detection (`dy < 0`): checks if Hero's head overlaps any platform from below (`plat_x <= mid_x < plat_x + plat_w` and `player_y <= plat_y + 4` and `player_prev_y >= plat_y`). Bounces off immediately, transitioning to `PLAYER_STATE_FALL` and falling vertically downward using `player_anim_fall_frame_0`.
+  - Descent landing detection (`dy > 0`): checks if Hero's feet cross platform top surface (`prev_feet_y <= plat_y` and `feet_y >= plat_y` and `plat_x <= mid_x < plat_x + plat_w`). Snaps feet to platform top and returns to `PLAYER_STATE_IDLE`.
+- **Memory Architecture Optimization ([main.asm](main.asm), [tests/test_memory_map.py](tests/test_memory_map.py))**:
+  - Relocated `gen/sprites_data.asm` and `engine/status_line.asm` from `$5000` to the `RENDER_TABLES` segment at `$7A00`, keeping `$5000` segment at `$5F3B` (well below `$6000`) and `$7A00` segment at `$7F95` (below `$8000`).
+  - Total headroom below `$C000`: 1,460 bytes.
+- **Automated Integration Tests ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added 5 py65 integration tests: `test_player_jump_up_vertical`, `test_player_jump_short_crosses_gap`, `test_player_jump_long_reaches_higher_platform`, `test_player_jump_ceiling_collision_bounces_to_fall`, and `test_player_jump_animation_frames_in_pmg`.
+  - All 424 tests pass in automated verification.
+
 ## [2026-10-19] - Fix Status Line Clipping, Top-of-Screen Wrap, and Title/Game Over PMG Clearing
 
 - **Status Line Sprite Hiding & Anti-Wrap Fix ([engine/player.asm](engine/player.asm), [engine/dli.asm](engine/dli.asm))**:
