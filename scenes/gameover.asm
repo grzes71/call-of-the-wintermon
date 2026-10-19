@@ -4,10 +4,45 @@
 ; ==============================================================================
 
 .proc gameover_init
-    ; Blank playfield DMA during stub screen
+    ; Blank playfield and PMG DMA during stub screen
     lda #0
     sta SDMCTL
     sta DMACTL
+
+    ; Disable GTIA PMG graphics and clear all player/missile positions
+    sta GRACTL
+    sta HPOSP0
+    sta HPOSP1
+    sta HPOSP2
+    sta HPOSP3
+    sta HPOSM0
+    sta HPOSM1
+    sta HPOSM2
+    sta HPOSM3
+    sta SIZEP0
+    sta SIZEP1
+    sta SIZEP2
+    sta SIZEP3
+    sta SIZEM
+    sta GRAFP0
+    sta GRAFP1
+    sta GRAFP2
+    sta GRAFP3
+    sta GRAFM
+
+    ; Clear entire PMG memory buffer ($6800-$6FFF, 2,048 bytes)
+    tax
+@clr_pmg
+    sta PMG_ADDR + $0000,x
+    sta PMG_ADDR + $0100,x
+    sta PMG_ADDR + $0200,x
+    sta PMG_ADDR + $0300,x
+    sta PMG_ADDR + $0400,x
+    sta PMG_ADDR + $0500,x
+    sta PMG_ADDR + $0600,x
+    sta PMG_ADDR + $0700,x
+    inx
+    bne @clr_pmg
 
     ; Set background to Black ($00)
     sta COLOR4

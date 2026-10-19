@@ -12,6 +12,22 @@ INTRO_TEXT_COLOR = $CA     ; Light green (Hue $C, Luminance $A)
     sta SDMCTL
     sta DMACTL
 
+    ; Blank GTIA PMG graphics
+    sta GRACTL
+    sta HPOSP0
+    sta HPOSP1
+    sta HPOSP2
+    sta HPOSP3
+    sta HPOSM0
+    sta HPOSM1
+    sta HPOSM2
+    sta HPOSM3
+    sta GRAFP0
+    sta GRAFP1
+    sta GRAFP2
+    sta GRAFP3
+    sta GRAFM
+
     ; Background / frame: Black ($00)
     sta COLOR2
     sta COLPF2

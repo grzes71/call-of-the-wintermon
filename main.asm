@@ -202,6 +202,7 @@ dlist_intro
     org TILES_META
     icl 'gen/tiles_data.asm'
     icl 'gen/player_sprites.asm'
+    icl 'scenes/title.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
@@ -308,9 +309,6 @@ title_scroll_vram
     icl 'engine/player.asm'
     icl 'engine/status_line.asm'
 
-
-; Title scene handler placed in expanded $5000 block
-    icl 'scenes/title.asm'
 
 ; Intro music data placed in expanded $5000 block
     icl 'gen/intro_music.asm'

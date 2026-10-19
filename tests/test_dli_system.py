@@ -379,6 +379,7 @@ def test_dli_handler_full_execution_and_palette_transition():
     invoke_dli(mpu, vdslst_dli7)
     assert mem[labels["COLPF2"]] == 0x00, "Status line background must be black ($00)"
     assert mem[labels["COLPF1"]] == 0x0E, "Status line text foreground must be white ($0E)"
+    assert mem[labels["HPOSP0"]] == 0, "HPOSP0 must be 0 on status line to hide Hero"
     assert mem[labels["HPOSP1"]] == 0
     assert mem[labels["HPOSP2"]] == 0
     assert mem[labels["HPOSP3"]] == 0
@@ -386,6 +387,7 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mem[labels["HPOSM1"]] == 0
     assert mem[labels["HPOSM2"]] == 0
     assert mem[labels["HPOSM3"]] == 0
+    assert mem[labels["SIZEP0"]] == 0
     assert mem[labels["SIZEP1"]] == 0
     assert mem[labels["SIZEM"]]  == 0
 
@@ -394,9 +396,7 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert vdslst_next == labels["DLI_HANDLER"], "DLI_STATUS_LINE must restore VDSLST to DLI_HANDLER"
 
     # Invariants verification:
-    # 1. Hero P0 was NEVER touched by any DLI
-    assert mem[labels["HPOSP0"]] == HERO_HPOS
-    assert mem[labels["SIZEP0"]] == HERO_SIZE
+    # 1. Hero P0 color was NEVER touched by any DLI
     assert mem[labels["COLPM0"]] == HERO_COL
     # 2. COLBK is strictly black
     assert mem[labels["COLBK"]] == 0x00
@@ -404,6 +404,11 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mpu.sp == 0xFD
     # 4. X register is preserved across all DLI handlers
     assert mpu.x == expected_x, "X register must remain intact across DLI invocations"
+
+    # 5. On next frame VBLANK update, HPOSP0 is restored for the active playfield
+    mem[labels["PLAYER_X"]] = 50
+    run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+    assert mem[labels["HPOSP0"]] == 48 + 50
 
 
 # ==============================================================================

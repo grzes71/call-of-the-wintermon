@@ -2,6 +2,49 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-19] - Fix Status Line Clipping, Top-of-Screen Wrap, and Title/Game Over PMG Clearing
+
+- **Status Line Sprite Hiding & Anti-Wrap Fix ([engine/player.asm](engine/player.asm), [engine/dli.asm](engine/dli.asm))**:
+  - Adjusted PMG sprite clipping threshold in `player_render_frame` from 244 to 224 (`cmp #224` and carry check `bcs @skip`), matching the end of the Mode D playfield (scanlines 32..223) and beginning of the status line area (224..239). Sprite smoothly hides behind the status line as it falls.
+  - Corrected `PLAYER_DEATH_Y` from 104 to 94 (`pmg_y = 94 * 2 + 52 = 240`), ensuring the top of the sprite completely clears the bottom of the status line without 8-bit arithmetic wrap-around (which previously wrapped 260 to 4, redrawing the sprite at the top of the screen).
+  - In `dli_status_line` ([engine/dli.asm](engine/dli.asm)): added hardware zeroing for Player 0 (`sta HPOSP0`, `sta SIZEP0`) to guarantee that no sprite pixels appear on the Mode 2 text row.
+  - In `dli_vblank_update` ([engine/dli.asm](engine/dli.asm)): restored `HPOSP0 = 48 + player_x` and `SIZEP0 = 0` for the active playfield area.
+- **PMG Buffer & Hardware Register Clearing ([scenes/title.asm](scenes/title.asm), [scenes/gameover.asm](scenes/gameover.asm), [scenes/intro.asm](scenes/intro.asm), [engine/player.asm](engine/player.asm))**:
+  - In `title_init`, `gameover_init`, and `intro_init`: disabled GTIA PMG latching (`sta GRACTL`), cleared all horizontal positions (`HPOSP0..3`, `HPOSM0..3`), size registers (`SIZEP0..3`, `SIZEM`), and graphics latch registers (`GRAFP0..3`, `GRAFM`), and wiped all 2,048 bytes of PMG memory (`$6800-$6FFF`) to eliminate residual vertical strips or flickering on the title screen after game over.
+  - In `player_handle_death` ([engine/player.asm](engine/player.asm)): added immediate clearing of `HPOSP0` and `GRAFP0` upon death.
+- **Test Suite Updates ([tests/test_player_movement.py](tests/test_player_movement.py), [tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated falling death tests for `PLAYER_DEATH_Y = 94` and verified scanlines `>= 224` are strictly 0.
+  - Updated DLI 7 status line assertions to verify `HPOSP0 == 0` and `SIZEP0 == 0` on the status line, with position restoration on VBLANK.
+  - All 419 unit and integration tests passing; memory map passes with 2,115 bytes headroom below `$C000`.
+
+## [2026-10-19] - Platform Edge Falling Physics, Fall Animation, PMG Status Line Clipping, and Defeat Handling
+
+- **Zero Page Architecture ([zeropage.asm](zeropage.asm))**:
+  - Added game result equates (`GAME_RESULT_NONE = 0`, `GAME_FAILED = 1`, `GAME_SUCCESS = 2`).
+  - Added player movement state equate `PLAYER_STATE_FALL = 2`.
+  - Allocated zero page variables: `player_y = $CC`, `player_plat_idx = $CD` (standing platform index, `$FF` if falling), `player_prev_pmg_y = $CE` (previous frame PMG scanline for glitch-free clearing), `game_result = $CF` (defeat/victory outcome).
+  - Allocated platform collision pointers in Zero Page: `zp_plat_ptr_x = $D0`, `zp_plat_ptr_y = $D2`, `zp_plat_ptr_w = $D4`, `zp_plat_count = $D6`.
+- **Platform Edge & Falling Engine ([engine/player.asm](engine/player.asm))**:
+  - In `player_init`: initializes `player_y`, `player_prev_pmg_y`, sets up active scene platform pointers, and scans platform bounds (`plat_y == player_y + 20` and `plat_x <= player_x + 4 < plat_x + plat_w`) to detect the initial standing platform.
+  - In `player_update`: checks if Hero walks > 50% of sprite width (midpoint `player_x + 4`) beyond either left or right platform bounds (`mid_x < plat_x` or `mid_x >= plat_x + plat_w`); transitions immediately to `PLAYER_STATE_FALL`, zeroes horizontal speed and resets platform index to `$FF`.
+  - Implemented `player_fall_update`: drops Hero downwards by 1 canvas line/frame, updates `player_pmg_y`, and checks for landing on lower platforms in the active scene.
+  - Landing detection: if `feet_y == plat_y` and `plat_x <= mid_x < plat_x + plat_w`, lands safely, resetting state to `PLAYER_STATE_IDLE` and setting `player_plat_idx`.
+- **PMG Rendering & Status Line Clipping Invariant ([engine/player.asm](engine/player.asm))**:
+  - In `player_render_frame`: selects 1-frame fall animation `player_anim_fall_frame_0` when in `PLAYER_STATE_FALL`.
+  - Implemented scanline-precise erasing of previous sprite lines (`player_prev_pmg_y + y < 244`) from `PMG_PLAYER0` buffer to prevent vertical smearing.
+  - Enforced strict hardware clipping at scanline 244 (`PMG_MAX_DRAW_SCANLINE`): any sprite scanline falling onto or below scanline 244 is never written to PMG memory, guaranteeing zero sprite visibility over the status line text or bottom blank margins.
+- **Death & Defeat / Game Over State Handling ([engine/player.asm](engine/player.asm), [engine/status_line.asm](engine/status_line.asm))**:
+  - Implemented `player_handle_death`: triggered once the entire sprite frame completely traverses through the bottom of the status line (`player_y >= PLAYER_DEATH_Y = 104`).
+  - Clears `PMG_PLAYER0` buffer, decrements `player_lives` by 1, and immediately updates hearts on the Mode 2 status line HUD via `status_line_refresh_lives`.
+  - If lives remain (`player_lives > 0`), re-initializes Hero at the scene spawn position via `player_init`.
+  - If no lives remain (`player_lives == 0`), sets `game_result = GAME_FAILED` and triggers defeat game over transition to `game_state = STATE_OVER`.
+  - Updated `status_line_reset` in [engine/status_line.asm](engine/status_line.asm) to reset `game_result` to `GAME_RESULT_NONE`.
+- **Memory Layout & Segment Headroom ([main.asm](main.asm))**:
+  - Relocated `scenes/title.asm` into `TILES_META` segment ($2A30), preventing segment $5000 from overflowing into Title Display List ($6000).
+  - Maintained memory continuity with 2,354 bytes headroom below `$C000`.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added py65 CPU integration tests covering right-edge fall trigger (> 50% width), left-edge fall trigger (> 50% width), fall animation in PMG memory, landing on lower platforms, bottom-of-screen status line clipping and lives decrement respawn, and Game Over failure transition upon reaching 0 lives (419/419 tests passing).
+
 ## [2026-10-19] - Per-Scene Player 0 Color Configuration in Scene Editor and Engine
 
 - **Scene Model & Serialization ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:

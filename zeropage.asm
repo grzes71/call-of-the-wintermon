@@ -62,21 +62,37 @@ dli_pending_offset  = $BD   ; Inactive/staging buffer offset (8 or 0)
 dli_swap_requested  = $BE   ; Mailbox flag: 1 = swap pending for next VBLANK
 dli_scene_pmg_ptr   = $BF   ; 2 bytes ($BF-$C0): Pointer to active scene PMG patterns in ROM
 
+; --- Game Result Equates ---
+GAME_RESULT_NONE    = 0
+GAME_FAILED         = 1
+GAME_SUCCESS        = 2
+
+; --- Player 0 Movement State Equates ---
+PLAYER_STATE_IDLE   = 0
+PLAYER_STATE_WALK   = 1
+PLAYER_STATE_FALL   = 2
+
 ; --- Gameplay Status Variables ($C1-$C2) ---
 player_lives        = $C1   ; Remaining player lives (initially 3, displayed as heart glyphs 64)
 player_cds          = $C2   ; Collected CDs count (0..99, displayed as 2-digit number)
 
-; --- Player 0 Engine Zero Page Variables ($C3-$CB) ---
+; --- Player 0 Engine Zero Page Variables ($C3-$CF) ---
 player_x            = $C3   ; Player horizontal position on canvas (0..152)
 player_pmg_y        = $C4   ; Player top scanline in PMG memory ($6C00 + Y)
 player_dir          = $C5   ; Movement direction (0 = right, 1 = left)
-player_state        = $C6   ; Movement state (0 = idle, 1 = walk)
+player_state        = $C6   ; Movement state (0 = idle, 1 = walk, 2 = fall)
 player_frame_idx    = $C7   ; Animation frame index (0..PLAYER_FRAME_COUNT-1)
 player_frame_timer  = $C8   ; Frame countdown timer (4..1)
 player_x_sub        = $C9   ; Sub-pixel position accumulator (0..255)
 player_speed        = $CA   ; Horizontal speed magnitude (0..PLAYER_MAX_SPEED subpixels/frame)
 player_color        = $CB   ; Active Hero color byte (from scene_player_color)
+player_y            = $CC   ; Player canvas Y coordinate (0..104+)
+player_plat_idx     = $CD   ; Active standing platform index ($FF = airborne/falling)
+player_prev_pmg_y   = $CE   ; Previous frame PMG scanline (for PMG erasing)
+game_result         = $CF   ; Outcome status (0 = none, 1 = GAME_FAILED, 2 = GAME_SUCCESS)
 
-
-
-
+; --- Platform Collision Zero Page Variables ($D0-$D6) ---
+zp_plat_ptr_x       = $D0   ; 2 bytes ($D0-$D1): Pointer to scene platform X table
+zp_plat_ptr_y       = $D2   ; 2 bytes ($D2-$D3): Pointer to scene platform Y table
+zp_plat_ptr_w       = $D4   ; 2 bytes ($D4-$D5): Pointer to scene platform W table
+zp_plat_count       = $D6   ; Platform count in active scene

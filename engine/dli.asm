@@ -370,10 +370,17 @@ dli_table_ptrs_hi
 
     ; 1. Reset PMG sizes to x1 for Zone 0
     lda #0
+    sta SIZEP0
     sta SIZEP1
     sta SIZEP2
     sta SIZEP3
     sta SIZEM
+
+    ; Restore Player 0 horizontal position for active playfield
+    lda player_x
+    clc
+    adc #PLAYER_HPOS_OFFSET
+    sta HPOSP0
 
     ; 2. Apply Zone 0 enemies (P1..P3)
     lda dli_z0_hpos_p1,x
@@ -636,6 +643,7 @@ dli_table_ptrs_hi
     lda #$0E               ; [2]
     sta COLPF1             ; [4] Crisp white text
     lda #0                 ; [2] Clear PMG positions so no sprites bleed into status bar
+    sta HPOSP0             ; [4]
     sta HPOSP1             ; [4]
     sta HPOSP2             ; [4]
     sta HPOSP3             ; [4]
@@ -643,6 +651,7 @@ dli_table_ptrs_hi
     sta HPOSM1             ; [4]
     sta HPOSM2             ; [4]
     sta HPOSM3             ; [4]
+    sta SIZEP0             ; [4]
     sta SIZEP1             ; [4]
     sta SIZEP2             ; [4]
     sta SIZEP3             ; [4]

@@ -265,8 +265,9 @@ def test_player_bounds_clamping_with_inertia():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Set player at left boundary (x = 0)
+    # Set player at left boundary (x = 0) on platform 3 (plat_x=0, plat_w=32)
     mem[labels["PLAYER_X"]] = 0
+    mem[labels["PLAYER_PLAT_IDX"]] = 3
     mem[labels["PLAYER_X_SUB"]] = 0
     mem[labels["PLAYER_SPEED"]] = 0
 
@@ -279,8 +280,9 @@ def test_player_bounds_clamping_with_inertia():
     assert mem[labels["PLAYER_STATE"]] == 0
     assert mem[labels["HPOSP0"]] == 48
 
-    # Set player at right boundary (x = 152)
+    # Set player at right boundary (x = 152) on platform 2 (plat_x=128, plat_w=32)
     mem[labels["PLAYER_X"]] = 152
+    mem[labels["PLAYER_PLAT_IDX"]] = 2
     mem[labels["PLAYER_X_SUB"]] = 0
     mem[labels["PLAYER_SPEED"]] = 0
 
@@ -292,3 +294,214 @@ def test_player_bounds_clamping_with_inertia():
     assert mem[labels["PLAYER_SPEED"]] == 0
     assert mem[labels["PLAYER_STATE"]] == 0
     assert mem[labels["HPOSP0"]] == 48 + 152
+
+
+def test_player_fall_off_platform_right_edge():
+    """Verify player falls when moving > 50% past the right edge of a platform."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Platform 0 in Scene 0: plat_x = 48, plat_w = 96 -> right edge = 144
+    # Player width = 8, midpoint = player_x + 4.
+    # At player_x = 139: mid_x = 143 < 144 (still on platform)
+    mem[labels["PLAYER_X"]] = 139
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed right
+    mem[labels["PLAYER_DIR"]] = 0       # Right
+    mem[labels["STICK0"]] = 0x07        # Pressing right
+
+    # Subpixel accumulator set so next frame steps to x = 140
+    mem[labels["PLAYER_X_SUB"]] = 0x80
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # At player_x = 140: mid_x = 144 >= 144 (>= 50% past right edge!)
+    assert mem[labels["PLAYER_X"]] == 140
+    assert mem[labels["PLAYER_STATE"]] == 2     # PLAYER_STATE_FALL
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0xFF
+    assert mem[labels["PLAYER_SPEED"]] == 0
+
+
+def test_player_fall_off_platform_left_edge():
+    """Verify player falls when moving > 50% past the left edge of a platform."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Platform 0 in Scene 0: plat_x = 48.
+    # At player_x = 44: mid_x = 48 >= 48 (50% on, still standing)
+    mem[labels["PLAYER_X"]] = 44
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed left
+    mem[labels["PLAYER_DIR"]] = 1       # Left
+    mem[labels["STICK0"]] = 0x0B        # Pressing left
+
+    # Subpixel accumulator set so next frame steps left to x = 43
+    mem[labels["PLAYER_X_SUB"]] = 0x80
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # At player_x = 43: mid_x = 47 < 48 (> 50% past left edge!)
+    assert mem[labels["PLAYER_X"]] == 43
+    assert mem[labels["PLAYER_STATE"]] == 2     # PLAYER_STATE_FALL
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0xFF
+    assert mem[labels["PLAYER_SPEED"]] == 0
+
+
+def test_player_fall_animation_frame_in_pmg():
+    """Verify PMG buffer renders player_anim_fall_frame_0 while falling."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Put player in fall state at y = 68
+    mem[labels["PLAYER_STATE"]] = 2  # FALL
+    run_subroutine(mpu, labels["PLAYER_RENDER_FRAME"])
+
+    pmg_p0 = labels["PMG_PLAYER0"]
+    fall_f0 = labels["PLAYER_ANIM_FALL_FRAME_0"]
+
+    # Scanlines 188..207 must match player_anim_fall_frame_0
+    for i in range(20):
+        expected_byte = mem[fall_f0 + i]
+        actual_byte = mem[pmg_p0 + 188 + i]
+        assert actual_byte == expected_byte, f"Fall frame scanline {188+i} mismatch"
+
+
+def test_player_fall_and_land_on_lower_platform():
+    """Verify player falling downwards lands on a lower platform in its vertical path."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # In Scene 0: Platform 1 is at plat_x = 32, plat_y = 72, plat_w = 48 [32..80).
+    # Starting at x = 60, y = 50 (above platform 1 at plat_y = 72).
+    # feet_y will go 70 -> 71 -> 72.
+    mem[labels["PLAYER_X"]] = 60
+    mem[labels["PLAYER_Y"]] = 50
+    mem[labels["PLAYER_PMG_Y"]] = 50 * 2 + 52
+    mem[labels["PLAYER_STATE"]] = 2  # FALL
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+
+    # Frame 1: y increases to 51, feet = 71 (not landed)
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_Y"]] == 51
+    assert mem[labels["PLAYER_STATE"]] == 2
+
+    # Frame 2: y increases to 52, feet = 72. Platform 1 has plat_y = 72, plat_x = 32, plat_w = 48.
+    # mid_x = 64 is within [32..80)! Lands on platform 1!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_Y"]] == 52
+    assert mem[labels["PLAYER_STATE"]] == 0     # IDLE
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 1  # Platform 1
+
+
+def test_player_fall_death_and_respawn_with_lives_decrement():
+    """Verify falling off bottom of scene clips at status line, decrements lives, and respawns."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mem[labels["PLAYER_LIVES"]] = 3
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.a = 0
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Position player falling below all platforms (x = 150 has no platform at y=88 in Scene 0)
+    # Set y = 80 (pmg_y = 212, feet = 231 > 224 -> sinking behind status line)
+    mem[labels["PLAYER_X"]] = 150
+    mem[labels["PLAYER_Y"]] = 80
+    mem[labels["PLAYER_PMG_Y"]] = 80 * 2 + 52  # 212
+    mem[labels["PLAYER_STATE"]] = 2  # FALL
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+
+    # Advance fall frames: y = 81..93
+    # During this time, PMG scanlines >= 224 MUST be 0 (clipped from status line)
+    pmg_p0 = labels["PMG_PLAYER0"]
+    for y_cur in range(81, 94):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        assert mem[labels["PLAYER_Y"]] == y_cur
+        assert mem[labels["PLAYER_STATE"]] == 2  # Still falling
+        # Verify clipping invariant: scanlines 224..255 must be strictly 0
+        for sl in range(224, 256):
+            assert mem[pmg_p0 + sl] == 0, f"PMG scanline {sl} on status line must be 0!"
+
+    # Frame at y = 94: triggers PLAYER_HANDLE_DEATH
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # Lives decremented from 3 to 2
+    assert mem[labels["PLAYER_LIVES"]] == 2
+    # Status line updated: 3rd heart glyph turned off
+    status_vram = labels["STATUS_LINE_VRAM"]
+    assert mem[status_vram + 0] == 64  # Heart 1
+    assert mem[status_vram + 1] == 64  # Heart 2
+    assert mem[status_vram + 2] == 0   # Space (lost life)
+
+    # Hero respawned at start coordinates of Scene 0 (x=96, y=68)
+    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_STATE"]] == 0  # IDLE
+    assert mem[labels["PLAYER_PLAT_IDX"]] == 0
+
+
+def test_player_fall_death_game_over_when_zero_lives():
+    """Verify falling off bottom with 1 life remaining triggers Game Over with GAME_FAILED status."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Start with 1 life
+    mem[labels["PLAYER_LIVES"]] = 1
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.a = 0
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Put player right at death threshold
+    mem[labels["PLAYER_X"]] = 150
+    mem[labels["PLAYER_Y"]] = 93
+    mem[labels["PLAYER_PMG_Y"]] = (93 * 2 + 52) & 0xFF
+    mem[labels["PLAYER_STATE"]] = 2  # FALL
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+
+    # 1 frame: y reaches 94 -> Death!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    # Lives decremented to 0
+    assert mem[labels["PLAYER_LIVES"]] == 0
+
+    # All 3 hearts turned off
+    status_vram = labels["STATUS_LINE_VRAM"]
+    assert mem[status_vram + 0] == 0
+    assert mem[status_vram + 1] == 0
+    assert mem[status_vram + 2] == 0
+
+    # Game over defeat status set
+    assert mem[labels["GAME_RESULT"]] == 1      # GAME_FAILED
+    assert mem[labels["GAME_STATE"]] == 3       # STATE_OVER

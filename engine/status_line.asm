@@ -24,6 +24,7 @@ STATUS_INIT_LIVES   = 3
     sta player_lives
     lda #0
     sta player_cds
+    sta game_result
     rts
 .endp
 
