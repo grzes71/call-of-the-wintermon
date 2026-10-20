@@ -1,20 +1,37 @@
 ; ==============================================================================
-; SCENES/TITLE.ASM — Title Screen State Handler
+; SCENES/TITLE.ASM — Title Screen State Handler & 2bpp Text Generator
 ; Target: Atari 800XL / 65XE
-; Mode: ANTIC Mode D (160x95, 2 bpp, 4 colors) + ANTIC Mode 2 Scroller (40x8, 1 bpp)
+; Mode: ANTIC Mode E (CALL) + Mode D (OF THE & WINTERMOON) + ANTIC Mode 2 Scroller (Normal width, 40 bytes/line)
 ; Palette:
 ;   %00 = COLBK  = $00 (Black background)
-;   %01 = COLPF0 = $C4 (Forest dark green)
-;   %02 = COLPF1 = $CA (Forest medium green)
+;   %01 = COLPF0 = $C4 (Forest dark green - right half of 2bpp glyphs)
+;   %02 = COLPF1 = $CA (Forest medium green - left half of 2bpp glyphs)
 ;   %03 = COLPF2 = $EE (Bright yellow-green moon glow)
 ; ==============================================================================
 
-TITLE_COLOR_PF0       = $C4
-TITLE_COLOR_PF1       = $CA
-TITLE_COLOR_PF2       = $EE
+TITLE_COLOR_PF0       = $C4   ; Forest dark green (COLPF0: right half of glyphs, distinct from black and COLPF1)
+TITLE_COLOR_PF1       = $CA   ; Forest medium green (COLPF1: left half of glyphs)
+TITLE_COLOR_PF2       = $EE   ; Bright yellow-green moon glow
 TITLE_COLOR_SCROLL    = $CE   ; Green text foreground luminance/color
 TITLE_COLOR_SCROLL_BG = $C0   ; Mode 2 background: Black with Green hue ($C0) to colorize text
 TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, comfortable reading speed)
+
+; Default color pairs for each of the three title lines (COLPF0 = right half, COLPF1 = left half)
+TITLE_CALL_PF0        = TITLE_COLOR_PF0   ; $CA (Forest dark green on black)
+TITLE_CALL_PF1        = TITLE_COLOR_PF1   ; $C4 (Forest medium green)
+TITLE_OFTHE_PF0       = $34
+TITLE_OFTHE_PF1       = $3A
+TITLE_WINTER_PF0      = $74
+TITLE_WINTER_PF1      = $7A
+
+; --- Title Text Generator Constants & Buffer Equates ---
+TITLE_TEXT_PITCH      = 40
+TITLE_TEXT_ROWS       = 8
+TITLE_TEXT_BYTES      = 320
+
+title_text_call       = GAME_VRAM + $0000 ; $3000–$313F
+title_text_of_the     = GAME_VRAM + $0140 ; $3140–$327F
+title_text_wintermoon = GAME_VRAM + $0280 ; $3280–$33BF
 
 .proc title_init
     ; Turn off ANTIC DMA during setup
@@ -28,24 +45,11 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
 
     ; Disable GTIA PMG graphics and clear all player/missile positions
     sta GRACTL
-    sta HPOSP0
-    sta HPOSP1
-    sta HPOSP2
-    sta HPOSP3
-    sta HPOSM0
-    sta HPOSM1
-    sta HPOSM2
-    sta HPOSM3
-    sta SIZEP0
-    sta SIZEP1
-    sta SIZEP2
-    sta SIZEP3
-    sta SIZEM
-    sta GRAFP0
-    sta GRAFP1
-    sta GRAFP2
-    sta GRAFP3
-    sta GRAFM
+    ldx #17
+@clr_gtia
+    sta HPOSP0,x
+    dex
+    bpl @clr_gtia
 
     ; Clear entire PMG memory buffer ($6800-$6FFF, 2,048 bytes)
     tax
@@ -60,33 +64,6 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
     sta PMG_ADDR + $0700,x
     inx
     bne @clr_pmg
-
-    ; Set background / frame colors to Black ($00)
-    sta COLOR4
-    sta COLBK
-
-    ; Set Display List pointer
-    lda <dlist_title
-    sta SDLSTL
-    sta DLISTL
-    lda >dlist_title
-    sta SDLSTH
-    sta DLISTH
-
-    ; Set character set font pointer to intro_font ($24)
-    lda >intro_font
-    sta CHBAS
-    sta CHBASE
-
-    ; Set DLI vector for Title scroll line
-    lda <dli_title_scroll
-    sta VDSLST
-    lda >dli_title_scroll
-    sta VDSLST+1
-
-    ; Enable VBLANK ($40) + DLI ($80) = $C0
-    lda #$C0
-    sta NMIEN
 
     ; Clear 48-byte scroll VRAM buffer with spaces ($00)
     lda #0
@@ -106,7 +83,28 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
     lda #0
     sta fire_released
 
-    ; Show immediately at full brightness (no fade-in)
+    ; Clear exactly 960 bytes of title text overlay ($3000-$33BF)
+    ldx #0
+@clr_text
+    sta GAME_VRAM + $0000,x
+    sta GAME_VRAM + $0100,x
+    sta GAME_VRAM + $0200,x
+    cpx #$C0
+    bcs @skip_p3
+    sta GAME_VRAM + $0300,x
+@skip_p3
+    inx
+    bne @clr_text
+
+    ; Generate title texts: CALL, OF THE, WINTERMOON
+    jsr title_generate_all_texts
+
+    ; Set background / frame colors to Black ($00)
+    lda #0
+    sta COLOR4
+    sta COLBK
+
+    ; Set playfield colors
     lda #TITLE_COLOR_PF0
     sta COLOR0
     sta COLPF0
@@ -117,10 +115,33 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
     sta COLOR2
     sta COLPF2
 
-    ; Enable playfield DMA in Narrow mode ($21: 128px Mode D title image)
-    lda #$21
+    ; Set Display List pointer
+    lda <dlist_title
+    sta SDLSTL
+    sta DLISTL
+    lda >dlist_title
+    sta SDLSTH
+    sta DLISTH
+
+    ; Enable playfield DMA in Normal mode ($22: 40 cols / 160px)
+    lda #$22
     sta SDMCTL
     sta DMACTL
+
+    ; Set character set font pointer to intro_font ($24)
+    lda >intro_font
+    sta CHBAS
+    sta CHBASE
+
+    ; Set DLI vector to first handler in chain (dli_title_color_call)
+    lda <dli_title_color_call
+    sta VDSLST
+    lda >dli_title_color_call
+    sta VDSLST+1
+
+    ; Enable VBLANK ($40) + DLI ($80) = $C0
+    lda #$C0
+    sta NMIEN
 
     ; Start music immediately
     jsr audio_play_title
@@ -128,8 +149,8 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
 .endp
 
 .proc title_run
-    ; Maintain Narrow playfield DMA ($21)
-    lda #$21
+    ; Maintain Normal playfield DMA ($22)
+    lda #$22
     sta SDMCTL
     sta DMACTL
 
@@ -143,10 +164,10 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
     cmp RTCLOK+2
     beq @sync_vblank
 
-    ; Reset DLI vector to first DLI at the start of each frame
-    lda <dli_title_scroll
+    ; Reset DLI vector to first DLI at the start of each frame (fallback safety)
+    lda <dli_title_color_call
     sta VDSLST
-    lda >dli_title_scroll
+    lda >dli_title_color_call
     sta VDSLST+1
 
     ; Advance music player by 1 frame
@@ -200,21 +221,76 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
 .endp
 
 ; ==============================================================================
+; TITLE ROW COLORS TABLE (Runtime-writable in RAM)
+; Layout: 2 bytes per row (COLPF0 = right half, COLPF1 = left half)
+; ==============================================================================
+title_row_colors:
+    .byte TITLE_CALL_PF0,   TITLE_CALL_PF1
+    .byte TITLE_OFTHE_PF0,  TITLE_OFTHE_PF1
+    .byte TITLE_WINTER_PF0, TITLE_WINTER_PF1
+
+; ==============================================================================
+; DLI ROUTINES — Title Line Colors (Self-Resetting Chain)
+; Handlers trigger during DL_BLANK8 lines preceding each title line.
+; No graphics are rendered during blank scanlines, making color updates invisible
+; without requiring WSYNC synchronization (~41 CPU cycles per handler).
+; ==============================================================================
+.proc dli_title_color_call
+    pha                         ; Save accumulator                    ; [3]
+    lda title_row_colors + 0    ; COLPF0 for CALL (right half)        ; [4]
+    sta COLPF0                  ;                                     ; [4]
+    lda title_row_colors + 1    ; COLPF1 for CALL (left half)         ; [4]
+    sta COLPF1                  ;                                     ; [4]
+    lda #<dli_title_color_of_the; Chain next DLI handler              ; [2]
+    sta VDSLST                  ;                                     ; [4]
+    lda #>dli_title_color_of_the;                                     ; [2]
+    sta VDSLST+1                ;                                     ; [4]
+    pla                         ; Restore accumulator                 ; [4]
+    rti                         ; Return from interrupt               ; [6]
+.endp
+
+.proc dli_title_color_of_the
+    pha                         ; Save accumulator                    ; [3]
+    lda title_row_colors + 2    ; COLPF0 for OF THE (right half)      ; [4]
+    sta COLPF0                  ;                                     ; [4]
+    lda title_row_colors + 3    ; COLPF1 for OF THE (left half)       ; [4]
+    sta COLPF1                  ;                                     ; [4]
+    lda #<dli_title_color_winter; Chain next DLI handler              ; [2]
+    sta VDSLST                  ;                                     ; [4]
+    lda #>dli_title_color_winter;                                     ; [2]
+    sta VDSLST+1                ;                                     ; [4]
+    pla                         ; Restore accumulator                 ; [4]
+    rti                         ; Return from interrupt               ; [6]
+.endp
+
+.proc dli_title_color_winter
+    pha                         ; Save accumulator                    ; [3]
+    lda title_row_colors + 4    ; COLPF0 for WINTERMOON (right half)  ; [4]
+    sta COLPF0                  ;                                     ; [4]
+    lda title_row_colors + 5    ; COLPF1 for WINTERMOON (left half)   ; [4]
+    sta COLPF1                  ;                                     ; [4]
+    lda #<dli_title_scroll      ; Chain scroll DLI handler            ; [2]
+    sta VDSLST                  ;                                     ; [4]
+    lda #>dli_title_scroll      ;                                     ; [2]
+    sta VDSLST+1                ;                                     ; [4]
+    pla                         ; Restore accumulator                 ; [4]
+    rti                         ; Return from interrupt               ; [6]
+.endp
+
+; ==============================================================================
 ; DLI ROUTINE — Triggered on DL_BLANK1 before ANTIC Mode 2 scroll line
-; 1. Waits for buffer blank scanline, switches ANTIC to Normal playfield ($22),
-;    sets fine horizontal scroll (HSCROL), and sets text foreground color (COLPF1).
+; 1. Waits for buffer blank scanline, sets fine horizontal scroll (HSCROL),
+;    and sets text foreground color (COLPF1).
 ; 2. Renders 8-scanline rainbow background gradient ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0)
 ;    into COLPF2 synchronized with WSYNC.
-; 3. On post-scroll blank line, restores Narrow playfield ($21), resets HSCROL,
-;    and restores Mode D playfield colors.
+; 3. On post-scroll blank line, resets HSCROL and restores Mode D/E playfield colors.
+; 4. Self-resets VDSLST back to dli_title_color_call for the next frame.
 ; ==============================================================================
 .proc dli_title_scroll
     pha                         ; Save accumulator                    ; [3]
     sta WSYNC                   ; Wait for end of DLI blank line      ; [4]
 
     ; --- Buffer Blank Scanline ---
-    lda #$22                    ; Normal playfield (40 cols / 48 fetch) ; [2]
-    sta DMACTL                  ;                                     ; [4]
     lda title_scroll_fine       ; Fine scroll offset (3..0 clocks)    ; [3]
     sta HSCROL                  ;                                     ; [4]
     lda #TITLE_COLOR_SCROLL     ; Text foreground color               ; [2]
@@ -264,15 +340,19 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
     sta COLPF2                  ; Background: $C0                     ; [4]
     sta WSYNC                   ; Wait for post-scroll blank line     ; [4]
 
-    ; --- Post-Scroll Blank Scanline: Restore Mode D State ---
-    lda #$21                    ; Restore Narrow playfield (128 px)   ; [2]
-    sta DMACTL                  ;                                     ; [4]
+    ; --- Post-Scroll Blank Scanline: Restore Mode D/E State ---
     lda #0                      ; Reset fine horizontal scroll        ; [2]
     sta HSCROL                  ;                                     ; [4]
-    lda #TITLE_COLOR_PF1        ; Restore Mode D PF1 color            ; [2]
+    lda #TITLE_COLOR_PF1        ; Restore Mode D/E PF1 color          ; [2]
     sta COLPF1                  ;                                     ; [4]
-    lda #TITLE_COLOR_PF2        ; Restore Mode D PF2 color            ; [2]
+    lda #TITLE_COLOR_PF2        ; Restore Mode D/E PF2 color          ; [2]
     sta COLPF2                  ;                                     ; [4]
+
+    ; Reset DLI chain back to first handler (CALL colors) for next frame
+    lda #<dli_title_color_call  ;                                     ; [2]
+    sta VDSLST                  ;                                     ; [4]
+    lda #>dli_title_color_call  ;                                     ; [2]
+    sta VDSLST+1                ;                                     ; [4]
 
     pla                         ; Restore accumulator                 ; [4]
     rti                         ; Return from interrupt               ; [6]
@@ -336,3 +416,204 @@ TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, 
 title_scroll_fine   .byte 3
 title_scroll_delay  .byte TITLE_SCROLL_SPEED
 title_scroll_idx    .byte 0
+
+; ==============================================================================
+; TITLE TEXT GENERATOR TABLES & PROCEDURES
+; ==============================================================================
+; Screen codes, lengths, and centering offsets compiled from texts/title.txt
+    icl 'gen/title_text_data.asm'
+
+; 16-byte nibble-to-2bpp lookup table for high nibble (bits 7-4, left 4 pixels: 0 -> 00, 1 -> 10 = COLPF1)
+title_text_lut:
+title_text_lut_hi:
+    .byte $00,$02,$08,$0A,$20,$22,$28,$2A
+    .byte $80,$82,$88,$8A,$A0,$A2,$A8,$AA
+
+; 16-byte nibble-to-2bpp lookup table for low nibble (bits 3-0, right 4 pixels: 0 -> 00, 1 -> 01 = COLPF0)
+title_text_lut_lo:
+    .byte $00,$01,$04,$05,$10,$11,$14,$15
+    .byte $40,$41,$44,$45,$50,$51,$54,$55
+
+; Row offset lookup tables for pitch = 40 (rows 0..7)
+title_text_row_lo:
+    .byte <0, <40, <80, <120, <160, <200, <240, <280
+title_text_row_hi:
+    .byte >0, >40, >80, >120, >160, >200, >240, >280
+
+; Descriptor tables for title_generate_all_texts
+title_text_ptrs_text_lo:
+    .byte <title_text_call_codes, <title_text_of_the_codes, <title_text_wintermoon_codes
+title_text_ptrs_text_hi:
+    .byte >title_text_call_codes, >title_text_of_the_codes, >title_text_wintermoon_codes
+title_text_ptrs_dst_lo:
+    .byte <title_text_call, <title_text_of_the, <title_text_wintermoon
+title_text_ptrs_dst_hi:
+    .byte >title_text_call, >title_text_of_the, >title_text_wintermoon
+title_text_lens:
+    .byte TITLE_CALL_LEN, TITLE_OF_THE_LEN, TITLE_WINTERMOON_LEN
+title_text_offsets:
+    .byte TITLE_CALL_OFFSET, TITLE_OF_THE_OFFSET, TITLE_WINTERMOON_OFFSET
+
+title_gen_idx .byte 0
+
+.proc title_generate_all_texts
+    lda <intro_font
+    sta title_gen_charset
+    lda >intro_font
+    sta title_gen_charset+1
+
+    lda #0
+    sta title_gen_idx
+@loop
+    ldy title_gen_idx
+    lda title_text_ptrs_text_lo,y
+    sta title_gen_text
+    lda title_text_ptrs_text_hi,y
+    sta title_gen_text+1
+
+    lda title_text_ptrs_dst_lo,y
+    sta title_gen_dst
+    lda title_text_ptrs_dst_hi,y
+    sta title_gen_dst+1
+
+    lda title_text_lens,y
+    sta title_gen_len
+    lda title_text_offsets,y
+    sta title_gen_x
+
+    jsr title_text_generate
+
+    inc title_gen_idx
+    lda title_gen_idx
+    cmp #3
+    bne @loop
+    rts
+.endp
+
+; ==============================================================================
+; TITLE_TEXT_GENERATE — Reusable 2bpp Text Generator
+; Inputs:
+;   title_gen_charset ($DC, 2B): Pointer to 1 KB 1bpp font (intro_font)
+;   title_gen_text    ($DE, 2B): Pointer to screen codes text
+;   title_gen_dst     ($E0, 2B): Pointer to destination buffer (320 bytes, 8 rows x 40 B)
+;   title_gen_len     ($E2, 1B): Text length in characters (1..20)
+;   title_gen_x       ($E3, 1B): Horizontal offset in bytes from row start (0..38)
+; Outputs:
+;   Carry: 0 (CLC) on success, 1 (SEC) on invalid parameters (no memory modified)
+; Clobbers:
+;   A, X, Y, zp_ptr_src ($83-$84), zp_ptr_dst ($85-$86), zp_temp_a/x/y ($80-$82)
+; ==============================================================================
+.proc title_text_generate
+    ; --- Parameter Validation ---
+    ; 1. length >= 1
+    lda title_gen_len
+    beq @invalid
+    ; 2. length <= 20
+    cmp #21
+    bcs @invalid
+    ; 3. x_offset < 40
+    lda title_gen_x
+    cmp #40
+    bcs @invalid
+    ; 4. x_offset + 2 * length <= 40 (prevent 8-bit overflow by checking len <= 20 first)
+    lda title_gen_len
+    asl                     ; 2 * length (max 40)
+    clc
+    adc title_gen_x         ; x_offset + 2 * length (max 79)
+    cmp #41                 ; must be <= 40
+    bcc @valid
+
+@invalid
+    sec
+    rts
+
+@valid
+    ; --- Generation Loop ---
+    lda #0
+    sta zp_temp_a           ; i = 0 (char index)
+
+@char_loop
+    ; col_offset = title_gen_x + i * 2
+    lda zp_temp_a
+    asl
+    clc
+    adc title_gen_x
+    sta zp_temp_y           ; zp_temp_y = col_offset
+
+    ; Read char code: c = text[i]
+    ldy zp_temp_a
+    lda (title_gen_text),y
+
+    ; Compute glyph address: charset + c * 8
+    sta zp_ptr_src
+    lda #0
+    sta zp_ptr_src+1
+    asl zp_ptr_src
+    rol zp_ptr_src+1
+    asl zp_ptr_src
+    rol zp_ptr_src+1
+    asl zp_ptr_src
+    rol zp_ptr_src+1
+
+    clc
+    lda zp_ptr_src
+    adc title_gen_charset
+    sta zp_ptr_src
+    lda zp_ptr_src+1
+    adc title_gen_charset+1
+    sta zp_ptr_src+1
+
+    ; Row loop: r = 0..7
+    lda #0
+    sta zp_temp_x           ; r = 0
+
+@row_loop
+    ; zp_ptr_dst = title_gen_dst + row_offset[r]
+    ldx zp_temp_x
+    clc
+    lda title_gen_dst
+    adc title_text_row_lo,x
+    sta zp_ptr_dst
+    lda title_gen_dst+1
+    adc title_text_row_hi,x
+    sta zp_ptr_dst+1
+
+    ; Read glyph byte for row r: b = glyph[r]
+    ldy zp_temp_x
+    lda (zp_ptr_src),y
+
+    ; Convert high nibble (bits 7-4) -> left 2bpp byte (1 -> 10, COLPF1)
+    tax
+    lsr
+    lsr
+    lsr
+    lsr
+    tay
+    lda title_text_lut_hi,y
+    ldy zp_temp_y
+    sta (zp_ptr_dst),y
+
+    ; Convert low nibble (bits 3-0) -> right 2bpp byte (1 -> 01, COLPF0)
+    txa
+    and #$0F
+    tay
+    lda title_text_lut_lo,y
+    ldy zp_temp_y
+    iny
+    sta (zp_ptr_dst),y
+
+    ; Next row
+    inc zp_temp_x
+    lda zp_temp_x
+    cmp #8
+    bne @row_loop
+
+    ; Next character
+    inc zp_temp_a
+    lda zp_temp_a
+    cmp title_gen_len
+    bne @char_loop
+
+    clc
+    rts
+.endp

@@ -172,15 +172,19 @@ def test_title_init_initializes_scroller(emu_env):
     for i in range(48):
         assert mpu.memory[vram_addr + i] == 0x00
 
-    # DLI vector must point to dli_title_scroll
+    # DLI vector must point to dli_title_color_call (first in chain)
     dli_vec = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
-    assert dli_vec == labels["DLI_TITLE_SCROLL"]
+    assert dli_vec == labels["DLI_TITLE_COLOR_CALL"]
 
     # NMIEN must have DLI ($80) and VBI ($40) enabled ($C0)
     assert mpu.memory[labels["NMIEN"]] == 0xC0
 
     # CHBASE must point to intro_font page ($24)
     assert mpu.memory[labels["CHBASE"]] == labels["INTRO_FONT"] >> 8
+
+    # Normal playfield DMA ($22)
+    assert mpu.memory[labels["SDMCTL"]] == 0x22
+    assert mpu.memory[labels["DMACTL"]] == 0x22
 
 
 def test_update_title_scroll_progression_and_wrap(emu_env):
@@ -223,7 +227,7 @@ def test_update_title_scroll_progression_and_wrap(emu_env):
 def test_dli_title_scroll_sets_registers(emu_env):
     mpu, labels = emu_env
 
-    mpu.memory[labels["DMACTL"]] = 0x21
+    mpu.memory[labels["DMACTL"]] = 0x22
     mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
 
     colpf2_writes = []
@@ -245,7 +249,11 @@ def test_dli_title_scroll_sets_registers(emu_env):
     assert colpf2_writes == expected
 
     # Final restored state
-    assert mpu.memory[labels["DMACTL"]] == 0x21
+    assert mpu.memory[labels["DMACTL"]] == 0x22
     assert mpu.memory[labels["HSCROL"]] == 0
     assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
     assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]
+
+    # VDSLST self-reset to dli_title_color_call
+    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
+    assert vdslst == labels["DLI_TITLE_COLOR_CALL"]

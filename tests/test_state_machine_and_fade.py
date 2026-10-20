@@ -90,8 +90,8 @@ def emu_env():
     return mpu, labels
 
 
-def test_title_init_immediate_full_brightness_and_narrow_playfield(emu_env):
-    """title_init must set colors to full brightness immediately and configure Narrow playfield ($21)."""
+def test_title_init_immediate_full_brightness_and_normal_playfield(emu_env):
+    """title_init must set colors to full brightness immediately and configure Normal playfield ($22)."""
     mpu, labels = emu_env
 
     mpu.memory[labels["COLOR0"]] = 0x00
@@ -107,15 +107,15 @@ def test_title_init_immediate_full_brightness_and_narrow_playfield(emu_env):
     assert mpu.memory[labels["COLOR2"]] == 0xEE
     assert mpu.memory[labels["COLPF2"]] == 0xEE
     assert mpu.memory[labels["COLBK"]] == 0x00
-    assert mpu.memory[labels["SDMCTL"]] == 0x21
-    assert mpu.memory[labels["DMACTL"]] == 0x21
+    assert mpu.memory[labels["SDMCTL"]] == 0x22
+    assert mpu.memory[labels["DMACTL"]] == 0x22
 
 
 def test_title_scroll_rainbow_dli(emu_env):
     """Verify DLI renders 8-scanline rainbow ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0) on COLPF2 and restores state."""
     mpu, labels = emu_env
 
-    mpu.memory[labels["DMACTL"]] = 0x21
+    mpu.memory[labels["DMACTL"]] = 0x22
     mpu.memory[labels["HSCROL"]] = 0
     mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
 
@@ -138,7 +138,7 @@ def test_title_scroll_rainbow_dli(emu_env):
     assert colpf2_writes == expected
 
     # State restored after scroll line
-    assert mpu.memory[labels["DMACTL"]] == 0x21
+    assert mpu.memory[labels["DMACTL"]] == 0x22
     assert mpu.memory[labels["HSCROL"]] == 0
     assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
     assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]

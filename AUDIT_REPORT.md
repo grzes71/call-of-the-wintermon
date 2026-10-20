@@ -2,8 +2,22 @@
 
 **Audyt architektury, pamięci i wydajności gry na Atari 8-bit (MOS 6502)**
 
-Zakres: cały projekt (kod 6502 + pipeline Pythona), stan na commit `d97e4d2` (z lokalnymi, niezacommitowanymi zmianami w `HISTORY.md`, `main.asm`, `scenes/title.asm` i dwóch testach).
+Zakres: cały projekt (kod 6502 + pipeline Pythona). **Stan wyjściowy audytu: `d97e4d2`**; weryfikacja po wdrożeniu: `9bd1545`.
 Tryb: **wyłącznie odczyt** — żaden plik projektu nie został zmieniony poza utworzeniem tego raportu.
+
+### Status wdrożenia (stan na `9bd1545`, po audycie)
+
+Dwa błędy funkcjonalne zgłoszone w tym raporcie zostały naprawione przez autora projektu:
+
+| Commit | Zmiana | Dotyczy |
+|---|---|---|
+| `163ce06` | `player_init`: odczyt tabel platform **przed** czyszczeniem PMG + sprawdzenie zakresu `SCENE_COUNT`; `sta active_scene_id` | **STAB-006 — naprawione** |
+| `163ce06` | `title_init`: `sta active_scene_id` + `jsr status_line_reset`; sprawdzenia zakresu w `game_init`, `secrets_init`, `status_line_init` | **STAB-004 — naprawione** |
+| `75073bb` | dodatkowe zabezpieczenie przed przycięciem skoku pionowego o sufit wyższej platformy (poza zakresem tego audytu) | — |
+| `9bd1545` | dokumentacja (README/HISTORY); brak zmian w kodzie gry | — |
+
+**Aktualne liczby po wdrożeniu:** XEX 39 206 B, segmenty **39 140 B**, wolne **1 820 B** (wzrost kodu o 9 B względem `d97e4d2`).
+**Uwaga:** numery linii w raporcie odnoszą się do stanu `d97e4d2`. Po `163ce06` przesunęły się one w `engine/player.asm`, `engine/secrets.asm`, `engine/status_line.asm` i `scenes/title.asm` (np. pętla czyszczenia `PMG_PLAYER0` jest teraz w `engine/player.asm:155-161`, a `dli_title_restore` w `scenes/title.asm:281`). Wszystkie rekomendacje MEM/CPU/ROM/ARCH pozostają **otwarte** — wdrożono wyłącznie STAB-004 i STAB-006.
 
 ---
 
@@ -22,7 +36,7 @@ Projekt jest w dobrym stanie technicznym, znacznie lepszym niż typowy hobbystyc
 
 **Główny problem nie leży w jakości kodu, lecz w gospodarce pamięcią.** Z 40 960 bajtów przestrzeni `$2000–$BFFF` zajęte jest 39 131 B, a wolne jest **1 829 B** — przy czym jedna bitmapa tilesetów (`DEPTHS` + `HELL`) zajmuje **10 641 B**, mimo że żadna scena jej nie używa. To 27 % całego obrazu i 66 % bloku tilesetów.
 
-Przy okazji audytu znalazłem **błąd funkcjonalny w fizyce** (STAB-006): `player_init` zeruje rejestr X pętlą czyszczenia PMG i od tego miejsca indeksuje tabele platform **sceną 0**, niezależnie od `active_scene_id`. Scena 2 („Be Quick or Be Dead”) używa więc geometrii platform sceny 1. Testy tego nie wychwytują: `test_player_init_scene1_custom_color` (`tests/test_player_movement.py:71-90`) wywołuje `player_init` z `A = 1`, ale sprawdza tylko pozycję, kolor i zawartość PMG — nie `zp_plat_count`/`zp_plat_ptr_*`.
+Przy okazji audytu znalazłem **błąd funkcjonalny w fizyce** (STAB-006): `player_init` zerował rejestr X pętlą czyszczenia PMG i od tego miejsca indeksował tabele platform **sceną 0**, niezależnie od `active_scene_id`; scena 2 („Be Quick or Be Dead”) używała więc geometrii platform sceny 1. Testy tego nie wychwytywały: `test_player_init_scene1_custom_color` (`tests/test_player_movement.py:71-90`) wywołuje `player_init` z `A = 1`, ale sprawdza tylko pozycję, kolor i zawartość PMG — nie `zp_plat_count`/`zp_plat_ptr_*`. **Błąd został naprawiony w `163ce06`** (odczyt tabel platform przeniesiony przed czyszczenie PMG + kontrola zakresu; dodano też test regresyjny w `tests/test_player_movement.py`).
 
 ### 1.2. Najważniejsze liczby (zmierzone, nie szacowane)
 
@@ -37,6 +51,8 @@ Przy okazji audytu znalazłem **błąd funkcjonalny w fizyce** (STAB-006): `play
 | Martwe tabele w `gen/scenes_data.asm` | **526 B** | brak referencji w kodzie 6502 |
 | Bufor PMG niewykorzystany (`$6800–$6AFF`) | **768 B** | `PMBASE=$68`, tylko `+$300..+$7FF` |
 | Zerowe bufory w pliku XEX (VRAM gry + PMG) | 5 888 B | `:2048 .byte 0`, `:3840 .byte 0` |
+
+*Wartości w tabeli pochodzą ze stanu `d97e4d2`. Po wdrożeniu poprawek (`9bd1545`): XEX 39 206 B, segmenty 39 140 B, wolne 1 820 B — różnica to wyłącznie kod dodany przez STAB-004/STAB-006.*
 
 ### 1.3. Pięć najważniejszych rekomendacji
 
@@ -487,8 +503,8 @@ Słabe punkty:
 ### 7.3. Zarządzanie stanem i pamięcią
 
 * Stan gry trzymany jest w ZP (`game_state`, `current_state`, `game_phase`, `scene_card_*`) — poprawne i szybkie.
-* **Brak resetu stanu między rozgrywkami:** `gameover_run` → `STATE_TITLE` → `intro` → `game_init`. `game_init` **nie zeruje** `player_lives` ani `player_cds` (zachowuje je celowo między scenami — `game.asm:46-49`), a `status_line_reset` jest wołane tylko, gdy `player_lives == 0`. Po przegranej (0 żyć) działa poprawnie; po **wygranej** (`GAME_SUCCESS`, `game_next_scene` → `STATE_OVER`) `player_lives` pozostaje > 0, więc nowa gra startuje z pozostałymi życiami i licznikiem CD z poprzedniej rozgrywki. **To potwierdzona niespójność funkcjonalna** (nie crash) — patrz STAB-004.
-* `active_scene_id` jest zerowane tylko przy starcie (`main.asm:66-67`); po powrocie do tytułu pozostaje na ostatniej scenie. Po **wygranej** wynosi `SCENE_COUNT` (bo `game_next_scene` inkrementuje je przed sprawdzeniem), więc kolejna rozgrywka wchodzi do `game_init` z indeksem poza zakresem: `render_scene_background` i `dli_stage_scene` po cichu wracają, a `secrets_init`/`player_init`/`status_line_init` czytają tablice o 1 element poza końcem. **Potwierdzony błąd logiki stanu** — patrz STAB-004.
+* **Brak resetu stanu między rozgrywkami (naprawione w `163ce06`):** `gameover_run` → `STATE_TITLE` → `intro` → `game_init`. `game_init` **nie zerował** `player_lives` ani `player_cds` (zachowuje je celowo między scenami — `game.asm:46-49`), a `status_line_reset` było wołane tylko, gdy `player_lives == 0`. Po przegranej (0 żyć) działało poprawnie; po **wygranej** (`GAME_SUCCESS`, `game_next_scene` → `STATE_OVER`) `player_lives` pozostawało > 0, więc nowa gra startowała z pozostałymi życiami i licznikiem CD z poprzedniej rozgrywki. Fix: `title_init` wykonuje `sta active_scene_id` + `jsr status_line_reset`. **Szczegóły — STAB-004.**
+* `active_scene_id` było zerowane tylko przy starcie (`main.asm:66-67`); po powrocie do tytułu pozostawało na ostatniej scenie. Po **wygranej** wynosiło `SCENE_COUNT` (bo `game_next_scene` inkrementuje je przed sprawdzeniem), więc kolejna rozgrywka wchodziła do `game_init` z indeksem poza zakresem: `render_scene_background` i `dli_stage_scene` po cichu wracały, a `secrets_init`/`player_init`/`status_line_init` czytały tablice o 1 element poza końcem. **Naprawione w `163ce06`** (reset w `title_init` + sprawdzenia `cmp #SCENE_COUNT` w `game_init`, `secrets_init`, `player_init`, `status_line_init`).
 * Bufory nie są współdzielone między stanami (VRAM gry, bitmapa tytułu) — świadoma decyzja, koszt 3 072 B (patrz 4.6).
 
 ### 7.4. Ryzyka utrzymaniowe
@@ -505,8 +521,8 @@ Słabe punkty:
 
 | ID | Opis | Lokalizacja |
 |---|---|---|
-| STAB-006 | `player_init` zeruje X pętlą czyszczenia PMG, więc `scene_plat_count,x` i `scene_plat_x/y/w_lo/hi,x` są zawsze liczone dla sceny 0 — **kolizje w scenie 2 używają platform sceny 1** | `engine/player.asm:85`, `135-141`, `144-160` |
-| STAB-004 | Brak resetu `active_scene_id`, `player_lives`, `player_cds` przy powrocie do tytułu → kolejna rozgrywka wchodzi do `game_init` z `active_scene_id = SCENE_COUNT` i indeksuje tablice scen poza zakresem | `scenes/title.asm:19-124`, `scenes/game.asm:46-51`, `main.asm:57-67` |
+| STAB-006 | `player_init` zerował X pętlą czyszczenia PMG, więc `scene_plat_count,x` i `scene_plat_x/y/w_lo/hi,x` były zawsze liczone dla sceny 0 — **kolizje w scenie 2 używały platform sceny 1**. **NAPRAWIONE w `163ce06`** | `engine/player.asm:85`, `135-141`, `144-160` (stan `d97e4d2`) |
+| STAB-004 | Brak resetu `active_scene_id`, `player_lives`, `player_cds` przy powrocie do tytułu → kolejna rozgrywka wchodziła do `game_init` z `active_scene_id = SCENE_COUNT` i indeksowała tablice scen poza zakresem. **NAPRAWIONE w `163ce06`** | `scenes/title.asm:19-124`, `scenes/game.asm:46-51`, `main.asm:57-67` (stan `d97e4d2`) |
 | MEM-003 | 526 B martwych tabel generowanych i ładowanych do RAM | `gen/scenes_data.asm`, `scripts/compile_scenes.py` |
 | MEM-007 | Martwe: `dli_zone_prior`, `dli_z0_prior`, `tileset_w_px*`, `tileset_h_lines`, `tileset_size*`, `sprite_height/frame_count/frame_dur`, `zp_frame_cnt`, `dli_title_restore` | patrz sekcja 8 |
 | 7.1 | Brak jakiegokolwiek runtime dla wrogów — dane `scene_obj_*` istnieją, kod nie | `gen/scenes_data.asm` |
@@ -527,7 +543,33 @@ Słabe punkty:
 
 ## 8. Lista rekomendacji
 
-Kolejność: najpierw stosunek korzyści do kosztu, potem ryzyko. Każda pozycja ma 12 pól wymaganych przez specyfikację audytu.
+Kolejność wdrożenia: patrz indeks 8.0 (posortowany według priorytetu) oraz plan w sekcji 9. Każda pozycja ma 12 pól wymaganych przez specyfikację audytu.
+
+### 8.0. Indeks rekomendacji w kolejności priorytetu
+
+Poniższa tabela jest **listą posortowaną według priorytetu** (krytyczny → wysoki → średni → niski, z uwzględnieniem stosunku korzyści do kosztu). Szczegółowe opisy (12 pól każdy) są niżej, pogrupowane dla czytelności: RAM/dane → CPU → ROM → stabilność → architektura.
+
+| # | ID | Priorytet | Kategoria | Efekt | Etap |
+|---:|---|---|---|---|---:|
+| 1 | STAB-006 | krytyczny | stabilność (błąd) | naprawa kolizji w scenie 2, 2 B kodu — **✅ wdrożone w `163ce06`** | 1.0 |
+| 2 | MEM-001 | krytyczny | RAM | −10 641 B | 1.2 |
+| 3 | STAB-004 | wysoki | stabilność (błąd) | usunięcie odczytu poza zakresem, ~14 B kodu — **✅ wdrożone w `163ce06`** | 1.1 |
+| 4 | MEM-003 | wysoki | RAM | −526 B | 2.2 |
+| 5 | MEM-006 | wysoki | RAM | +768 B | 1.4 |
+| 6 | MEM-002 | wysoki | dane | −1 144 B | 2.1 |
+| 7 | CPU-001 | wysoki | CPU | ~−600 cykli/klatkę, +6 B | 2.4 |
+| 8 | MEM-004 | średni | dane | −112 B | 1.3 |
+| 9 | MEM-005 | średni | plik XEX | −5 888 B pliku | 1.5 |
+| 10 | MEM-007 | średni | RAM/ROM | −57 B RAM, −20 B ROM | 2.3 |
+| 11 | CPU-002 | średni | CPU | ~−250 cykli/klatkę, −10 B | 2.5 |
+| 12 | ROM-001 | średni | ROM/kod | −150…−200 B | 1.4 / 2.6 |
+| 13 | ROM-002 | średni | ROM/kod | −120…−180 B, wysokie ryzyko | 3.1 |
+| 14 | ARCH-002 | średni | architektura | usuwa sufit skalowania (brak natychmiastowych B) | 3.5 |
+| 15 | ROM-003 | niski | ROM/kod | −75 B | 3.2 |
+| 16 | DATA-001 | niski | dane | −80 B/scenę powyżej 3. sceny | 3.4 |
+| 17 | ARCH-001 | niski | architektura | −10…−16 B, głównie czytelność | 3.3 |
+| 18 | STAB-002 | niski | stabilność | ochrona przed zawinięciem strony PMG | — |
+| 19 | STAB-005 | niski | stabilność | ochrona licznika żyć | 1.6 |
 
 ### MEM-001 — Nieużywane tilesety `DEPTHS` i `HELL` zajmują 10 641 B RAM
 
@@ -745,6 +787,8 @@ Kolejność: najpierw stosunek korzyści do kosztu, potem ryzyko. Każda pozycja
 * **Pewność oceny:** wysoka (ścieżka prześledzona w kodzie, brak resetu potwierdzony grepem).
 * **Weryfikacja:** test py65: ustawić `game_state=STATE_OVER`, `active_scene_id=SCENE_COUNT`, wywołać `title_init` + `game_init`, sprawdzić, że `active_scene_id == 0` i `secrets_count` mieści się w `0..MAX_SECRETS`.
 
+_Status: **WDROŻONE** w `163ce06` — `title_init` robi `sta active_scene_id` + `jsr status_line_reset`, a `game_init`, `secrets_init`, `player_init` i `status_line_init` mają sprawdzenie `cmp #SCENE_COUNT`. Testy: `tests/test_state_machine_and_fade.py` (rozszerzone). Zostaje do rozstrzygnięcia wyłącznie decyzja projektowa o „continue” po utracie żyć._
+
 ### STAB-006 — `player_init` zawsze używa platform sceny 0
 
 * **ID:** STAB-006
@@ -776,6 +820,8 @@ Kolejność: najpierw stosunek korzyści do kosztu, potem ryzyko. Każda pozycja
 * **Koszt i ryzyko:** **bardzo niski** (jedna instrukcja), ale zmienia zachowanie fizyki w scenie 2 — po naprawie może się okazać, że część platform sceny 2 wymaga korekty w edytorze (np. zbyt duże odstępy do przeskoczenia).
 * **Pewność oceny:** wysoka (prześledzona ścieżka X + grep potwierdzający jedyne miejsce zapisu `zp_plat_*`).
 * **Weryfikacja:** nowy test py65 (`PLAYER_INIT` z `A=1`, porównanie `ZP_PLAT_COUNT` i wskaźników z etykietami sceny 1), a następnie przejście sceny 2 w Altirrze (bohater musi stać tylko na widocznych platformach).
+
+_Status: **WDROŻONE** w `163ce06` — krok „Setup platform pointer tables” (obecnie `engine/player.asm:135-155`) wykonuje się **przed** czyszczeniem `PMG_PLAYER0` (`engine/player.asm:155-161`), a `player_init` ma dodatkowo `cmp #SCENE_COUNT` + `sta active_scene_id`. Test regresyjny dodany w `tests/test_player_movement.py`. Zalecana pozostaje ręczna weryfikacja sceny 2 w emulatorze._
 
 
 ### STAB-002 — Zawijanie kopii sekretu w obrębie strony `$6B`
@@ -867,8 +913,8 @@ Kolejność: najpierw stosunek korzyści do kosztu, potem ryzyko. Każda pozycja
 
 | Krok | ID | Zmiana | Efekt |
 |---|---|---|---|
-| 1.0 | **STAB-006** | `ldx active_scene_id` przed odczytem tabel platform + test dla sceny 1 | naprawa kolizji w scenie 2 (2 B kodu) |
-| 1.1 | STAB-004 | reset `active_scene_id`/żyć/CD + sprawdzenia zakresu w `secrets_init`, `player_init`, `status_line_init` | usuwa niezdefiniowane zachowanie (bug) |
+| 1.0 | **STAB-006** | `ldx active_scene_id` przed odczytem tabel platform + test dla sceny 1 | **✅ zrobione w `163ce06`** |
+| 1.1 | STAB-004 | reset `active_scene_id`/żyć/CD + sprawdzenia zakresu w `secrets_init`, `player_init`, `status_line_init` | **✅ zrobione w `163ce06`** |
 | 1.2 | MEM-001 | usunięcie `depths`/`hell` z binarki i manifestu | −10 641 B RAM/pliku |
 | 1.3 | MEM-004 | deduplikacja klatek w `compile_sprites.py` | −112 B |
 | 1.4 | MEM-006 + ROM-001a | skrócenie czyszczenia PMG do `$6B00–$6FFF`, wspólna procedura `clear_pmg` | +768 B RAM, −~34 B kodu |
@@ -1009,8 +1055,8 @@ Procedury do zmierzenia (kolejność wg wpływu):
 
 ### 12.2. Proponowana kolejność wdrażania
 
-1. **STAB-006** (platformy sceny 0 w scenie 2) — naprawa rozgrywki, dwie instrukcje.
-2. **STAB-004** (bug resetu stanu) — najtańsza naprawa, największy wpływ na stabilność.
+1. ~~**STAB-006** (platformy sceny 0 w scenie 2)~~ — **✅ zrobione w `163ce06`**.
+2. ~~**STAB-004** (bug resetu stanu)~~ — **✅ zrobione w `163ce06`**.
 3. **MEM-001** — jedna zmiana, 10,6 KB.
 4. **MEM-004 + MEM-006/ROM-001a + MEM-005** — trzy małe, niezależne zmiany, kolejne ~0,9 KB RAM i 5,9 KB pliku.
 5. **MEM-002 + MEM-003 + MEM-007** — wymagają pracy w generatorach i testach, ale są przewidywalne.

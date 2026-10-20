@@ -62,11 +62,11 @@ graphics:
       path: "images/title3.png"
       type: "image/png"
       target_mode: "ANTIC Mode D (128x96 2bpp Narrow)"
-      description: "Title screen background artwork (narrow width 128px, 96 lines)"
+      description: "Archived title screen background artwork (replaced by procedural 2bpp text generator)"
     - id: "title_alt"
       path: "images/title.png"
       type: "image/png"
-      description: "Alternative / original title screen artwork"
+      description: "Alternative / archived title screen artwork"
     - id: "game_over"
       path: "images/end.png"
       type: "image/png"
@@ -132,6 +132,10 @@ audio:
 # 4. Text & Narrative
 # ------------------------------------------------------------------------------
 texts:
+  - id: "title_text"
+    path: "texts/title.txt"
+    encoding: "utf-8"
+    description: "Title screen 3 main lines (CALL / OF THE / WINTERMON) procedurally rendered to 2bpp"
   - id: "intro_text"
     path: "texts/intro.txt"
     encoding: "utf-8"
@@ -163,6 +167,8 @@ scenes:
 # 6. Build Pipeline Tools (Scripts)
 # ------------------------------------------------------------------------------
 tools:
+  - path: "scripts/compile_title_text.py"
+    purpose: "Compiles title screen 3-line text into centered 2bpp MADS screen code tables"
   - path: "scripts/convert_image.py"
     purpose: "Converts PNG title images into ANTIC Mode D 2bpp binary format"
   - path: "scripts/convert_tiles.py"

@@ -2,7 +2,84 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-20] - Update Project Documentation in README
+## [2026-10-20] - Separate Colors (COLPF0/COLPF1) per Title Line via DLI
+
+- **Title Screen Display List ([main.asm](main.asm))**:
+  - Added `DL_DLI` (`$80`) bit to the 3 blank lines (`DL_BLANK8 | DL_DLI` = `$F0`) directly preceding each of the three title lines (`CALL`, `OF THE`, `WINTERMON`).
+  - Total DLI count in `dlist_title` is now exactly 4 (3 blank line color DLIs + 1 marquee scroll line prolog DLI).
+  - Maintained overall height (229 scanlines), binary size (99 bytes), and LMS addresses without modification.
+- **Color Tables & Self-Resetting DLI Chain ([scenes/title.asm](scenes/title.asm))**:
+  - Defined 6 color constants (`TITLE_CALL_PF0/PF1`, `TITLE_OFTHE_PF0/PF1`, `TITLE_WINTER_PF0/PF1`) defaulting to `$C4` / `$CA`.
+  - Added 6-byte runtime-writable RAM table `title_row_colors` at `$41DC` (outside VRAM, scroll buffers, and DLI double buffers).
+  - Implemented 3 lightweight DLI handlers (`dli_title_color_call`, `dli_title_color_of_the`, `dli_title_color_winter`), each executing in exactly 41 cycles without `WSYNC` (during blank lines with no playfield DMA) and chaining `VDSLST` to the next handler.
+  - Updated `dli_title_scroll` to self-reset `VDSLST` back to `dli_title_color_call` at the end of every frame.
+  - Updated `title_init` and `title_run` to point `VDSLST` to `dli_title_color_call`.
+- **Automated Verification ([tests/test_title_text.py](tests/test_title_text.py), [tests/test_title_scroll.py](tests/test_title_scroll.py))**:
+  - Added tests verifying exactly 4 DLI instructions in `dlist_title` at offsets 2, 13, 24, and 88.
+  - Added parameterized test verifying color pair loading from `title_row_colors` into `COLPF0` / `COLPF1` and `VDSLST` progression across the entire chain.
+  - Verified cycle counts (41 cycles each) and strict register / memory isolation (A, X, Y preserved; only `COLPF0`, `COLPF1`, `VDSLST` modified).
+  - Verified full-frame 4-interrupt simulation and `title_run` fallback reset.
+  - All 448 automated tests and memory architecture checks passed cleanly in `make all`.
+
+## [2026-10-20] - External Title Text Compilation & Dynamic Centering
+
+- **Data Compiler & Pipeline ([scripts/compile_title_text.py](scripts/compile_title_text.py), [Makefile](Makefile), [manifest.yaml](manifest.yaml))**:
+  - Implemented `scripts/compile_title_text.py` converting lines from `texts/title.txt` into Atari ANTIC internal screen codes and automatically calculating symmetric horizontal centering offsets (`offset = (40 - length * 2) // 2`).
+  - Generates `gen/title_text_data.asm` defining line lengths, centering offsets, bounds validation checks, and screen code tables with backward-compatible symbol aliases (`TITLE_CALL_*`, `TITLE_OF_THE_*`, `TITLE_WINTERMOON_*`).
+  - Added `TITLE_TXT_SRC` / `TITLE_TXT_ASM` targets and prerequisites to `Makefile` and registered the new compiler script and text asset in `manifest.yaml`.
+- **Title Screen Engine Integration ([scenes/title.asm](scenes/title.asm))**:
+  - Removed hardcoded title line lengths and offsets from `scenes/title.asm` in favor of including `gen/title_text_data.asm`.
+  - Display generator seamlessly renders any three title lines loaded from `texts/title.txt` (currently: `CALL` at offset 16, `OF THE` at offset 14, `WINTERMON` at offset 11).
+- **Automated Verification ([tests/test_title_text.py](tests/test_title_text.py))**:
+  - Updated test suite to dynamically parse `texts/title.txt`, verifying screen code memory tables, character counts, centering zero-margins, and buffer matching against reference model.
+  - All 442 automated tests and memory architecture checks pass cleanly in `make all`.
+
+## [2026-10-20] - Dual-Tone 2bpp Glyph Conversion for Title Text
+
+- **Dual-Tone 2bpp Conversion Tables & Generator ([scenes/title.asm](scenes/title.asm))**:
+  - Implemented dual-tone 2bpp glyph conversion where high nibble (bits 7-4, left 4 pixels) maps `0 -> 00`, `1 -> 10` (color `COLPF1`), and low nibble (bits 3-0, right 4 pixels) maps `0 -> 00`, `1 -> 01` (color `COLPF0`).
+  - Added explicit 16-byte tables `title_text_lut_hi` (`$00, $02, ..., $AA`) and `title_text_lut_lo` (`$00, $01, ..., $55`), satisfying `lut_lo[n] == lut_hi[n] >> 1`.
+  - Updated `title_text_generate` loop so the first byte of each destination pair reads `title_text_lut_hi,x` and the second byte reads `title_text_lut_lo,x`.
+  - Added named constant `TITLE_COLOR_PF0 = $C4` (dark forest green) and initialized `COLOR0` and `COLPF0` in `title_init`, ensuring high contrast against black background (`COLBK = $00`) and clear distinction from `COLPF1 = $CA`.
+- **Automated Verification ([tests/test_title_text.py](tests/test_title_text.py))**:
+  - Updated Python test suite with independent mathematical reference formulas `hi(n)` and `lo(n)`.
+  - Verified LUT memory contents, `lut_lo[n] == lut_hi[n] >> 1` relationship, and all test vectors (`$00`, `$FF`, `$F0`, `$0F`, `$9A`, `$81`).
+  - Added `test_pixel_patterns_and_no_11_pairs` asserting left bytes contain only `%00`/`%10`, right bytes contain only `%00`/`%01`, and no `%11` pixel pairs exist across all title buffers.
+  - Verified `COLPF0` / `COLOR0` initialization to `$C4` (non-zero, distinct from `COLBK` and `COLPF1`).
+  - All 442 automated tests and memory architecture checks passed cleanly.
+
+## [2026-10-20] - Procedural 2bpp Text Generator & Title Display List
+
+- **Procedural 2bpp Text Generator ([scenes/title.asm](scenes/title.asm), [zeropage.asm](zeropage.asm))**:
+  - Implemented `title_text_generate` converting 1bpp font glyphs (`intro_font` at `$2400`) to 2bpp pixel data (`0 -> 00`, `1 -> 10`) using a 16-byte nibble LUT (`title_text_lut`).
+  - Added strict parameter validation enforcing `length in 1..20`, `x_offset < 40`, and `x_offset + 2*length <= 40` (with 8-bit overflow safety) returning Carry=1 on error with zero buffer modification, and Carry=0 on success.
+  - Implemented `title_generate_all_texts` rendering `CALL` (ANTIC E, offset 16), `OF THE` (ANTIC D, offset 14), and `WINTERMOON` (ANTIC D, offset 10) into 320-byte buffers inside `GAME_VRAM` (`$3000-$33BF`).
+  - Added assembly-time compile assertions verifying valid bounding parameters for all three static title lines.
+  - Implemented 960-byte overlay memory clearing loop in `title_init` strictly erasing `$3000-$33BF` while leaving `$33C0` onwards untouched.
+- **New Title Display List & Architecture ([main.asm](main.asm), [scenes/title.asm](scenes/title.asm))**:
+  - Replaced the static 3,072-byte bitmap (`gen/title.bin`) with a procedural 99-byte Display List (`dlist_title` at `$6000`):
+    - 24 blank scanlines top margin (3x `DL_BLANK8`)
+    - `CALL`: ANTIC Mode E with LMS + 7 lines Mode E (8 scanlines)
+    - 8 blank scanlines spacing (`DL_BLANK8`)
+    - `OF THE`: ANTIC Mode D with LMS + 7 lines Mode D (16 scanlines)
+    - 8 blank scanlines spacing (`DL_BLANK8`)
+    - `WINTERMOON`: 16 lines ANTIC Mode D with explicit LMS per row repeating each of the 8 source rows twice (32 scanlines)
+    - 110 blank scanlines padding (13x `DL_BLANK8` + 1x `DL_BLANK6`)
+    - 3 blank scanlines DLI prolog (`DL_BLANK1`, `DL_BLANK1 | DL_DLI`, `DL_BLANK1`)
+    - 1 line ANTIC Mode 2 hardware scroller with LMS & HSCROL (8 scanlines)
+    - 12 blank scanlines tail (`DL_BLANK1`, `DL_BLANK8`, `DL_BLANK3`) + `DL_JVB` to `dlist_title`
+    - Total Display List height: exactly 229 scanlines (preserving exact vertical position of the marquee scroller).
+  - Switched entire title screen display to Normal playfield DMA (`SDMCTL = $22`, `DMACTL = $22`), eliminating DLI DMA width toggling.
+  - Relocated title screen code and scroll buffers to `$4000-$438E`, recovering 3,072 bytes of ROM/RAM footprint and providing 4,663 bytes of headroom below `$C000`.
+- **Build Pipeline & Tooling ([Makefile](Makefile), [scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py), [manifest.yaml](manifest.yaml))**:
+  - Removed `TITLE_IMG` and `TITLE_BIN` rules and targets from `Makefile` and deleted `gen/title.bin`.
+  - Updated segment memory validation and report generators for the new `$4000` Title Scroll VRAM & Text segment.
+  - Updated `manifest.yaml` marking legacy bitmap artwork as archived.
+- **Automated Verification ([tests/test_title_text.py](tests/test_title_text.py), [tests/test_title_scroll.py](tests/test_title_scroll.py), [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py))**:
+  - Added new 10-test test suite in `tests/test_title_text.py` verifying font identity against `fonts/font.fnt`, test vectors, LUT table, Python reference render matching, exact offsets and row zero-margins, sentinel bounds, negative and positive validation, Display List LMS instructions, 229-scanline height, and hardware registers.
+  - Updated existing scroll and fade tests to assert `SDMCTL = $22` and `DMACTL = $22`.
+  - All 441 automated tests and `check_memory` passed cleanly in `make all`.
+
 
 - **Documentation ([README.md](README.md))**:
   - Completely updated and modernized project documentation to reflect current engine architecture, tools, and build pipeline.

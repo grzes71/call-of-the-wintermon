@@ -109,3 +109,11 @@ player_jump_step    = $D8   ; Step index within active jump trajectory
 player_jump_len     = $D9   ; Total length in steps for active jump
 player_fire_released= $DA   ; Fire button debounce flag (1 = released)
 player_prev_y       = $DB   ; Previous canvas Y coordinate before trajectory step
+
+; --- Title Text Generator Parameters & Zero Page ($DC-$E3) ---
+title_gen_charset   = $DC   ; 2 bytes ($DC-$DD): Pointer to source character set font
+title_gen_text      = $DE   ; 2 bytes ($DE-$DF): Pointer to source screen codes text
+title_gen_dst       = $E0   ; 2 bytes ($E0-$E1): Pointer to destination VRAM buffer row 0
+title_gen_len       = $E2   ; 1 byte: Text length in characters (1..20)
+title_gen_x         = $E3   ; 1 byte: Horizontal offset in bytes from row start (0..38)
+

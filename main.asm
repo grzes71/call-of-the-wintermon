@@ -1,7 +1,7 @@
 ; ==============================================================================
 ; MAIN.ASM — Atari 8-bit State Machine & Game Engine Entry Point
 ; Target: Atari 800XL / 65XE (64 KB RAM)
-; Mode: ANTIC Mode F (Title) / ANTIC Mode 2 (Intro)
+; Mode: ANTIC Mode E & D (Title 2bpp) + Mode 2 (Scroller & Intro) / ANTIC Mode D (Game)
 ; Audio: Atari POKEY Music (4-channel relocatable player)
 ; ==============================================================================
 
@@ -16,9 +16,9 @@ INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
 TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: $2A30-$2C1D)
 GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
-TITLE_VRAM  = $4000     ; Title VRAM: ANTIC Mode D 160x95 2bpp (3,800 bytes: $4000-$4ED7, 4 KB aligned)
+TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene definitions, platforms, objects & DLI data SoA tables (~1,500 bytes: $5000-$5600)
-DLIST_ADDR  = $6000     ; Title Display List (~105 bytes: $6000-$6068)
+DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_ADDR = $6710   ; Game Over / Victory screen handler (~157 bytes: $6710-$67AD)
 PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
@@ -202,7 +202,6 @@ dlist_intro
     org TILES_META
     icl 'gen/tiles_data.asm'
     icl 'gen/player_sprites.asm'
-    icl 'scenes/title.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
@@ -280,22 +279,20 @@ status_line_vram
     :40 .byte 0
 
 ; ==============================================================================
-; TITLE GRAPHICS DATA SEGMENT ($4000)
-; ANTIC Mode D Narrow (128x96 2bpp, 32 bytes/line * 96 lines = 3,072 bytes: $4000-$4BFF)
-; Followed by 48-byte Mode 2 scrolling VRAM line buffer ($4C00-$4C2F)
-; and marquee scroll text data ($4C30-$4CC6).
-; 4 KB aligned: strictly within $4000-$4FFF (never crosses 4 KB boundary)
+; TITLE SCROLLER DATA SEGMENT ($4000)
+; 48-byte ANTIC Mode 2 scroll VRAM buffer ($4000-$402F)
+; and marquee scroll text data ($4030-$40C6).
+; Strictly within $4000-$4FFF (never crosses 4 KB boundary)
 ; ==============================================================================
     org TITLE_VRAM
-title_vram_buf
-    ins 'gen/title.bin'
-
-; 48-byte ANTIC Mode 2 scroll VRAM buffer (wide width fetch with DL_HSCROL)
 title_scroll_vram
     :TITLE_SCROLL_VRAM_LEN .byte 0
 
 ; Compiled marquee scroll text data (internal screen codes)
     icl 'gen/title_scroll_text.asm'
+
+; Title screen state handler & 2bpp text generator
+    icl 'scenes/title.asm'
 
 ; ==============================================================================
 ; SCENE DEFINITIONS, PLATFORMS, OBJECTS & DLI DATA SEGMENT ($5000)
@@ -310,39 +307,98 @@ title_scroll_vram
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)
-; ANTIC Mode D (128x96 2bpp Narrow, 96 lines = 192 scanlines) + 1 line ANTIC Mode 2 (8 scanlines Normal)
-; Centered vertically: 14 blank scanlines top, 96 lines Mode D Narrow,
-; 2 blank scanlines spacing, 1 blank scanline with DLI 1 (switches to Normal $22),
-; 1 line ANTIC Mode 2 with LMS & HSCROL (40 chars visible, 48 fetched with DL_HSCROL),
-; 1 blank scanline with DLI 2 (restores Narrow $21), 11 blank scanlines bottom = 229 scanlines total
+; Procedural 2bpp Title Screen + 1 line ANTIC Mode 2 Scroller (Normal width, 40 bytes/line)
+; Height:
+;   - 24 blank scanlines top (3x DL_BLANK8)
+;   - CALL: ANTIC Mode E, 8 lines (8 scanlines)
+;   - 8 blank scanlines (1x DL_BLANK8)
+;   - OF THE: ANTIC Mode D, 8 lines (16 scanlines)
+;   - 8 blank scanlines (1x DL_BLANK8)
+;   - WINTERMOON: ANTIC Mode D, 16 lines (32 scanlines, 8 rows duplicated via 16x LMS)
+;   - 110 blank scanlines padding (13x DL_BLANK8 + 1x DL_BLANK6)
+;   - 3 blank scanlines DLI prolog (2x DL_BLANK1 + 1x DL_BLANK1 with DLI)
+;   - 1 line ANTIC Mode 2 scroller with LMS & HSCROL (8 scanlines)
+;   - Tail: 12 blank scanlines (DL_BLANK1 + DL_BLANK8 + DL_BLANK3)
+;   - JVB to dlist_title
+; Total height = 24 + 8 + 8 + 16 + 8 + 32 + 110 + 3 + 8 + 12 = 229 scanlines
+; Total bytes = 99 bytes (strictly within $6000-$6062, max $60FF)
 ; ==============================================================================
     org DLIST_ADDR
 dlist_title
+    ; Top margin: 24 scanlines
     .byte DL_BLANK8
+    .byte DL_BLANK8
+    ; DLI in blank line triggers on its last scanline immediately before CALL.
+    ; No graphics are drawn during blank scanlines, making color changes invisible
+    ; without requiring WSYNC synchronization.
+    .byte DL_BLANK8 | DL_DLI
+
+    ; CALL: ANTIC Mode E (1 scanline/line * 8 lines = 8 scanlines)
+    .byte DL_MODE_E | DL_LMS
+    .word title_text_call
+    :7 .byte DL_MODE_E
+
+    ; Spacing: 8 scanlines (DLI triggers on last scanline before OF THE, no WSYNC needed)
+    .byte DL_BLANK8 | DL_DLI
+
+    ; OF THE: ANTIC Mode D (2 scanlines/line * 8 lines = 16 scanlines)
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_of_the
+    :7 .byte DL_MODE_D
+
+    ; Spacing: 8 scanlines (DLI triggers on last scanline before WINTERMOON, no WSYNC needed)
+    .byte DL_BLANK8 | DL_DLI
+
+    ; WINTERMOON: ANTIC Mode D (2 scanlines/line * 16 lines = 32 scanlines)
+    ; Each of the 8 source rows is displayed twice using explicit LMS
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 0
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 0
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 40
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 40
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 80
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 80
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 120
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 120
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 160
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 160
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 200
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 200
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 240
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 240
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 280
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_wintermoon + 280
+
+    ; Padding to maintain scroll line position: 110 scanlines (13*8 + 6)
+    :13 .byte DL_BLANK8
     .byte DL_BLANK6
 
-    ; Title graphics: 96 lines of ANTIC Mode D Narrow (192 scanlines)
-    .byte DL_MODE_D | DL_LMS    ; Line 0 with LMS (starts at $4000, 3072 bytes: $4000-$4BFF)
-    .word TITLE_VRAM
-    :95 .byte DL_MODE_D         ; Lines 1-95 (96 lines total, 32 bytes/line = 3,072 bytes)
-
-    ; Blank spacing lines between Mode D graphics and scroll line
+    ; DLI Prolog: 3 scanlines
     .byte DL_BLANK1
-
-    ; 1 blank scanline with DLI 1 (fires here; WSYNC waits for the following blank scanline)
     .byte DL_BLANK1 | DL_DLI
-
-    ; 1 blank scanline buffer where DLI 1 sets DMACTL=$22, HSCROL, and COLPF2=$00 before Mode 2 starts
     .byte DL_BLANK1
 
-    ; 1 line ANTIC Mode 2 (40 chars visible, 48 fetched with DL_HSCROL in Normal playfield)
+    ; ANTIC Mode 2 scroller line (8 scanlines)
     .byte DL_MODE_2 | DL_LMS | DL_HSCROL
     .word title_scroll_vram
 
-    ; 1 blank scanline after ANTIC Mode 2 scroll line (DLI restores Narrow mode here)
+    ; Tail (12 scanlines) copied directly from original display list
     .byte DL_BLANK1
-
-    ; Bottom blank margin
     .byte DL_BLANK8
     .byte DL_BLANK3
 
