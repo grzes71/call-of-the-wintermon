@@ -2,7 +2,17 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-20] - Fix STAB-004: State reset on title return and bounds checks across scene loaders
+## [2026-10-20] - Prevent Vertical Jump Clipping Under Higher Platform Ceilings
+
+- **Physics & Collision Engine ([engine/player.asm](engine/player.asm))**:
+  - Extended the ceiling collision bypass in `player_jump_update` (`beq @render_jump`) to `JUMP_TYPE_UP` (vertical jump), mirroring the existing behavior for `JUMP_TYPE_LONG`.
+  - Platforms directly overhead (1 tier above, <= 20 lines) remain fully blocked from initiating any jump at start via `player_initiate_jump`.
+  - Platforms two or more tiers above (>= 32 lines higher) no longer artificially truncate vertical jumps, allowing Hero to reach his full 18-line vertical jump apex and cleanly land back on his starting platform.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added `test_player_jump_up_does_not_hit_ceiling_two_tiers_above` verifying that a vertical jump beneath a platform at `plat_y = 56` (32px above floor `y = 88`) reaches full apex without bouncing into `PLAYER_STATE_FALL`.
+  - Updated `test_player_jump_ceiling_collision_bounces_to_fall` to use `JUMP_TYPE_SHORT`, confirming that horizontal leaping directly into low overhead obstacles continues to bounce into fall state.
+  - All 431 py65 emulation and Python unit tests passed in `make all`.
+
 
 - **State Management & Title Architecture ([scenes/title.asm](scenes/title.asm), [scenes/game.asm](scenes/game.asm))**:
   - Fixed STAB-004 where completing all scenes or exiting from Game Over left `active_scene_id = SCENE_COUNT` without resetting game state upon return to title.

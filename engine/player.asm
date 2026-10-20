@@ -835,10 +835,11 @@ player_jump_anim_table_hi
     bpl @check_descent
 
     ; --- ASCENT (dy < 0): CEILING COLLISION CHECK ---
-    ; During JUMP_TYPE_LONG, Hero is leaping onto an adjacent higher platform:
-    ; "przy skoku na sąsiednią platformę wyżej nie powinniśmy zahaczać o sufit kolejnego poziomu (32px wyżej)"
+    ; During JUMP_TYPE_LONG and JUMP_TYPE_UP, platforms 2+ tiers above (32px higher)
+    ; must not artificially clip the jump trajectory:
     lda player_jump_type
-    cmp #JUMP_TYPE_LONG
+    beq @render_jump        ; JUMP_TYPE_UP = 0
+    cmp #JUMP_TYPE_LONG     ; JUMP_TYPE_LONG = 2
     beq @render_jump
 
     ; Hero's head is at player_y.

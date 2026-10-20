@@ -777,12 +777,12 @@ def test_player_jump_ceiling_collision_bounces_to_fall():
     mem[labels["PLAYER_Y"]] = 46
     mem[labels["PLAYER_PLAT_IDX"]] = 0          # On some platform below
 
-    # Release fire, then press Fire + neutral (JUMP_UP)
+    # Release fire, then press Fire + Right (JUMP_SHORT)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
     mem[labels["STRIG0"]] = 0
-    mem[labels["STICK0"]] = 0x0F
+    mem[labels["STICK0"]] = 0x07                # Right active -> JUMP_TYPE_SHORT
 
-    # Frame 1: Jump triggers, dy = -2, player_y goes 46 -> 44 (hits bottom at 44!)
+    # Frame 1: Jump triggers, dy = -2, dx = 1, player_y goes 46 -> 44 (hits bottom at 44!)
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     # Hero bumps ceiling: bounces immediately into PLAYER_STATE_FALL!
@@ -795,6 +795,52 @@ def test_player_jump_ceiling_collision_bounces_to_fall():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 2     # Still falling
     assert mem[labels["PLAYER_Y"]] == 45        # Dropping down
+
+
+def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
+    """Verify vertical jump (JUMP_UP) reaches full apex and is not clipped by a platform two tiers above."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Hero on lower Platform 0 (plat_y=88) at x=76, y=68
+    mem[labels["PLAYER_X"]] = 76
+    mem[labels["PLAYER_Y"]] = 68
+    mem[labels["PLAYER_PLAT_IDX"]] = 0
+
+    # Overwrite Platform 7 in scene data to be directly above Hero at y=56 (bottom=60, 32px above floor)
+    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+    mem[plat_ptr_x + 7] = 60
+    mem[plat_ptr_w + 7] = 30
+    mem[plat_ptr_y + 7] = 56
+
+    # Trigger vertical jump (Fire + neutral)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0F                # Neutral -> JUMP_TYPE_UP
+
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
+
+    mem[labels["STRIG0"]] = 1
+    landed = False
+    for _ in range(21):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        # Must NEVER bounce into fall state during vertical jump under platform at y=56
+        assert mem[labels["PLAYER_STATE"]] != 2, "Must not bounce off ceiling at y=56 during vertical jump!"
+        if mem[labels["PLAYER_STATE"]] == 0:
+            landed = True
+            break
+
+    assert landed, "Hero must land back on starting platform"
+    assert mem[labels["PLAYER_Y"]] == 68
 
 
 def test_player_jump_animation_frames_in_pmg():
