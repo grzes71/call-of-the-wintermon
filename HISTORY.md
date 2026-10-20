@@ -2,7 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-20] - Prevent Vertical Jump Clipping Under Higher Platform Ceilings
+## [2026-10-20] - Update Project Documentation in README
+
+- **Documentation ([README.md](README.md))**:
+  - Completely updated and modernized project documentation to reflect current engine architecture, tools, and build pipeline.
+  - Added comprehensive overview of Atari 8-bit architecture (ANTIC Mode D Narrow 128x96 scroller with rainbow raster DLI, Mode D 160x96 gameplay, Mode E tilesets, PMG Player 0 & Missiles, GTIA hardware collisions, HUD in ANTIC Mode 2, and Game Over states).
+  - Documented full player controls table (directional movement, inertia, vertical jump, short jump, and long jump combinations).
+  - Documented complete project tooling suite including [atari-scene-editor/](atari-scene-editor/README.md), [sprite_studio/](sprite_studio/), and the full Python asset pipeline (`convert_image.py`, `convert_tiles.py`, `compile_scenes.py`, `compile_sprites.py`, `compile_music.py`, `compile_scroll_text.py`, `check_memory.py`, and `generate_memory_map.py`).
+  - Added build target reference guide for `Makefile` (`make all`, `xex`, `tests`, `check_memory`, `map`, `run`, `clean`) and GUI editor launch instructions.
+  - Added summary of the 431+ automated tests covering py65 6502 CPU emulation and Python tool verification.
+
 
 - **Physics & Collision Engine ([engine/player.asm](engine/player.asm))**:
   - Extended the ceiling collision bypass in `player_jump_update` (`beq @render_jump`) to `JUMP_TYPE_UP` (vertical jump), mirroring the existing behavior for `JUMP_TYPE_LONG`.
