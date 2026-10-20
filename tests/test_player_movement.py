@@ -92,6 +92,22 @@ def test_player_init_scene1_custom_color():
     assert mem[labels["PCOLR0"]] == scene1_color
     assert mem[labels["PLAYER_COLOR"]] == scene1_color
 
+    # Verify platform tables for Scene 1 (14 platforms vs 11 on Scene 0)
+    expected_plat_count = mem[labels["SCENE_PLAT_COUNT"] + 1]
+    expected_ptr_x = mem[labels["SCENE_PLAT_X_LO"] + 1] | (mem[labels["SCENE_PLAT_X_HI"] + 1] << 8)
+    expected_ptr_y = mem[labels["SCENE_PLAT_Y_LO"] + 1] | (mem[labels["SCENE_PLAT_Y_HI"] + 1] << 8)
+    expected_ptr_w = mem[labels["SCENE_PLAT_W_LO"] + 1] | (mem[labels["SCENE_PLAT_W_HI"] + 1] << 8)
+
+    actual_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    actual_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    actual_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+
+    assert mem[labels["ZP_PLAT_COUNT"]] == expected_plat_count
+    assert expected_plat_count == 14
+    assert actual_ptr_x == expected_ptr_x
+    assert actual_ptr_y == expected_ptr_y
+    assert actual_ptr_w == expected_ptr_w
+
 
 
 

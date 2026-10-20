@@ -111,35 +111,37 @@ def test_title_init_immediate_full_brightness_and_narrow_playfield(emu_env):
     assert mpu.memory[labels["DMACTL"]] == 0x21
 
 
-def test_title_dual_dli_chain(emu_env):
-    """Verify DLI 1 switches to Normal playfield ($22) and DLI 2 restores Narrow playfield ($21)."""
+def test_title_scroll_rainbow_dli(emu_env):
+    """Verify DLI renders 8-scanline rainbow ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0) on COLPF2 and restores state."""
     mpu, labels = emu_env
 
-    # 1. Run DLI 1 (dli_title_scroll)
     mpu.memory[labels["DMACTL"]] = 0x21
     mpu.memory[labels["HSCROL"]] = 0
     mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
 
-    run_dli_interrupt(mpu, labels["DLI_TITLE_SCROLL"])
+    colpf2_writes = []
+    sp = mpu.sp
+    mpu.memory[0x0100 + sp] = 0x01
+    mpu.memory[0x0100 + sp - 1] = 0x00
+    mpu.memory[0x0100 + sp - 2] = 0x30
+    mpu.sp = sp - 3
+    mpu.pc = labels["DLI_TITLE_SCROLL"]
 
-    # DLI 1 must switch to Normal playfield ($22) and set HSCROL
-    assert mpu.memory[labels["DMACTL"]] == 0x22
-    assert mpu.memory[labels["HSCROL"]] == 2
-    assert mpu.memory[labels["COLPF2"]] == 0x00
-    assert mpu.memory[labels["COLPF1"]] == 0xCA
-    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
-    assert vdslst == labels["DLI_TITLE_RESTORE"]
+    while mpu.sp != sp:
+        pc = mpu.pc
+        if mpu.memory[pc] == 0x8D and mpu.memory[pc + 1] == (labels["COLPF2"] & 0xFF) and mpu.memory[pc + 2] == (labels["COLPF2"] >> 8):
+            colpf2_writes.append(mpu.a)
+        mpu.step()
 
-    # 2. Run DLI 2 (dli_title_restore)
-    run_dli_interrupt(mpu, labels["DLI_TITLE_RESTORE"])
+    # 8 rainbow scanlines on COLPF2 followed by restoration to TITLE_COLOR_PF2 ($EE)
+    expected = [0xC0, 0xC2, 0xC4, 0xC6, 0xC6, 0xC4, 0xC2, 0xC0, labels["TITLE_COLOR_PF2"]]
+    assert colpf2_writes == expected
 
-    # DLI 2 must restore Narrow playfield ($21) and reset HSCROL
+    # State restored after scroll line
     assert mpu.memory[labels["DMACTL"]] == 0x21
     assert mpu.memory[labels["HSCROL"]] == 0
-    assert mpu.memory[labels["COLPF1"]] == 0xCA
-    assert mpu.memory[labels["COLPF2"]] == 0xEE
-    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
-    assert vdslst == labels["DLI_TITLE_SCROLL"]
+    assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
+    assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]
 
 
 def test_scene_title_card_frame_progression(emu_env):
@@ -197,4 +199,47 @@ def test_scene_title_card_frame_progression(emu_env):
     sdlst = mpu.memory[labels["SDLSTL"]] | (mpu.memory[labels["SDLSTH"]] << 8)
     assert sdlst == labels["DLIST_GAME"]
     assert sdlst == 0x3F00
+
+
+def test_title_init_resets_game_state_and_active_scene_id(emu_env):
+    """Verify that title_init resets active_scene_id to 0, lives to 3, cds to 0, and game_result to 0."""
+    mpu, labels = emu_env
+
+    # Simulate game won state after completing all scenes
+    mpu.memory[labels["ACTIVE_SCENE_ID"]] = labels["SCENE_COUNT"]
+    mpu.memory[labels["GAME_RESULT"]] = labels["GAME_SUCCESS"]
+    mpu.memory[labels["PLAYER_LIVES"]] = 1
+    mpu.memory[labels["PLAYER_CDS"]] = 42
+
+    # Call title_init
+    run_subroutine(mpu, labels["TITLE_INIT"])
+
+    assert mpu.memory[labels["ACTIVE_SCENE_ID"]] == 0
+    assert mpu.memory[labels["PLAYER_LIVES"]] == 3
+    assert mpu.memory[labels["PLAYER_CDS"]] == 0
+    assert mpu.memory[labels["GAME_RESULT"]] == labels["GAME_RESULT_NONE"]
+
+
+def test_subroutines_reject_out_of_bounds_scene_id(emu_env):
+    """Verify player_init, secrets_init, and status_line_init safely reject scene_id >= SCENE_COUNT."""
+    mpu, labels = emu_env
+
+    # 1. secrets_init with A = SCENE_COUNT
+    mpu.memory[labels["SECRETS_COUNT"]] = 0x55
+    mpu.a = labels["SCENE_COUNT"]
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    assert mpu.memory[labels["SECRETS_COUNT"]] == 0x55
+
+    # 2. player_init with A = SCENE_COUNT
+    mpu.memory[labels["PLAYER_X"]] = 0x77
+    mpu.a = labels["SCENE_COUNT"]
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+    assert mpu.memory[labels["PLAYER_X"]] == 0x77
+
+    # 3. status_line_init with A = SCENE_COUNT
+    mpu.memory[labels["STATUS_LINE_VRAM"]] = 0xAA
+    mpu.a = labels["SCENE_COUNT"]
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+    assert mpu.memory[labels["STATUS_LINE_VRAM"]] == 0xAA
+
 

@@ -82,6 +82,12 @@ player_jump_anim_table_hi
 ; Input: A = active_scene_id (0..SCENE_COUNT-1)
 ; ==============================================================================
 .proc player_init
+    cmp #SCENE_COUNT
+    bcc @valid_id
+    rts
+
+@valid_id
+    sta active_scene_id
     tax
 
     ; 1. Set initial canvas coordinates from scene data
@@ -97,15 +103,12 @@ player_jump_anim_table_hi
     clc
     adc #52
     sta player_pmg_y
+
+    ; 2. Initialize movement state: Facing right, standing idle, zeroed registers
     lda #0
     sta player_prev_pmg_y
-
-    ; 2. Initialize movement state: Facing right, standing idle
-    lda #PLAYER_DIR_RIGHT
-    sta player_dir
-    lda #PLAYER_STATE_IDLE
-    sta player_state
-    lda #0
+    sta player_dir              ; PLAYER_DIR_RIGHT = 0
+    sta player_state            ; PLAYER_STATE_IDLE = 0
     sta player_frame_idx
     sta player_x_sub
     sta player_speed
@@ -114,6 +117,7 @@ player_jump_anim_table_hi
     sta player_jump_len
     sta player_fire_released
     sta player_prev_y
+    sta SIZEP0                  ; Normal width 1x (8 color clocks)
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
 
@@ -123,24 +127,13 @@ player_jump_anim_table_hi
     sta COLPM0
     sta PCOLR0
 
-    lda #0                  ; Normal width 1x (8 color clocks)
-    sta SIZEP0
-
     ; 4. Set horizontal position HPOSP0 = 48 + player_x
     lda player_x
     clc
     adc #PLAYER_HPOS_OFFSET
     sta HPOSP0
 
-    ; 5. Clear entire PMG Player 0 buffer ($6C00-$6CFF, 256 bytes)
-    lda #0
-    tax
-@clr_p0
-    sta PMG_PLAYER0,x
-    inx
-    bne @clr_p0
-
-    ; 6. Setup platform pointer tables in Zero Page for active scene
+    ; 5. Setup platform pointer tables in Zero Page for active scene (X = active_scene_id)
     lda scene_plat_count,x
     sta zp_plat_count
 
@@ -158,6 +151,14 @@ player_jump_anim_table_hi
     sta zp_plat_ptr_w
     lda scene_plat_w_hi,x
     sta zp_plat_ptr_w+1
+
+    ; 6. Clear entire PMG Player 0 buffer ($6C00-$6CFF, 256 bytes)
+    lda #0
+    tax
+@clr_p0
+    sta PMG_PLAYER0,x
+    inx
+    bne @clr_p0
 
     ; 7. Locate initial standing platform index
     ; Feet Y = player_y + 20

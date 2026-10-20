@@ -166,7 +166,7 @@ def test_title_init_initializes_scroller(emu_env):
     # Fine scroll must start at 3
     assert mpu.memory[labels["TITLE_SCROLL_FINE"]] == 3
     assert mpu.memory[labels["TITLE_SCROLL_IDX"]] == 0
-    assert mpu.memory[labels["TITLE_SCROLL_DELAY"]] == 1
+    assert mpu.memory[labels["TITLE_SCROLL_DELAY"]] == labels["TITLE_SCROLL_SPEED"]
 
     # Entire 48-byte VRAM must be cleared to spaces ($00)
     for i in range(48):
@@ -193,23 +193,28 @@ def test_update_title_scroll_progression_and_wrap(emu_env):
     first_char = mpu.memory[text_addr]  # 'C' = 0x23
     assert first_char == 0x23
 
-    # Frame 1: fine scroll 3 -> 2
-    run_subroutine(mpu, labels["UPDATE_TITLE_SCROLL"])
+    def step_fine_scroll():
+        delay = mpu.memory[labels["TITLE_SCROLL_DELAY"]]
+        for _ in range(delay):
+            run_subroutine(mpu, labels["UPDATE_TITLE_SCROLL"])
+
+    # Step 1: fine scroll 3 -> 2
+    step_fine_scroll()
     assert mpu.memory[labels["TITLE_SCROLL_FINE"]] == 2
     assert mpu.memory[labels["TITLE_SCROLL_IDX"]] == 0
 
-    # Frame 2: fine scroll 2 -> 1
-    run_subroutine(mpu, labels["UPDATE_TITLE_SCROLL"])
+    # Step 2: fine scroll 2 -> 1
+    step_fine_scroll()
     assert mpu.memory[labels["TITLE_SCROLL_FINE"]] == 1
     assert mpu.memory[labels["TITLE_SCROLL_IDX"]] == 0
 
-    # Frame 3: fine scroll 1 -> 0
-    run_subroutine(mpu, labels["UPDATE_TITLE_SCROLL"])
+    # Step 3: fine scroll 1 -> 0
+    step_fine_scroll()
     assert mpu.memory[labels["TITLE_SCROLL_FINE"]] == 0
     assert mpu.memory[labels["TITLE_SCROLL_IDX"]] == 0
 
-    # Frame 4: fine scroll wraps to 3, VRAM shifts left, byte 47 gets first char!
-    run_subroutine(mpu, labels["UPDATE_TITLE_SCROLL"])
+    # Step 4: fine scroll wraps to 3, VRAM shifts left, byte 47 gets first char!
+    step_fine_scroll()
     assert mpu.memory[labels["TITLE_SCROLL_FINE"]] == 3
     assert mpu.memory[labels["TITLE_SCROLL_IDX"]] == 1
     assert mpu.memory[vram_addr + 47] == first_char
@@ -218,16 +223,29 @@ def test_update_title_scroll_progression_and_wrap(emu_env):
 def test_dli_title_scroll_sets_registers(emu_env):
     mpu, labels = emu_env
 
-    mpu.memory[labels["COLOR1"]] = 0xCA
+    mpu.memory[labels["DMACTL"]] = 0x21
     mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
 
-    run_dli_interrupt(mpu, labels["DLI_TITLE_SCROLL"])
+    colpf2_writes = []
+    sp = mpu.sp
+    mpu.memory[0x0100 + sp] = 0x01
+    mpu.memory[0x0100 + sp - 1] = 0x00
+    mpu.memory[0x0100 + sp - 2] = 0x30
+    mpu.sp = sp - 3
+    mpu.pc = labels["DLI_TITLE_SCROLL"]
 
-    # HSCROL must match fine scroll offset
-    assert mpu.memory[labels["HSCROL"]] == 2
+    while mpu.sp != sp:
+        pc = mpu.pc
+        if mpu.memory[pc] == 0x8D and mpu.memory[pc + 1] == (labels["COLPF2"] & 0xFF) and mpu.memory[pc + 2] == (labels["COLPF2"] >> 8):
+            colpf2_writes.append(mpu.a)
+        mpu.step()
 
-    # Background of Mode 2 line must be set to black ($00)
-    assert mpu.memory[labels["COLPF2"]] == 0x00
+    # 8 rainbow scanlines on COLPF2 ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0) + restore ($EE)
+    expected = [0xC0, 0xC2, 0xC4, 0xC6, 0xC6, 0xC4, 0xC2, 0xC0, labels["TITLE_COLOR_PF2"]]
+    assert colpf2_writes == expected
 
-    # Foreground of text must match current COLOR1
-    assert mpu.memory[labels["COLPF1"]] == 0xCA
+    # Final restored state
+    assert mpu.memory[labels["DMACTL"]] == 0x21
+    assert mpu.memory[labels["HSCROL"]] == 0
+    assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
+    assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]

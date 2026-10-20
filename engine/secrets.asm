@@ -108,6 +108,11 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
 ; Input: A = scene_id (0..SCENE_COUNT-1)
 ; ==============================================================================
 .proc secrets_init
+    cmp #SCENE_COUNT
+    bcc @valid_id
+    rts
+
+@valid_id
     sta active_scene_id
     tax                     ; X = scene_id
     lda scene_secret_count,x
@@ -117,7 +122,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
 
 @has_secrets
     ; Limit count to MAX_SECRETS
-    lda secrets_count
     cmp #MAX_SECRETS
     bcc @count_ok
     lda #MAX_SECRETS
@@ -138,7 +142,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_active
 
     ; 2. Copy sprite IDs
-    ldx active_scene_id
     lda scene_secret_sprite_id_lo,x
     sta zp_ptr_src
     lda scene_secret_sprite_id_hi,x
@@ -152,7 +155,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_spr
 
     ; 3. Copy PMG Y scanline offsets
-    ldx active_scene_id
     lda scene_secret_pmg_y_lo,x
     sta zp_ptr_src
     lda scene_secret_pmg_y_hi,x
@@ -166,7 +168,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_y
 
     ; 4. Copy heights
-    ldx active_scene_id
     lda scene_secret_height_lo,x
     sta zp_ptr_src
     lda scene_secret_height_hi,x
@@ -180,7 +181,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_h
 
     ; 5. Copy frame durations & initialize timer
-    ldx active_scene_id
     lda scene_secret_frame_dur_lo,x
     sta zp_ptr_src
     lda scene_secret_frame_dur_hi,x
@@ -195,7 +195,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_dur
 
     ; 6. Copy frame counts & reset frame_idx = 0
-    ldx active_scene_id
     lda scene_secret_frame_count_lo,x
     sta zp_ptr_src
     lda scene_secret_frame_count_hi,x
@@ -211,7 +210,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_cnt
 
     ; 7. Copy def_ids
-    ldx active_scene_id
     lda scene_secret_def_id_lo,x
     sta zp_ptr_src
     lda scene_secret_def_id_hi,x
@@ -225,7 +223,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_def
 
     ; 8. Copy dep_ids
-    ldx active_scene_id
     lda scene_secret_dep_id_lo,x
     sta zp_ptr_src
     lda scene_secret_dep_id_hi,x
@@ -239,7 +236,6 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @copy_dep
 
     ; 9. Copy X coordinates
-    ldx active_scene_id
     lda scene_secret_x_lo,x
     sta zp_ptr_src
     lda scene_secret_x_hi,x

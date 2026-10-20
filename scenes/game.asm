@@ -21,6 +21,14 @@ SCENE_TITLE_FADE_STEPS = 8
     sta SDMCTL
     sta DMACTL
 
+    ; Ensure active_scene_id is within bounds (0..SCENE_COUNT-1)
+    lda active_scene_id
+    cmp #SCENE_COUNT
+    bcc @scene_ok
+    lda #0
+    sta active_scene_id
+@scene_ok
+
     ; 2. Set PMBASE (Player-Missile Graphics buffer page)
     lda #PMBASE_PAGE
     sta PMBASE

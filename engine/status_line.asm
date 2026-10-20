@@ -37,6 +37,12 @@ STATUS_INIT_LIVES   = 3
 ; Preserves: X
 ; ==============================================================================
 .proc status_line_init
+    cmp #SCENE_COUNT
+    bcc @valid_id
+    rts
+
+@valid_id
+    sta active_scene_id
     txa
     pha
 

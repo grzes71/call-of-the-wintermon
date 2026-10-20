@@ -12,13 +12,19 @@
 TITLE_COLOR_PF0       = $C4
 TITLE_COLOR_PF1       = $CA
 TITLE_COLOR_PF2       = $EE
-TITLE_SCROLL_SPEED    = 1     ; Step fine scroll every 1 frame (smooth 50/60 fps)
+TITLE_COLOR_SCROLL    = $CE   ; Green text foreground luminance/color
+TITLE_COLOR_SCROLL_BG = $C0   ; Mode 2 background: Black with Green hue ($C0) to colorize text
+TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, comfortable reading speed)
 
 .proc title_init
     ; Turn off ANTIC DMA during setup
     lda #0
     sta SDMCTL
     sta DMACTL
+
+    ; Reset game progression, lives, and CDs for new playthrough
+    sta active_scene_id
+    jsr status_line_reset
 
     ; Disable GTIA PMG graphics and clear all player/missile positions
     sta GRACTL
@@ -194,63 +200,85 @@ TITLE_SCROLL_SPEED    = 1     ; Step fine scroll every 1 frame (smooth 50/60 fps
 .endp
 
 ; ==============================================================================
-; DLI 1 — Triggered on DL_BLANK1 right before ANTIC Mode 2 scroll line
-; Switches ANTIC to Normal playfield ($22) for 40-char scrolling text,
-; sets fine horizontal scroll (HSCROL) and text colors, and points VDSLST to DLI 2.
+; DLI ROUTINE — Triggered on DL_BLANK1 before ANTIC Mode 2 scroll line
+; 1. Waits for buffer blank scanline, switches ANTIC to Normal playfield ($22),
+;    sets fine horizontal scroll (HSCROL), and sets text foreground color (COLPF1).
+; 2. Renders 8-scanline rainbow background gradient ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0)
+;    into COLPF2 synchronized with WSYNC.
+; 3. On post-scroll blank line, restores Narrow playfield ($21), resets HSCROL,
+;    and restores Mode D playfield colors.
 ; ==============================================================================
 .proc dli_title_scroll
-    pha                         ; Save accumulator
-    sta WSYNC                   ; Wait for horizontal sync at end of blank line
+    pha                         ; Save accumulator                    ; [3]
+    sta WSYNC                   ; Wait for end of DLI blank line      ; [4]
 
-    lda #$22
-    sta DMACTL                  ; Switch to Normal playfield (40 columns / 48 fetched)
+    ; --- Buffer Blank Scanline ---
+    lda #$22                    ; Normal playfield (40 cols / 48 fetch) ; [2]
+    sta DMACTL                  ;                                     ; [4]
+    lda title_scroll_fine       ; Fine scroll offset (3..0 clocks)    ; [3]
+    sta HSCROL                  ;                                     ; [4]
+    lda #TITLE_COLOR_SCROLL     ; Text foreground color               ; [2]
+    sta COLPF1                  ;                                     ; [4]
 
-    lda title_scroll_fine       ; Load fine scroll offset (3..0 color clocks)
-    sta HSCROL                  ; Set ANTIC fine horizontal scroll
+    ; Wait for end of buffer line -> start of Mode 2 Scanline 0
+    sta WSYNC                   ;                                     ; [4]
 
-    lda #0
-    sta COLPF2                  ; Text background: Black ($00)
+    ; --- 8-Scanline Rainbow Gradient on COLPF2 ---
+    ; Scanline 0: $C0
+    lda #$C0                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C0                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 1                 ; [4]
 
-    lda #TITLE_COLOR_PF1        ; Text foreground: medium green ($CA)
-    sta COLPF1
+    ; Scanline 1: $C2
+    lda #$C2                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C2                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 2                 ; [4]
 
-    ; Point VDSLST to DLI 2 (restore narrow playfield after scroll line)
-    lda <dli_title_restore
-    sta VDSLST
-    lda >dli_title_restore
-    sta VDSLST+1
+    ; Scanline 2: $C4
+    lda #$C4                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C4                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 3                 ; [4]
 
-    pla                         ; Restore accumulator
-    rti
+    ; Scanline 3: $C6
+    lda #$C6                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C6                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 4                 ; [4]
+
+    ; Scanline 4: $C6
+    lda #$C6                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C6                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 5                 ; [4]
+
+    ; Scanline 5: $C4
+    lda #$C4                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C4                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 6                 ; [4]
+
+    ; Scanline 6: $C2
+    lda #$C2                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C2                     ; [4]
+    sta WSYNC                   ; Wait for Scanline 7                 ; [4]
+
+    ; Scanline 7: $C0
+    lda #$C0                    ;                                     ; [2]
+    sta COLPF2                  ; Background: $C0                     ; [4]
+    sta WSYNC                   ; Wait for post-scroll blank line     ; [4]
+
+    ; --- Post-Scroll Blank Scanline: Restore Mode D State ---
+    lda #$21                    ; Restore Narrow playfield (128 px)   ; [2]
+    sta DMACTL                  ;                                     ; [4]
+    lda #0                      ; Reset fine horizontal scroll        ; [2]
+    sta HSCROL                  ;                                     ; [4]
+    lda #TITLE_COLOR_PF1        ; Restore Mode D PF1 color            ; [2]
+    sta COLPF1                  ;                                     ; [4]
+    lda #TITLE_COLOR_PF2        ; Restore Mode D PF2 color            ; [2]
+    sta COLPF2                  ;                                     ; [4]
+
+    pla                         ; Restore accumulator                 ; [4]
+    rti                         ; Return from interrupt               ; [6]
 .endp
 
-; ==============================================================================
-; DLI 2 — Triggered on DL_BLANK1 right after ANTIC Mode 2 scroll line
-; Restores ANTIC to Narrow playfield ($21) for 128px Mode D title image,
-; resets HSCROL, restores image colors, and points VDSLST back to DLI 1.
-; ==============================================================================
 .proc dli_title_restore
-    pha                         ; Save accumulator
-    sta WSYNC                   ; Wait for horizontal sync at end of blank line
-
-    lda #$21
-    sta DMACTL                  ; Switch back to Narrow playfield (128 pixels / 32 bytes)
-
-    lda #0
-    sta HSCROL                  ; Reset fine horizontal scroll
-
-    lda #TITLE_COLOR_PF1        ; Restore Mode D playfield colors
-    sta COLPF1
-    lda #TITLE_COLOR_PF2
-    sta COLPF2
-
-    ; Point VDSLST back to DLI 1 for next frame
-    lda <dli_title_scroll
-    sta VDSLST
-    lda >dli_title_scroll
-    sta VDSLST+1
-
-    pla                         ; Restore accumulator
     rti
 .endp
 

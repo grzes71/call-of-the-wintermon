@@ -339,8 +339,8 @@ dlist_title
     .byte DL_MODE_2 | DL_LMS | DL_HSCROL
     .word title_scroll_vram
 
-    ; 1 blank scanline with DLI 2 right after ANTIC Mode 2 scroll line (switches to Narrow playfield $21)
-    .byte DL_BLANK1 | DL_DLI
+    ; 1 blank scanline after ANTIC Mode 2 scroll line (DLI restores Narrow mode here)
+    .byte DL_BLANK1
 
     ; Bottom blank margin
     .byte DL_BLANK8

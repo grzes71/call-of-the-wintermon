@@ -2,7 +2,31 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-19] - Title Screen Narrow Playfield Switch & Immediate Full Brightness
+## [2026-10-20] - Fix STAB-004: State reset on title return and bounds checks across scene loaders
+
+- **State Management & Title Architecture ([scenes/title.asm](scenes/title.asm), [scenes/game.asm](scenes/game.asm))**:
+  - Fixed STAB-004 where completing all scenes or exiting from Game Over left `active_scene_id = SCENE_COUNT` without resetting game state upon return to title.
+  - Updated `title_init` in [scenes/title.asm](scenes/title.asm) to reset `active_scene_id = 0` and call `status_line_reset`, restoring `player_lives = 3`, `player_cds = 0`, and `game_result = GAME_RESULT_NONE` for fresh playthroughs.
+  - Added front-gate defensive validation in `game_init` ([scenes/game.asm](scenes/game.asm)) clamping `active_scene_id` to `0` if `>= SCENE_COUNT`.
+- **Defensive Bounds Checking & Size Optimization ([engine/secrets.asm](engine/secrets.asm), [engine/player.asm](engine/player.asm), [engine/status_line.asm](engine/status_line.asm))**:
+  - Added `cmp #SCENE_COUNT; bcc @valid_id; rts` bounds guards in `player_init`, `secrets_init`, and `status_line_init` to prevent out-of-bounds table indexing.
+  - Removed 8 redundant `ldx active_scene_id` instructions across copy phases in `secrets_init` and redundant `lda secrets_count`, recovering 18 bytes and shrinking `SCENES_DATA` ($5000-$5FED, 19 bytes of headroom before `$6000`).
+- **Automated Verification ([tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py))**:
+  - Added `test_title_init_resets_game_state_and_active_scene_id` verifying that returning to title after game completion resets `active_scene_id = 0`, `player_lives = 3`, `player_cds = 0`, and `game_result = GAME_RESULT_NONE`.
+  - Added `test_subroutines_reject_out_of_bounds_scene_id` verifying that `secrets_init`, `player_init`, and `status_line_init` safely reject `scene_id >= SCENE_COUNT` without memory corruption.
+  - All 430 py65 emulation and Python unit tests passed in `make all`.
+
+
+- **Physics & Engine Runtime ([engine/player.asm](engine/player.asm))**:
+  - Fixed STAB-006 where `player_init` erased the active scene index in register `X` during the PMG buffer clearing loop (`@clr_p0`), causing platform pointer tables (`zp_plat_count`, `zp_plat_ptr_x`, `zp_plat_ptr_y`, `zp_plat_ptr_w`) to always index Scene 0 geometry even when called for Scene 1 ("Be Quick or Be Dead").
+  - Moved platform table setup before PMG buffer clearing so `X = active_scene_id` is retained directly from procedure entry without requiring register reloading.
+  - Added `sta active_scene_id` at the start of `player_init` ensuring Zero Page `active_scene_id` is always updated when entering from external callers with `A = scene_id`.
+  - Consolidated register zero-initialization (`player_prev_pmg_y`, `player_dir`, `player_state`, `player_frame_idx...`, `SIZEP0`), saving 10 bytes in `SCENES_DATA` ($5000-$5FF6) and keeping the segment within bounds.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Expanded `test_player_init_scene1_custom_color` to assert that Scene 1 (`A = 1`) sets `zp_plat_count == 14` (matching Scene 1 platform count instead of Scene 0's 11) and that `zp_plat_ptr_x`, `zp_plat_ptr_y`, `zp_plat_ptr_w` point to Scene 1 platform tables.
+  - All 428 py65 emulation and Python unit tests passed in `make all`.
+  - Segment memory validation passes with 1,835 bytes of total headroom below `$C000`.
+
 
 - **Image Converter & Asset Pipeline ([scripts/convert_image.py](scripts/convert_image.py), [Makefile](Makefile), [manifest.yaml](manifest.yaml))**:
   - Updated `convert_image_to_antic_d` to convert 128-pixel narrow images (32 bytes/line) for 96 or 102 lines into ANTIC Mode D format.
@@ -10,18 +34,16 @@
 - **Display List & DLI Architecture ([main.asm](main.asm), [scenes/title.asm](scenes/title.asm))**:
   - Rebuilt `dlist_title` in `main.asm` to display 96 lines of ANTIC Mode D in Narrow playfield (128 pixels wide, 32 bytes/line), vertically centered (14 blank lines top, 11 blank lines bottom) with 229 total scanlines.
   - Resolved visible horizontal color glitch above scroll line by placing a 1-scanline blank buffer (`DL_BLANK1`) between DLI 1 and `DL_MODE_2`:
-    - **DLI 1 (`dli_title_scroll`)**: Triggers on `DL_BLANK1 | DL_DLI`, synchronizes with `WSYNC` to the dedicated blank buffer scanline, and configures `DMACTL = $22`, `HSCROL`, and `COLPF2 = $00` (black background for Mode 2 text) before `DL_MODE_2` scanline 0 begins.
-    - **DLI 2 (`dli_title_restore`)**: Triggers on `DL_BLANK1 | DL_DLI` immediately following Mode 2; waits for `WSYNC`, restores `DMACTL = $21`, resets `HSCROL = 0`, restores Mode D playfield colors, and points `VDSLST` back to DLI 1.
-- **Immediate Brightness & State Machine ([scenes/title.asm](scenes/title.asm))**:
-  - Removed title screen fade-in logic, step tables (`title_fade_c0..c2`), and frame delay counters.
-  - In `title_init`: sets full brightness palette immediately (`COLOR0`/`COLPF0 = $C4`, `COLOR1`/`COLPF1 = $CA`, `COLOR2`/`COLPF2 = $EE`), initializes Narrow playfield DMA (`SDMCTL = $21`, `DMACTL = $21`), and starts title music immediately.
-  - In `title_run`: maintains `SDMCTL = $21`, restores `VDSLST = dli_title_scroll` at top of frame, and directly updates audio, scroller, and input.
+    - **DLI (`dli_title_scroll`)**: Triggers on `DL_BLANK1 | DL_DLI`, synchronizes with `WSYNC` to configure `DMACTL = $22`, `HSCROL`, and `COLPF1 = TITLE_COLOR_SCROLL` during the blank buffer line. Then across the 8 scanlines of the ANTIC Mode 2 text line, writes the rainbow raster gradient (`$C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0`) into `COLPF2` with explicit per-scanline `WSYNC` synchronization. On the post-scroll blank line, restores Narrow playfield (`DMACTL = $21`), resets `HSCROL = 0`, and restores Mode D colors (`COLPF1 = $CA`, `COLPF2 = $EE`).
+- **Scroll Speed & Timing ([scenes/title.asm](scenes/title.asm), [tests/test_title_scroll.py](tests/test_title_scroll.py))**:
+  - Adjusted `TITLE_SCROLL_SPEED` to `2` (steps fine scroll every 2 frames / 25 fps, ~6.25 chars/sec) for comfortable reading pace.
+  - Updated `test_title_scroll.py` to step fine scroll according to `TITLE_SCROLL_SPEED` delay dynamically.
 - **Memory Footprint & Validation ([scripts/check_memory.py](scripts/check_memory.py))**:
   - `TITLE_VRAM` segment shrunk from 4,039 bytes to 3,271 bytes ($4000-$4CC6), freeing 768 bytes of headroom below `$5000`.
-  - Total allocated user RAM reduced to 39,093 bytes (1,867 bytes available below `$C000`).
+  - Total allocated user RAM reduced to 39,094 bytes (1,866 bytes available below `$C000`).
 - **Automated Verification ([tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py), [tests/test_title_scroll.py](tests/test_title_scroll.py))**:
   - Added test `test_title_init_immediate_full_brightness_and_narrow_playfield` asserting immediate colors and `SDMCTL = $21`.
-  - Added test `test_title_dual_dli_chain` verifying DLI 1 transitions `DMACTL` to `$22` + points to DLI 2, and DLI 2 restores `DMACTL` to `$21` + points to DLI 1.
+  - Updated `test_title_dual_dli_chain` and `test_dli_title_scroll_sets_registers` to dynamically assert `labels["TITLE_COLOR_SCROLL"]` instead of hardcoded literal.
   - All 428 automated py65 emulation and python unit tests passed in `make all`.
 
 - **Data Pipeline & Pointer Tables ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
