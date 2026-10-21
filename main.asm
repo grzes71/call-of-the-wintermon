@@ -330,7 +330,7 @@ title_vs_buf
 ;   - 64 scanlines ATARI LOGO in ANTIC Mode D (1 LMS + 31 successive Mode D lines)
 ;   - 8 blank scanlines margin (DL_BLANK8)
 ;   - 3 blank scanlines scroll prolog (3x DL_BLANK1, second has DL_DLI)
-;   - 2 lines ANTIC Mode 2 vertical scroll window with LMS & VSCROL (9 scanlines)
+;   - 2 lines ANTIC Mode 2 vertical scroll window (1x DL_VSCROL + 1x buffer line without VSCROL = 9 scanlines)
 ;   - Tail: 12 blank scanlines (DL_BLANK1 + DL_BLANK8 + DL_BLANK3)
 ;   - JVB to dlist_title
 ; Total height = 24 + 8 + 8 + 16 + 8 + 32 + 8 + 64 + 8 + 3 + 9 + 12 = 200 scanlines
@@ -414,12 +414,12 @@ dlist_title
     .byte DL_BLANK1 | DL_DLI
     .byte DL_BLANK1
 
-    ; ANTIC Mode 2 vertical scroll window (2 lines with VSCROL = 9 scanlines)
+    ; ANTIC Mode 2 vertical scroll window (1 line with VSCROL + 1 buffer line without VSCROL = 9 scanlines)
 title_dl_vs_lms
     .byte DL_MODE_2 | DL_LMS | DL_VSCROL
 title_dl_vs_addr
     .word title_vs_buf
-    .byte DL_MODE_2 | DL_VSCROL
+    .byte DL_MODE_2
 
     ; Tail (12 scanlines) copied directly from original display list
     .byte DL_BLANK1

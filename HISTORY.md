@@ -2,6 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Fix ANTIC DL_VSCROL on Second Line of Vertical Scroll Window
+
+- **Display List VSCROL Geometry ([main.asm](main.asm))**:
+  - Removed `DL_VSCROL` from the second line of the vertical scroll window: changed from `.byte DL_MODE_2 | DL_VSCROL` to `.byte DL_MODE_2`.
+  - In ANTIC hardware, a vertical scroll zone begins with the first mode line having `DL_VSCROL` ($8 - V$ scanlines rendered from $V$ to 7) and terminates with the first mode line without `DL_VSCROL` (the buffer line, rendered from scanline 0 to $V$, $V + 1$ scanlines).
+  - Removing `DL_VSCROL` from the second line guarantees a constant physical window height of $(8 - V) + (V + 1) = 9$ scanlines across all $V \in [0, 7]$, eliminating expansion to $16 - V$ scanlines.
+  - Overall Display List scanline count remains constant at exactly 200 scanlines.
+- **Documentation & Geometry Comments ([scenes/title.asm](scenes/title.asm), [main.asm](main.asm))**:
+  - Updated architectural comments to document that the terminating line without `DL_VSCROL` is truncated to $V + 1$ scanlines as the buffer line.
+- **Test Suite Updates ([tests/test_title_vscroll.py](tests/test_title_vscroll.py), [tests/test_title_text.py](tests/test_title_text.py))**:
+  - Updated `test_dlist_title_exact_instruction_sequence_and_height` in [tests/test_title_text.py](tests/test_title_text.py) to assert `mem[pc] == DL_MODE_2`.
+  - Updated `test_dlist_title_vscroll_instructions_and_properties` in [tests/test_title_vscroll.py](tests/test_title_vscroll.py) to assert `second_line_inst == DL_MODE_2` and verified that exactly one mode instruction in the entire Display List contains `DL_VSCROL`.
+
+
 ## [2026-10-21] - Fix Text Visibility Below Title Screen Vertical Scroll Window
 
 - **Below-Window Black Palette Configuration ([scenes/title.asm](scenes/title.asm))**:

@@ -19,8 +19,11 @@ TITLE_BELOW_PF2       = $00   ; Black COLPF2 below vertical scroll window
 
 ; --- Title Vertical Scroll Window Constants & Geometry ---
 ; ANTIC Mode 2 VSCROL geometry:
-; 2 lines with DL_VSCROL ($20). Window height is constant 9 scanlines:
-; Line 1 has height (8 - VSCROL), Line 2 has height (VSCROL + 1). Total: 9 scanlines.
+; 1 line with DL_VSCROL ($20) + 1 buffer line without DL_VSCROL ($00).
+; In ANTIC, a vertical scroll region starts on the first line with DL_VSCROL set
+; (rendered from scanline VSCROL to 7, height = 8 - VSCROL), and is terminated by
+; the first line WITHOUT DL_VSCROL (buffer line, rendered from scanline 0 to VSCROL,
+; height = VSCROL + 1). Total window height is strictly constant: (8 - V) + (V + 1) = 9 scanlines.
 ; Buffer has 3 lines of 40 bytes (L0, L1, L2).
 ; p (0..15) = 8*k + V (k = p >> 3, V = p & 7):
 ;   LMS address = title_vs_buf + 40 * k

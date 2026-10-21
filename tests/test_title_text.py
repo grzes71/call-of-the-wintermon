@@ -610,13 +610,13 @@ def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
 
     assert total_scanlines == 179, f"Mode 2 must start at scanline 179, got {total_scanlines}"
 
-    # 11. Vertical scroll window: 2 lines Mode 2 with DL_VSCROL = 9 scanlines
+    # 11. Vertical scroll window: 1 line with DL_VSCROL + 1 buffer line without DL_VSCROL = 9 scanlines
     assert mem[pc] == (DL_MODE_2 | DL_LMS | DL_VSCROL)
     pc += 1
     vs_addr = mem[pc] | (mem[pc + 1] << 8)
     pc += 2
     assert vs_addr == labels["TITLE_VS_BUF"]
-    assert mem[pc] == (DL_MODE_2 | DL_VSCROL)
+    assert mem[pc] == DL_MODE_2
     pc += 1
     total_scanlines += 9
 

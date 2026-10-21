@@ -178,6 +178,7 @@ def test_dlist_title_vscroll_instructions_and_properties(emu_env):
     total_scanlines = 0
     dli_count = 0
     hscrol_found = False
+    vscrol_count = 0
     while pc < dlist_addr + 122:
         inst = mem[pc]
         if inst & DL_DLI:
@@ -193,6 +194,8 @@ def test_dlist_title_vscroll_instructions_and_properties(emu_env):
         else:
             if inst & DL_HSCROL:
                 hscrol_found = True
+            if inst & DL_VSCROL:
+                vscrol_count += 1
 
             if inst & DL_LMS:
                 pc += 3
@@ -211,6 +214,7 @@ def test_dlist_title_vscroll_instructions_and_properties(emu_env):
 
     assert not hscrol_found, "Display List must not contain DL_HSCROL"
     assert dli_count == 5, f"Expected exactly 5 DLI bits, got {dli_count}"
+    assert vscrol_count == 1, f"Expected exactly 1 mode instruction with DL_VSCROL, got {vscrol_count}"
 
     # Verify specific VSCROL window instructions
     lms_inst_addr = labels["TITLE_DL_VS_LMS"]
@@ -218,7 +222,7 @@ def test_dlist_title_vscroll_instructions_and_properties(emu_env):
     addr_operand = mem[lms_inst_addr + 1] | (mem[lms_inst_addr + 2] << 8)
     assert addr_operand == labels["TITLE_VS_BUF"]
     second_line_inst = mem[lms_inst_addr + 3]
-    assert second_line_inst == (DL_MODE_2 | DL_VSCROL)
+    assert second_line_inst == DL_MODE_2, "Second line of scroll window must NOT have DL_VSCROL"
 
 
 # ==============================================================================
