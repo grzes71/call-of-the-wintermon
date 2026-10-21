@@ -22,6 +22,9 @@ TITLE_VSCROLL_ASM := $(GEN_DIR)/title_vscroll_data.asm
 TITLE_TXT_SRC    := texts/title.txt
 TITLE_TXT_ASM    := $(GEN_DIR)/title_text_data.asm
 
+TITLE_LOGO_JSON  := title/title.json
+TITLE_LOGO_INC   := $(GEN_DIR)/title_logo.inc
+
 INTRO_TXT_SRC    := texts/intro.txt
 INTRO_TXT_BIN    := $(GEN_DIR)/intro_text.bin
 INTRO_FONT       := fonts/font.fnt
@@ -65,7 +68,7 @@ all: assets tiles music data xex tests check_memory
 # ------------------------------------------------------------------------------
 # 1. Assets conversion
 # ------------------------------------------------------------------------------
-assets: $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
+assets: $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
 
 $(TITLE_VSCROLL_ASM): $(TITLE_VSCROLL_SRC) scripts/compile_title_vscroll.py
 	@$(MKDIR) $(GEN_DIR)
@@ -74,6 +77,10 @@ $(TITLE_VSCROLL_ASM): $(TITLE_VSCROLL_SRC) scripts/compile_title_vscroll.py
 $(TITLE_TXT_ASM): $(TITLE_TXT_SRC) scripts/compile_title_text.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_title_text.py -i $(TITLE_TXT_SRC) -o $(TITLE_TXT_ASM)
+
+$(TITLE_LOGO_INC): $(TITLE_LOGO_JSON) scripts/convert_title_logo.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/convert_title_logo.py $(TITLE_LOGO_JSON) $(TITLE_LOGO_INC)
 
 $(INTRO_TXT_BIN): $(INTRO_TXT_SRC) scripts/gen_intro_text.py
 	@$(MKDIR) $(GEN_DIR)
@@ -123,7 +130,7 @@ $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFI
 # ------------------------------------------------------------------------------
 xex: $(TARGET)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
+$(TARGET): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
 	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
 

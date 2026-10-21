@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 import pytest
@@ -378,13 +379,11 @@ def test_logo_codes_and_generation(emu_env):
     """Verify Atari logo codes table, reference rendering of 1280B buffer, centering, and margins."""
     mpu, labels = emu_env
 
-    # Hardcoded logo codes from specification
-    logo_lines = [
-        [0, 125, 126, 127, 0],
-        [0, 124, 80, 96, 0],
-        [75, 76, 77, 78, 79],
-        [91, 92, 93, 94, 95],
-    ]
+    # Load logo codes dynamically from title/title.json
+    json_path = Path("title/title.json")
+    with open(json_path, "r", encoding="utf-8") as f:
+        logo_data = json.load(f)
+    logo_lines = logo_data["logo"]["codes"]
 
     # 1. Verify title_logo_codes table in memory
     codes_addr = labels["TITLE_LOGO_CODES"]
@@ -415,18 +414,14 @@ def test_logo_codes_and_generation(emu_env):
         # Right margin (15 bytes: cols 25..39)
         assert all(mpu.memory[row_base + i] == 0x00 for i in range(25, 40)), f"Row {r} right margin non-zero"
 
-    # 5. Space character (code 0) zero verification in lines 0 and 1
-    # Line 0: chars 0 and 4 are spaces -> cols 15..16 and cols 23..24 must be 0x00
-    for r in range(8):
-        row_base = logo_base + r * 40
-        assert mpu.memory[row_base + 15] == 0x00 and mpu.memory[row_base + 16] == 0x00
-        assert mpu.memory[row_base + 23] == 0x00 and mpu.memory[row_base + 24] == 0x00
-
-    # Line 1: chars 0 and 4 are spaces -> cols 15..16 and cols 23..24 must be 0x00
-    for r in range(8, 16):
-        row_base = logo_base + r * 40
-        assert mpu.memory[row_base + 15] == 0x00 and mpu.memory[row_base + 16] == 0x00
-        assert mpu.memory[row_base + 23] == 0x00 and mpu.memory[row_base + 24] == 0x00
+    # 5. Space character (code 0) zero verification
+    for k, line_codes in enumerate(logo_lines):
+        for c, code in enumerate(line_codes):
+            if code == 0:
+                col_start = 15 + c * 2
+                for r in range(k * 8, (k + 1) * 8):
+                    row_base = logo_base + r * 40
+                    assert mpu.memory[row_base + col_start] == 0x00 and mpu.memory[row_base + col_start + 1] == 0x00
 
 
 def test_generator_validation_rejects_invalid_parameters(emu_env):

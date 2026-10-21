@@ -2,6 +2,27 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Atari Logo Character Codes in JSON (title/title.json)
+
+- **Logo Data Source ([title/title.json](title/title.json))**:
+  - Defined Atari logo grid in [title/title.json](title/title.json) as a fixed 5-column × 4-row matrix (20 character screen codes, 0–127, from `intro_font`).
+  - Screen code 0 represents a space / blank glyph. Values are restricted to valid font screen codes (0..127) and arranged row-by-row matching the visual logo layout.
+- **Python Compilation Tool ([scripts/convert_title_logo.py](scripts/convert_title_logo.py))**:
+  - Implemented standalone Python conversion script [scripts/convert_title_logo.py](scripts/convert_title_logo.py) generating MADS include file [gen/title_logo.inc](gen/title_logo.inc).
+  - Validates JSON existence, structure, types (strict integer rejection of floats, strings, booleans), bounds (0..127), and fixed grid geometry (5 cols × 4 rows) with informative Polish error messages.
+  - Generates `TITLE_LOGO_COLS = 5`, `TITLE_LOGO_LINES = 4`, and formatted `title_logo_codes:` `.byte` statements.
+- **Build Pipeline Integration ([Makefile](Makefile))**:
+  - Added build target rule `gen/title_logo.inc` from `title/title.json` and `scripts/convert_title_logo.py`.
+  - Registered `$(TITLE_LOGO_INC)` under `assets` and as a dependency for `$(TARGET)` (`call_of_the_wintermon.xex`).
+  - Rebuilding is automatically handled via `make` / `make assets` / `make all`.
+- **Title Screen Assembly Integration ([scenes/title.asm](scenes/title.asm))**:
+  - Replaced manual 20-byte `title_logo_codes` table and top-level equates with `icl 'gen/title_logo.inc'`.
+  - Retained compile-time bounds and dimension assertions (`TITLE_LOGO_COLS`, `TITLE_LOGO_OFFSET`, table size).
+  - Maintained 100% binary equivalence in user RAM and memory map.
+- **Test Suite & Integration Verification ([tests/test_title_logo_json.py](tests/test_title_logo_json.py), [tests/test_title_text.py](tests/test_title_text.py))**:
+  - Updated [tests/test_title_text.py](tests/test_title_text.py) to read logo screen codes dynamically from [title/title.json](title/title.json).
+  - Created 22 new tests in [tests/test_title_logo_json.py](tests/test_title_logo_json.py) covering successful conversion, boundary values, error diagnostics on invalid inputs, and binary integration verification against the compiled XEX image.
+
 ## [2026-10-21] - Fix ANTIC DL_VSCROL on Second Line of Vertical Scroll Window
 
 - **Display List VSCROL Geometry ([main.asm](main.asm))**:

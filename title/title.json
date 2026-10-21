@@ -1,0 +1,13 @@
+{
+  "description": "Logo Gry na ekranie tytulowym: kody znakow (screen codes fontu intro_font, 0-127). 4 wiersze po 5 kodow. Kod 0 = spacja.",
+  "logo": {
+    "columns": 5,
+    "rows": 4,
+    "codes": [
+      [   0,   0,  62,  63,   0],
+      [ 123, 124, 125, 126, 127],
+      [  75,  76,  77,  78,  79],
+      [  91,  92,  93,  94,  95]
+    ]
+  }
+}

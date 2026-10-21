@@ -68,17 +68,15 @@ TITLE_WINTER_PF0      = $78
 TITLE_WINTER_PF1      = $7C                  
 TITLE_WINTER_PF2      = $7A
 
-TITLE_LOGO_PF0        = $EE   ; COLPF0
-TITLE_LOGO_PF1        = $EE   ; COLPF1
-TITLE_LOGO_PF2        = $EE   ; COLPF2
+TITLE_LOGO_PF0        = $08   ; COLPF0
+TITLE_LOGO_PF1        = $0c   ; COLPF1
+TITLE_LOGO_PF2        = $0a   ; COLPF2
 
 ; --- Title Text Generator Constants & Buffer Equates ---
 TITLE_TEXT_PITCH      = 40
 TITLE_TEXT_ROWS       = 8
 TITLE_TEXT_BYTES      = 320
 
-TITLE_LOGO_COLS       = 5
-TITLE_LOGO_LINES      = 4
 TITLE_LOGO_OFFSET     = 15    ; (40 - 5 * 2) / 2
 TITLE_LOGO_LINE_BYTES = 320   ; 8 rows * 40 bytes per character row
 TITLE_LOGO_BYTES      = 1280  ; 4 * 320 bytes
@@ -88,16 +86,11 @@ title_text_of_the     = GAME_VRAM + $0140 ; $3140–$327F
 title_text_wintermoon = GAME_VRAM + $0280 ; $3280–$33BF
 title_text_logo       = GAME_VRAM + $03C0 ; $33C0–$38BF (1,280 bytes)
 
-; Compile-time bounds assertions for logo
-.if (TITLE_LOGO_COLS < 1) || (TITLE_LOGO_COLS > 20)
-    .error "TITLE_LOGO_COLS must be between 1 and 20"
-.endif
-.if (TITLE_LOGO_OFFSET + 2 * TITLE_LOGO_COLS > 40)
-    .error "TITLE_LOGO_OFFSET + 2 * TITLE_LOGO_COLS exceeds 40"
-.endif
+; Compile-time bounds assertions
 .if (title_text_logo + TITLE_LOGO_BYTES - 1) > $38BF
     .error "title_text_logo exceeds $38BF"
 .endif
+
 
 .proc title_init
     ; Turn off ANTIC DMA during setup
@@ -721,13 +714,16 @@ title_gen_idx .byte 0
 ; 4 lines x 5 characters from intro_font (screen codes 0..127)
 ; Centered at x_offset = 15 (10 bytes width across 40-byte row)
 ; ==============================================================================
-title_logo_codes:
-    .byte $00, $7D, $7E, $7F, $00   ; Line 0:   0, 125, 126, 127,   0
-    .byte $00, $7C, $50, $60, $00   ; Line 1:   0, 124,  80,  96,   0
-    .byte $4B, $4C, $4D, $4E, $4F   ; Line 2:  75,  76,  77,  78,  79
-    .byte $5B, $5C, $5D, $5E, $5F   ; Line 3:  91,  92,  93,  94,  95
+    icl 'gen/title_logo.inc'
 title_logo_codes_end:
 
+; Compile-time bounds assertions for logo
+.if (TITLE_LOGO_COLS < 1) || (TITLE_LOGO_COLS > 20)
+    .error "TITLE_LOGO_COLS must be between 1 and 20"
+.endif
+.if (TITLE_LOGO_OFFSET + 2 * TITLE_LOGO_COLS > 40)
+    .error "TITLE_LOGO_OFFSET + 2 * TITLE_LOGO_COLS exceeds 40"
+.endif
 .if (title_logo_codes_end - title_logo_codes) != (TITLE_LOGO_COLS * TITLE_LOGO_LINES)
     .error "title_logo_codes size must equal TITLE_LOGO_COLS * TITLE_LOGO_LINES"
 .endif
