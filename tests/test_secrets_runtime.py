@@ -51,37 +51,37 @@ def test_secrets_init_scene0():
 
     # Verify PMG scanline positions and margins
     # Platform pas base in PMG: 32 + (plat_y * 2)
-    # Pas 3: 32 + 56 * 2 = 144. Sprite 3 height = 16. Margin = 2 scanlines.
-    # PMG Y = 144 - 16 - 2 = 126.
-    # Pas 1: 32 + 24 * 2 = 80. Sprite 3 height = 16. Margin = 2 scanlines.
-    # PMG Y = 80 - 16 - 2 = 62.
+    # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
+    # Secrets end at p_base - 4, leaving a 3-scanline transition gap.
+    # Pas 3: 32 + 56 * 2 = 144. Sprite 3 height = 16. PMG Y = 144 - 16 - 3 = 125.
+    # Pas 1: 32 + 24 * 2 = 80. Sprite 3 height = 16. PMG Y = 80 - 16 - 3 = 61.
     y_addr = labels["SECRETS_PMG_Y"]
     h_addr = labels["SECRETS_HEIGHT"]
     pmg_y0 = mem[y_addr + 0]
     h0 = mem[h_addr + 0]
-    assert pmg_y0 == 126
+    assert pmg_y0 == 125
     assert h0 == 16
-    # Margin check from platform surface (scanline 144): 144 - (126 + 16) = 2 scanlines >= 1 line
-    assert 144 - (pmg_y0 + h0) >= 1
+    # Margin check from platform surface (scanline 144): 144 - (125 + 16) = 3 scanlines (DLI window)
+    assert 144 - (pmg_y0 + h0) >= 3
 
     pmg_y1 = mem[y_addr + 1]
     h1 = mem[h_addr + 1]
-    assert pmg_y1 == 62
+    assert pmg_y1 == 61
     assert h1 == 16
-    # Margin check from platform surface (scanline 80): 80 - (62 + 16) = 2 scanlines >= 1 line
-    assert 80 - (pmg_y1 + h1) >= 1
+    # Margin check from platform surface (scanline 80): 80 - (61 + 16) = 3 scanlines (DLI window)
+    assert 80 - (pmg_y1 + h1) >= 3
 
     # Verify initial frame 0 bytes in PMG_MISSILES
     pmg_m = labels["PMG_MISSILES"]
     frame0_addr = labels["SPRITE_3_FRAME_0"]
     exp_f0_bytes = list(mem[frame0_addr : frame0_addr + 16])
 
-    # Secret 0 scanlines 126..141 must match sprite 3 frame 0
-    actual_s0 = list(mem[pmg_m + 126 : pmg_m + 126 + 16])
+    # Secret 0 scanlines 125..140 must match sprite 3 frame 0
+    actual_s0 = list(mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
     assert actual_s0 == exp_f0_bytes, f"Secret 0 in PMG_MISSILES does not match Frame 0"
 
-    # Secret 1 scanlines 62..77 must match sprite 3 frame 0
-    actual_s1 = list(mem[pmg_m + 62 : pmg_m + 62 + 16])
+    # Secret 1 scanlines 61..76 must match sprite 3 frame 0
+    actual_s1 = list(mem[pmg_m + pmg_y1 : pmg_m + pmg_y1 + 16])
     assert actual_s1 == exp_f0_bytes, f"Secret 1 in PMG_MISSILES does not match Frame 0"
 
     # Inactive Secret 2 at scanlines 64..77: verify not solid
@@ -130,10 +130,11 @@ def test_secrets_animation_progression():
     assert mem[timer_addr + 0] == key_dur
     assert mem[frame_addr + 0] == 1
 
-    # PMG_MISSILES rows 126..141 must now match sprite 3 frame 1!
+    # PMG_MISSILES rows must now match sprite 3 frame 1!
+    pmg_y0 = mem[labels["SECRETS_PMG_Y"] + 0]
     f1_addr = labels["SPRITE_3_FRAME_1"]
     exp_f1_bytes = list(mem[f1_addr : f1_addr + 16])
-    actual_s0_f1 = list(mem[pmg_m + 126 : pmg_m + 126 + 16])
+    actual_s0_f1 = list(mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
     assert actual_s0_f1 == exp_f1_bytes, f"PMG_MISSILES rows do not match Frame 1 after {key_dur} ticks"
 
     # Step through remaining frames (frames 2 .. key_frame_count - 1)
@@ -218,51 +219,59 @@ def test_secret_collection_and_stage_progression_scene0():
     assert mem[coll_addr + 2] == 0
     assert mem[act_addr + 0] == 1
 
-    # 2. Collect Secret 0: player moves to x=20, pmg_y=126
-    mem[labels["PLAYER_X"]] = 20
-    mem[labels["PLAYER_PMG_Y"]] = 126
+    x_addr = labels["SECRETS_X"]
+    y_addr = labels["SECRETS_PMG_Y"]
+    sec_x0 = mem[x_addr + 0]
+    sec_x1 = mem[x_addr + 1]
+    pmg_y0 = mem[y_addr + 0]
+    pmg_y1 = mem[y_addr + 1]
+    pmg_y2 = mem[y_addr + 2]
+
+    # 2. Collect Secret 0: player moves to sec_x0, pmg_y0
+    mem[labels["PLAYER_X"]] = sec_x0
+    mem[labels["PLAYER_PMG_Y"]] = pmg_y0
     mem[m0pl_addr] = 1  # Hardware collision
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
     # Secret 0 is collected and inactive
     assert mem[coll_addr + 0] == 1
     assert mem[act_addr + 0] == 0
-    # Secret 0 PMG scanlines 126..141 are now cleared ($00)
-    assert all(b == 0 for b in mem[pmg_m + 126 : pmg_m + 142])
+    # Secret 0 PMG scanlines are now cleared ($00)
+    assert all(b == 0 for b in mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
 
     # Secret 1 is still active; Secret 2 is STILL inactive (not all keys collected yet)
     assert mem[act_addr + 1] == 1
     assert mem[act_addr + 2] == 0
 
-    # 3. Collect Secret 1: player moves to x=119, pmg_y=62
-    mem[labels["PLAYER_X"]] = 119
-    mem[labels["PLAYER_PMG_Y"]] = 62
+    # 3. Collect Secret 1: player moves to sec_x1, pmg_y1
+    mem[labels["PLAYER_X"]] = sec_x1
+    mem[labels["PLAYER_PMG_Y"]] = pmg_y1
     mem[m0pl_addr] = 1  # Hardware collision
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
     # Secret 1 is collected and inactive
     assert mem[coll_addr + 1] == 1
     assert mem[act_addr + 1] == 0
-    # Secret 1 was cleared, and in the same step Ladder (secret 2) was unlocked and rendered at 64..77!
-    assert mem[pmg_m + 62] == 0
-    assert mem[pmg_m + 63] == 0
+    # Secret 1 was cleared, and in the same step Ladder (secret 2) was unlocked and rendered at pmg_y2!
+    assert mem[pmg_m + pmg_y1] == 0
+    assert mem[pmg_m + pmg_y1 + 1] == 0
 
     # Now ALL keys (def 1) are collected! Ladder (secret 2, dep 1) must be UNLOCKED!
     assert mem[act_addr + 2] == 1, "Ladder (Secret 2) must be unlocked after all keys collected"
     assert mem[coll_addr + 2] == 0
 
-    # Verify Ladder Frame 0 is rendered into PMG_MISSILES at pmg_y=64..77
+    # Verify Ladder Frame 0 is rendered into PMG_MISSILES at pmg_y2
     ladder_f0 = labels["SPRITE_2_FRAME_0"]
     exp_ladder_bytes = list(mem[ladder_f0 : ladder_f0 + 14])
-    actual_ladder_bytes = list(mem[pmg_m + 64 : pmg_m + 64 + 14])
+    actual_ladder_bytes = list(mem[pmg_m + pmg_y2 : pmg_m + pmg_y2 + 14])
     assert actual_ladder_bytes == exp_ladder_bytes, "Ladder sprite Frame 0 not rendered on unlock"
 
     # Scene 0 is not complete yet (ladder still active)
     assert mem[labels["ACTIVE_SCENE_ID"]] == 0
 
-    # 4. Collect Secret 2 (Ladder): player moves to x=68, pmg_y=64
+    # 4. Collect Secret 2 (Ladder): player moves to x=68, pmg_y2
     mem[labels["PLAYER_X"]] = 68
-    mem[labels["PLAYER_PMG_Y"]] = 64
+    mem[labels["PLAYER_PMG_Y"]] = pmg_y2
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
@@ -301,19 +310,16 @@ def test_game_success_on_final_scene_completion():
     m0pl_addr = labels["M0PL"]
 
     # Scene 1 secrets:
-    # 0: Key at x=8, pmg_y=126, h=16 (active)
-    # 1: Key at x=129, pmg_y=158, h=16 (active)
-    # 2: Ladder at x=96, pmg_y=128, h=14 (dep: 1)
-
+    y_addr = labels["SECRETS_PMG_Y"]
     # Collect Key 0
     mem[labels["PLAYER_X"]] = 8
-    mem[labels["PLAYER_PMG_Y"]] = 126
+    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 0]
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
     # Collect Key 1
     mem[labels["PLAYER_X"]] = 129
-    mem[labels["PLAYER_PMG_Y"]] = 158
+    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 1]
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
@@ -323,7 +329,7 @@ def test_game_success_on_final_scene_completion():
 
     # Collect Ladder 2
     mem[labels["PLAYER_X"]] = 96
-    mem[labels["PLAYER_PMG_Y"]] = 128
+    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 2]
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 

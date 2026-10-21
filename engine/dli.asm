@@ -132,10 +132,11 @@ dli_table_ptrs_hi
     inx
     bne @clr_pmg
 
-    ; 3. Pre-fill platform rows in PMG memory from scene 0 patterns
-    lda scene_pmg_patterns_lo
+    ; 3. Pre-fill platform rows in PMG memory from active scene patterns
+    ldx active_scene_id
+    lda scene_pmg_patterns_lo,x
     sta dli_scene_pmg_ptr
-    lda scene_pmg_patterns_hi
+    lda scene_pmg_patterns_hi,x
     sta dli_scene_pmg_ptr+1
     jsr dli_apply_pmg_patterns
 

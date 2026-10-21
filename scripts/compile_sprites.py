@@ -86,10 +86,31 @@ def pack_row_to_player_bitmap(pixel_row: str) -> int:
     return val
 
 
-def parse_sprites_json(json_path: Path, mode: str = "missiles") -> dict[int, SpriteDefinition]:
-    """Parse sprite studio JSON file into validated SpriteDefinition models."""
+def parse_sprites_json(
+    json_path: Path,
+    mode: str = "missiles",
+    definitions_path: Path | None = None,
+) -> dict[int, SpriteDefinition]:
+    """Parse sprite studio JSON file into validated SpriteDefinition models.
+
+    When mode == 'missiles', if definitions_path is provided, sprites assigned to
+    enemies are automatically packed in 'player' format (1bpp bitmap for Players 1..3),
+    while secrets retain 'missiles' format (5th player M0..M3).
+    """
     if not json_path.is_file():
         raise FileNotFoundError(f"Sprites JSON file not found: {json_path}")
+
+    # Determine enemy sprite IDs from definitions.json if in missiles mode
+    enemy_sprite_ids: set[int] = set()
+    if mode == "missiles" and definitions_path and definitions_path.is_file():
+        try:
+            defs = json.loads(definitions_path.read_text(encoding="utf-8"))
+            for enemy in defs.get("enemies", []):
+                sid = enemy.get("sprite_id")
+                if sid is not None:
+                    enemy_sprite_ids.add(int(sid))
+        except Exception as exc:
+            print(f"Warning: Failed to read definitions for sprite packing mode: {exc}", file=sys.stderr)
 
     data = json.loads(json_path.read_text(encoding="utf-8"))
     raw_sprites = data.get("sprites", [])
@@ -108,12 +129,15 @@ def parse_sprites_json(json_path: Path, mode: str = "missiles") -> dict[int, Spr
         raw_frames = raw.get("frames", [])
         frames: list[SpriteFrame] = []
 
+        # Determine target packing format for this specific sprite
+        is_player_format = (mode == "player") or (sid in enemy_sprite_ids)
+
         for f in raw_frames:
             pixel_rows = f.get("pixels", [])
             packed_rows: list[int] = []
             for r_idx in range(h):
                 r_str = pixel_rows[r_idx] if r_idx < len(pixel_rows) else "00000000"
-                if mode == "player":
+                if is_player_format:
                     packed_rows.append(pack_row_to_player_bitmap(r_str))
                 else:
                     packed_rows.append(pack_row_to_5th_player_missiles(r_str))
@@ -273,10 +297,15 @@ def generate_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
     return "\n".join(lines)
 
 
-def compile_sprites(input_path: Path, output_path: Path, mode: str = "missiles") -> int:
+def compile_sprites(
+    input_path: Path,
+    output_path: Path,
+    mode: str = "missiles",
+    definitions_path: Path | None = None,
+) -> int:
     """Compile sprite studio JSON into 6502 assembly."""
     try:
-        sprites = parse_sprites_json(input_path, mode=mode)
+        sprites = parse_sprites_json(input_path, mode=mode, definitions_path=definitions_path)
     except Exception as exc:
         print(f"Error reading sprites JSON '{input_path}': {exc}", file=sys.stderr)
         return 1
@@ -315,8 +344,15 @@ def main() -> int:
         default="missiles",
         help="Compilation mode: missiles (5th player M0..M3) or player (Player 0 1bpp bitmap)",
     )
+    parser.add_argument(
+        "--definitions",
+        "-d",
+        type=Path,
+        default=Path("scenes/definitions.json"),
+        help="Path to definitions.json to identify enemy vs secret sprites",
+    )
     args = parser.parse_args()
-    return compile_sprites(args.input, args.output, mode=args.mode)
+    return compile_sprites(args.input, args.output, mode=args.mode, definitions_path=args.definitions)
 
 
 if __name__ == "__main__":

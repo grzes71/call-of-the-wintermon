@@ -57,7 +57,7 @@ SCENES_DLI_ASM     := $(GEN_DIR)/scenes_dli_data.asm
 
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
                     engine/dli.asm engine/render.asm engine/render_tables.asm engine/secrets.asm \
-                    engine/player.asm engine/status_line.asm \
+                    engine/enemies.asm engine/player.asm engine/status_line.asm \
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 
@@ -113,9 +113,9 @@ $(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 data: $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
 
-$(SPRITES_ASM): $(SPRITES_SRC) scripts/compile_sprites.py
+$(SPRITES_ASM): $(SPRITES_SRC) $(SCENES_DEFINITIONS) scripts/compile_sprites.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $< -o $@
+	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $(SPRITES_SRC) -o $@ --definitions $(SCENES_DEFINITIONS)
 
 $(PLAYER_SPRITE_ASM): $(PLAYER_SPRITE_SRC) scripts/compile_sprites.py
 	@$(MKDIR) $(GEN_DIR)

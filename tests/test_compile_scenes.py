@@ -86,7 +86,7 @@ def test_parse_01_forest_scene():
     obj1 = scene.objects[0]
     assert obj1.type_code == 0  # enemy
     assert obj1.def_id == 1  # Azathoth
-    assert obj1.speed_code == 0  # slow
+    assert obj1.speed_code == 1  # medium
     assert obj1.strategy_code == 1  # left_right
     assert obj1.atari_color == 66
 
@@ -397,14 +397,14 @@ def test_pmg_patterns_match_platform_widths():
     # pas 0: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
     # pas 1: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
     # pas 2: platform-008 is 16px -> P1 has $F0; P2=$FF, P3=$FF
-    # pas 3: platform-012 is 16px -> P2 has $F0; P1=$FF, P3=$FF
+    # pas 3: platform-006 (32px, $FF) + platform-012 (24px -> seg 16px $F0 + seg 8px $C0) -> P1=$FF, P2=$F0, P3=$C0
     # pas 4: platform-004 is 48px -> P1=32px ($FF), P2=16px ($F0); P3=$FF
     # pas 5: platform-002 is 96px -> P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
     expected_patterns = [
         0xFF, 0xFF, 0xFF,  # pas 0
         0xFF, 0xFF, 0xFF,  # pas 1
         0xF0, 0xFF, 0xFF,  # pas 2 (platform-008 16px on P1)
-        0xFF, 0xF0, 0xFF,  # pas 3 (platform-012 16px on P2)
+        0xFF, 0xF0, 0xC0,  # pas 3 (platform-006 32px on P1, platform-012 24px on P2+P3)
         0xFF, 0xF0, 0xFF,  # pas 4 (platform-004 48px -> P2 has $F0)
         0xFF, 0xFF, 0xFF,  # pas 5 (platform-002 96px)
     ]

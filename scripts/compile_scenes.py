@@ -54,6 +54,8 @@ OBJ_STRATEGY_MAP: dict[str, int] = {
     "stationary": 0,
     "left_right": 1,
     "right_left": 2,
+    "left_pause_right": 3,
+    "right_pause_left": 4,
     "patrol": 3,
     "ambush": 4,
 }
@@ -168,6 +170,30 @@ class SceneSecretData:
     atari_color: int
     active: bool
     dep_id: int = 0
+
+
+@dataclass
+class SceneEnemyData:
+    """Compiled enemy instance on a scene."""
+
+    id: int
+    def_id: int
+    sprite_id: int
+    platform_idx: int
+    zone_idx: int
+    channel: int  # 0=P1, 1=P2, 2=P3
+    min_x: int
+    max_x: int
+    x: int
+    y: int
+    pmg_y: int
+    height: int
+    frame_dur: int
+    frame_count: int
+    speed: int  # 0=slow, 1=medium, 2=fast
+    strategy: int  # 0=stationary, 1=left_right, 2=right_left, 3=left_pause_right, 4=right_pause_left
+    direction: int  # 0=right, 1=left
+    atari_color: int
 
 
 PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
@@ -636,6 +662,7 @@ class SceneCompiledData:
     platforms: list[PlatformData] = field(default_factory=list)
     objects: list[SceneObjectData] = field(default_factory=list)
     secrets: list[SceneSecretData] = field(default_factory=list)
+    enemies: list[SceneEnemyData] = field(default_factory=list)
     dli_data: SceneDliCompiledData | None = None
     pmg_patterns: ScenePmgPatterns | None = None
     player_start_x: int = 20
@@ -964,7 +991,9 @@ def parse_scene_json(
     raw_objects = data.get("objects", [])
     objects: list[SceneObjectData] = []
     scene_secrets: list[SceneSecretData] = []
+    scene_enemies: list[SceneEnemyData] = []
     row_secret_deps: dict[int, dict[Optional[int], int]] = {}
+    zone_enemy_counts: dict[int, int] = {}
 
     for obj in raw_objects:
         oid = int(obj.get("id", 0))
@@ -1018,11 +1047,17 @@ def parse_scene_json(
             spr_dur = spr_def.frame_duration if spr_def else 4
             spr_cnt = len(spr_def.frames) if spr_def else 1
 
+            if spr_h > 20:
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}): secret '{oid}' has sprite height {spr_h} which "
+                    f"exceeds maximum safe height of 20 scanlines for the zone."
+                )
+
             # Platform base scanline in PMG: 32 + (plat_y * 2)
-            # Secret is placed above platform with 2 scanlines margin (1 Mode D pixel row margin >= 1 line)
+            # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
+            # Secrets end at p_base - 4, so pmg_y = p_base - spr_h - 3.
             p_base = 32 + (plat_y * 2)
-            margin = 2
-            pmg_y = max(0, p_base - spr_h - margin)
+            pmg_y = max(0, p_base - spr_h - 3)
             active = (dep_id == 0)
 
             scene_secrets.append(
@@ -1046,6 +1081,74 @@ def parse_scene_json(
             color = cat_item.atari_color if cat_item else 0x42
             blink = cat_item.blink if cat_item else False
             dep_id = 0
+
+            raw_spr = obj.get("sprite_id")
+            spr_id = int(raw_spr) if raw_spr is not None else (cat_item.sprite_id if (cat_item and cat_item.sprite_id is not None) else None)
+            if spr_id is None:
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' has no assigned sprite_id and definition ID {def_id} does not specify one."
+                )
+            if sprites and spr_id not in sprites:
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' references non-existent sprite_id {spr_id}."
+                )
+
+            spr_def = sprites.get(spr_id) if sprites else None
+            spr_h = spr_def.height if spr_def else 20
+            spr_dur = spr_def.frame_duration if spr_def else 4
+            spr_cnt = len(spr_def.frames) if spr_def else 1
+
+            if spr_h > 20:
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' has sprite height {spr_h} which "
+                    f"exceeds maximum safe height of 20 scanlines for the zone."
+                )
+
+            plat = platforms[plat_idx] if plat_idx < len(platforms) else None
+            plat_x = plat.x if plat else 0
+            plat_w = plat.width if plat else 32
+            min_x = plat_x
+            max_x = max(min_x, plat_x + plat_w - 8)
+            clamped_x = min(max_x, max(min_x, ox))
+
+            # Platform base scanline in PMG: 32 + (plat_y * 2)
+            # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
+            # Enemies end at p_base - 4, so pmg_y = p_base - spr_h - 3.
+            p_base = 32 + (plat_y * 2)
+            pmg_y = max(0, p_base - spr_h - 3)
+
+            initial_dir = 1 if strat_code in (1, 3) else 0
+
+            zid = (plat_y - 8) // 16 if plat_y >= 8 else 0
+            ch = zone_enemy_counts.get(zid, 0)
+            if ch >= 3:
+                raise ValueError(
+                    f"Scene '{name}' ({scene_file.name}) exceeds maximum 3 enemies per zone on zone {zid}."
+                )
+            zone_enemy_counts[zid] = ch + 1
+
+            scene_enemies.append(
+                SceneEnemyData(
+                    id=oid,
+                    def_id=def_id,
+                    sprite_id=spr_id,
+                    platform_idx=plat_idx,
+                    zone_idx=zid,
+                    channel=ch,
+                    min_x=min_x,
+                    max_x=max_x,
+                    x=clamped_x,
+                    y=oy,
+                    pmg_y=pmg_y,
+                    height=spr_h,
+                    frame_dur=spr_dur,
+                    frame_count=spr_cnt,
+                    speed=speed_code,
+                    strategy=strat_code,
+                    direction=initial_dir,
+                    atari_color=color,
+                )
+            )
 
         objects.append(
             SceneObjectData(
@@ -1098,6 +1201,7 @@ def parse_scene_json(
         platforms=platforms,
         objects=objects,
         secrets=scene_secrets,
+        enemies=scene_enemies,
         dli_data=dli_data,
         pmg_patterns=dli_data.pmg_patterns if dli_data else None,
         player_start_x=player_start_x,
@@ -1129,11 +1233,13 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "OBJ_SPEED_FAST          = 2",
         "",
         "; Enemy Movement Strategy Equates",
-        "OBJ_STRAT_STATIONARY    = 0",
-        "OBJ_STRAT_LEFT_RIGHT    = 1",
-        "OBJ_STRAT_RIGHT_LEFT    = 2",
-        "OBJ_STRAT_PATROL        = 3",
-        "OBJ_STRAT_AMBUSH        = 4",
+        "OBJ_STRAT_STATIONARY        = 0",
+        "OBJ_STRAT_LEFT_RIGHT        = 1",
+        "OBJ_STRAT_RIGHT_LEFT        = 2",
+        "OBJ_STRAT_LEFT_PAUSE_RIGHT  = 3",
+        "OBJ_STRAT_RIGHT_PAUSE_LEFT  = 4",
+        "OBJ_STRAT_PATROL            = 3",
+        "OBJ_STRAT_AMBUSH            = 4",
         "",
         "; Platform Type Equates",
         "PLATFORM_TYPE_SPRITE    = 0",
@@ -1150,6 +1256,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         lines.append(f"{prefix}_PLAT_COUNT = {len(sc.platforms)}")
         lines.append(f"{prefix}_OBJ_COUNT  = {len(sc.objects)}")
         lines.append(f"{prefix}_SECRET_COUNT = {len(sc.secrets)}")
+        lines.append(f"{prefix}_ENEMY_COUNT  = {len(sc.enemies)}")
         lines.append(f"{prefix}_PLAYER_START_X = {sc.player_start_x}")
         lines.append(f"{prefix}_PLAYER_START_Y = {sc.player_start_y}")
         lines.append(f"{prefix}_PLAYER_COLOR   = ${sc.player_color:02X}")
@@ -1315,6 +1422,56 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_frame_count .byte 0",
                 f"scene_{sym}_secret_color      .byte 0",
             ])
+        lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
+        if sc.enemies:
+            lines.append(f"scene_{sym}_enemy_def_id")
+            lines.append("    .byte " + ", ".join(str(e.def_id) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_sprite_id")
+            lines.append("    .byte " + ", ".join(str(e.sprite_id) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_min_x")
+            lines.append("    .byte " + ", ".join(str(e.min_x) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_max_x")
+            lines.append("    .byte " + ", ".join(str(e.max_x) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_x")
+            lines.append("    .byte " + ", ".join(str(e.x) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_pmg_y")
+            lines.append("    .byte " + ", ".join(str(e.pmg_y) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_height")
+            lines.append("    .byte " + ", ".join(str(e.height) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_frame_dur")
+            lines.append("    .byte " + ", ".join(str(e.frame_dur) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_frame_count")
+            lines.append("    .byte " + ", ".join(str(e.frame_count) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_speed")
+            lines.append("    .byte " + ", ".join(str(e.speed) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_strategy")
+            lines.append("    .byte " + ", ".join(str(e.strategy) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_dir")
+            lines.append("    .byte " + ", ".join(str(e.direction) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_color")
+            lines.append("    .byte " + ", ".join(f"${e.atari_color:02X}" for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_channel")
+            lines.append("    .byte " + ", ".join(str(e.channel) for e in sc.enemies))
+            lines.append(f"scene_{sym}_enemy_zone")
+            lines.append("    .byte " + ", ".join(str(e.zone_idx) for e in sc.enemies))
+        else:
+            lines.extend([
+                f"scene_{sym}_enemy_def_id       .byte 0",
+                f"scene_{sym}_enemy_sprite_id    .byte 0",
+                f"scene_{sym}_enemy_min_x        .byte 0",
+                f"scene_{sym}_enemy_max_x        .byte 0",
+                f"scene_{sym}_enemy_x            .byte 0",
+                f"scene_{sym}_enemy_pmg_y        .byte 0",
+                f"scene_{sym}_enemy_height       .byte 0",
+                f"scene_{sym}_enemy_frame_dur    .byte 0",
+                f"scene_{sym}_enemy_frame_count  .byte 0",
+                f"scene_{sym}_enemy_speed        .byte 0",
+                f"scene_{sym}_enemy_strategy     .byte 0",
+                f"scene_{sym}_enemy_dir          .byte 0",
+                f"scene_{sym}_enemy_color        .byte 0",
+                f"scene_{sym}_enemy_channel      .byte 0",
+                f"scene_{sym}_enemy_zone         .byte 0",
+            ])
         lines.append("")
 
     # Master Table (Structure-of-Arrays across all scenes)
@@ -1353,6 +1510,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_OBJ_COUNT" for sc in scenes),
         "scene_secret_count",
         "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_SECRET_COUNT" for sc in scenes),
+        "scene_enemy_count",
+        "    .byte " + ", ".join(f"SCENE_{sc.symbol_name.upper()}_ENEMY_COUNT" for sc in scenes),
         "",
         "; --- Element Pointer Tables ---",
         "scene_elem_tileset_lo",
@@ -1503,6 +1662,68 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_color" for sc in scenes),
         "scene_secret_color_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_color" for sc in scenes),
+        "",
+        "; --- Enemy Pointer Tables ---",
+        "scene_enemy_def_id_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_def_id" for sc in scenes),
+        "scene_enemy_def_id_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_def_id" for sc in scenes),
+        "scene_enemy_sprite_id_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_sprite_id" for sc in scenes),
+        "scene_enemy_sprite_id_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_sprite_id" for sc in scenes),
+        "scene_enemy_min_x_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_min_x" for sc in scenes),
+        "scene_enemy_min_x_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_min_x" for sc in scenes),
+        "scene_enemy_max_x_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_max_x" for sc in scenes),
+        "scene_enemy_max_x_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_max_x" for sc in scenes),
+        "scene_enemy_x_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_x" for sc in scenes),
+        "scene_enemy_x_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_x" for sc in scenes),
+        "scene_enemy_pmg_y_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_pmg_y" for sc in scenes),
+        "scene_enemy_pmg_y_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_pmg_y" for sc in scenes),
+        "scene_enemy_height_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_height" for sc in scenes),
+        "scene_enemy_height_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_height" for sc in scenes),
+        "scene_enemy_frame_dur_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_frame_dur" for sc in scenes),
+        "scene_enemy_frame_dur_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_frame_dur" for sc in scenes),
+        "scene_enemy_frame_count_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_frame_count" for sc in scenes),
+        "scene_enemy_frame_count_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_frame_count" for sc in scenes),
+        "scene_enemy_speed_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_speed" for sc in scenes),
+        "scene_enemy_speed_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_speed" for sc in scenes),
+        "scene_enemy_strategy_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_strategy" for sc in scenes),
+        "scene_enemy_strategy_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_strategy" for sc in scenes),
+        "scene_enemy_dir_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_dir" for sc in scenes),
+        "scene_enemy_dir_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_dir" for sc in scenes),
+        "scene_enemy_color_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_color" for sc in scenes),
+        "scene_enemy_color_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_color" for sc in scenes),
+        "scene_enemy_channel_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_channel" for sc in scenes),
+        "scene_enemy_channel_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_channel" for sc in scenes),
+        "scene_enemy_zone_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_zone" for sc in scenes),
+        "scene_enemy_zone_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_zone" for sc in scenes),
         "",
     ])
 

@@ -2,6 +2,85 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Synchronize Test Harnesses with Scene Editor Changes (01-Forest Platforms & Objects)
+
+- **Test Harness Dynamic Synchronization ([tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Following edits in `atari-scene-editor`, `platform-012` was resized from 16 px to 24 px (`x=104`), changing pas 3 PMG width patterns to `$F0` (16 px) and `$C0` (8 px).
+  - Synchronized expected PMG pattern tables in [tests/test_compile_scenes.py](tests/test_compile_scenes.py) and [tests/test_dli_system.py](tests/test_dli_system.py).
+  - Updated enemy speed and position assertions in [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py) to match new scene definitions (Enemy 0 medium at x=120, Enemy 1 slow at x=5, Enemy 2 slow at x=107).
+  - Replaced hardcoded enemy and secret collision test coordinates with dynamic table lookups (`SECRETS_X`, `ENEMIES_X`, `ENEMIES_PMG_Y`).
+  - Full test suite passing (490 tests), `make all` and `check_memory` validated successfully.
+
+## [2026-10-21] - Fix Enemy Sprite Packing Format (1 bpp Player Bitmap vs 5th Player Missiles)
+
+- **Diagnostic & Root Cause Analysis ([scripts/compile_sprites.py](scripts/compile_sprites.py), [tests/test_enemy_sprites_bitmap.py](tests/test_enemy_sprites_bitmap.py))**:
+  - Confirmed via red test that enemy sprites compiled in `--mode missiles` were packed using `pack_row_to_5th_player_missiles` (2-bit pairs for M0..M3), causing row `"10010000"` of Azathoth (Sprite 4) to yield byte `$06` (`%00000110`) instead of `$90` (`%10010000`).
+  - When copied to `PMG_PLAYER1..3`, GTIA rendered pixels on the right edge of Player channels instead of their intended shape.
+  - Secrets (Gold Key, Ladder, CD) utilize 5th player missile memory (`PMG_MISSILES`) and require missile packing, whereas enemies displayed on Players 1..3 require standard 1 bpp Player bitmaps (bit 7 = leftmost pixel).
+- **Per-Sprite Format Selection & Zero-RAM Headroom Impact ([scripts/compile_sprites.py](scripts/compile_sprites.py), [Makefile](Makefile))**:
+  - Analyzed memory constraints: Render tables segment (`$7A00 - $7FCD`) had only 50 bytes of headroom before the Mode E tileset at `$8000`. Duplicating both formats for all sprites would have added ~426 bytes, causing a fatal segment overlap with `$8000`.
+  - Implemented per-sprite format selection in [scripts/compile_sprites.py](scripts/compile_sprites.py) via `--definitions`: sprites mapped to enemies in `definitions.json` are packed in Player format (`pack_row_to_player_bitmap`), while secret sprites retain missile packing (`pack_row_to_5th_player_missiles`).
+  - Added `$(SCENES_DEFINITIONS)` dependency to `$(SPRITES_ASM)` in [Makefile](Makefile).
+  - Net RAM growth: exactly 0 bytes (370 bytes of frame data preserved, 2,862 bytes headroom below `$C000` retained).
+- **Definitions Cleanup & Missing Sprite Reporting ([scenes/definitions.json](scenes/definitions.json))**:
+  - Reverted artificial fallback `sprite_id: 4` from enemy definitions 2..5 (Nyarlathotep, Yog-Sothoth, Shub-Niggurath, Hastog), restoring strict validation requiring each enemy type to have an explicit or defined sprite.
+  - Retained `sprite_id: 4` for Enemy 1 (Azathoth).
+- **Automated Verification & Test Harnesses ([tests/test_enemy_sprites_bitmap.py](tests/test_enemy_sprites_bitmap.py))**:
+  - Created automated test harness `tests/test_enemy_sprites_bitmap.py`:
+    - Verified Azathoth row 0 renders as `$90` in PMG RAM across all scenes and enemy slots.
+    - Verified independent reference calculation from JSON against memory after `enemies_init` and `enemies_update`.
+    - Enforced byte-for-byte regression checks on Secrets missile encoding across all frames.
+    - Verified negative tests for missing/invalid sprite IDs and frame stride limits.
+  - Full suite passed (490 tests), `make all` and `check_memory` validated successfully.
+
+## [2026-10-21] - Fix PMG Horizontal Streaks Under Enemies and Secrets (DLI Transition Windows)
+
+- **Diagnostic & Root Cause Analysis ([scripts/compile_scenes.py](scripts/compile_scenes.py), [engine/dli.asm](engine/dli.asm))**:
+  - Proved via empirical PMG scanline dump that horizontal colored streaks of quad width (x4) matching enemy and secret colors were caused by sprites overlapping the 3-scanline DLI pre-pas transition window (`p_base - 3 .. p_base - 1`).
+  - DLI triggers on line 6/22/38/54/70/86 (scanline `p_base - 3`) and sets `SIZEP1..3 = 3`, platform `HPOSP1..3`, and `SIZEM` during Faza A before waiting 3 `WSYNC` cycles.
+  - Previous `pmg_y` formulas placed 20-line enemies at `p_base - 20 .. p_base - 1` and 16-line secrets at `p_base - 18 .. p_base - 3`, causing bottom sprite rows (rows 17..19 of enemies, row 15 of secrets) to be rendered at quad width using platform coordinates.
+  - Flickering was caused by enemy horizontal motion altering the raster beam timing relative to mid-scanline `HPOS` writes and animation frame cycling.
+  - The appearance of enemies "floating" above platforms was caused by their bottom 3 rows being torn away and rendered across the platform below.
+- **Compiler Geometric Realignment & Invariant Enforcement ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Realigned `pmg_y = max(0, p_base - spr_h - 3)` for both enemies and secrets, placing the bottom sprite scanline precisely at `p_base - 4`.
+  - Enforced a 3-scanline clean zero gap (`p_base - 3 .. p_base - 1`) for DLI Faza A register setup and 1 clean guard scanline (`p_base - 24`) for DLI Faza C palette/size restoration.
+  - Added build-time height validation rejecting any enemy or secret sprite exceeding the maximum safe zone height of 20 scanlines with descriptive error messages.
+- **PMG Memory Cleanliness on Scene Entry ([engine/enemies.asm](engine/enemies.asm), [engine/secrets.asm](engine/secrets.asm), [engine/dli.asm](engine/dli.asm))**:
+  - Updated `enemies_init` and `secrets_init` to clean up all `MAX_ENEMIES` and `MAX_SECRETS` slots and reset `_active` flags on scene change.
+  - Updated `dli_init` to index platform patterns dynamically by `active_scene_id`.
+- **Automated Verification & Test Harnesses ([tests/test_scanline_pmg_invariants.py](tests/test_scanline_pmg_invariants.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py), [tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Implemented red/green scanline simulator test suite `tests/test_scanline_pmg_invariants.py` enforcing strict zero bytes in all transition and guard scanlines for all scenes and verifying oversized sprite rejection.
+  - Added `test_dli_init_scene1_patterns` to `tests/test_dli_system.py` verifying dynamic pattern loading for Scene 1.
+  - Updated existing py65 runtime test harnesses to use dynamic table lookups for `pmg_y`.
+  - Full project test suite passed cleanly (486 passed), with `make all` and `check_memory.py` validating 2,862 bytes headroom below `$C000`.
+
+## [2026-10-21] - Scene Enemies Implementation: Sprite Linkage, Speeds, Strategies & 50-Frame Pause
+
+- **Enemy-to-Sprite Validation & Pipeline ([scripts/compile_scenes.py](scripts/compile_scenes.py), [scenes/definitions.json](scenes/definitions.json))**:
+  - Enforced mandatory sprite linkage for every enemy placed in a scene; verified against definition `sprite_id` fallback and valid IDs in `sprites/objects.sprite.json`.
+  - Added strict validation raising `ValueError` when an enemy has missing or non-existent `sprite_id`.
+  - Assigned default `sprite_id: 4` (Azathoth) to enemy definitions 1..5 in [scenes/definitions.json](scenes/definitions.json).
+  - Extended [scripts/compile_scenes.py](scripts/compile_scenes.py) with `SceneEnemyData` model, platform bound clamping (`min_x = plat_x`, `max_x = plat_x + plat_w - 8`), PMG scanline calculation (`pmg_y = 32 + plat_y * 2 - spr_h`), zone mapping (`(plat_y - 8) // 16`), and hardware player channel assignment (0..2 for Players 1..3).
+  - Emitted per-scene Structure-of-Arrays (SoA) tables (`scene_{sym}_enemy_*`) and master pointer tables (`scene_enemy_count`, `scene_enemy_*_lo/hi`) into [gen/scenes_data.asm](gen/scenes_data.asm).
+- **6502 Enemies Runtime Engine ([engine/enemies.asm](engine/enemies.asm))**:
+  - Implemented Structure-of-Arrays state arrays (`enemies_count`, `_active`, `_def_id`, `_sprite_id`, `_min_x`, `_max_x`, `_x`, `_pmg_y`, `_height`, `_frame_dur`, `_frame_count`, `_speed`, `_strategy`, `_dir`, `_color`, `_channel`, `_zone`, `_timer`, `_frame_idx`, `_speed_timer`, `_pause_timer`).
+  - Implemented `enemies_init`: clears previous enemy PMG scanlines, copies active scene tables from ROM pointers, renders initial sprite frames into `PMG_PLAYER1..3`, and initializes hardware `HPOSP1..3` via DLI tables (`dli_zone_hpos_p1..3`, `dli_z0_hpos_p1..3`).
+  - Implemented `enemies_update`:
+    - Handles sprite animation frame advancement and PMG rewriting.
+    - Handles movement speed countdown: `slow` (interval 4 frames), `medium` (interval 2 frames), `fast` (interval 1 frame).
+    - Implemented platform patrol movement for strategies: `stationary` (0), `left_right` (1), `right_left` (2), `left_pause_right` (3), `right_pause_left` (4).
+    - Enforced initial direction from strategy (`left_right` and `left_pause_right` start left with `dir = 1`; `right_left` and `right_pause_left` start right with `dir = 0`).
+    - Enforced 50-frame pause (1 second at 50 Hz PAL) on boundary hits for `left_pause_right` and `right_pause_left` before executing reverse phase.
+    - Automatically updates DLI horizontal position tables (`48 + x`) across both double buffers.
+  - Implemented `enemies_check_player_collision`: detects bounding box overlap (`abs(player_x - enemies_x) < 8` and vertical span overlap) and triggers `player_handle_death`.
+- **System & Memory Map Integration ([main.asm](main.asm), [scenes/game.asm](scenes/game.asm), [Makefile](Makefile))**:
+  - Included [engine/enemies.asm](engine/enemies.asm) in build chain and [main.asm](main.asm).
+  - Reorganized segments across `$4000-$4FFF` and `$5000-$5FFF` blocks to accommodate enemy code/tables while preserving 100% ascending order, non-overlapping segments, and remaining below `$C000` with 2,891 bytes headroom.
+  - Wired `enemies_init` into `game_init` and `enemies_update` + `enemies_check_player_collision` into `@do_playing` in [scenes/game.asm](scenes/game.asm).
+- **Automated Verification & Py65 Test Suite ([tests/test_enemies_runtime.py](tests/test_enemies_runtime.py))**:
+  - Created 8 automated tests in [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py) verifying sprite_id absence/invalidity rejection, initialization in PMG memory, slow/medium/fast frame intervals, 50-frame pause countdown, boundary bouncing, and player collision death triggering.
+  - Full project test suite passed cleanly (482 passed).
+
 ## [2026-10-21] - Atari Logo Character Codes in JSON (title/title.json)
 
 - **Logo Data Source ([title/title.json](title/title.json))**:

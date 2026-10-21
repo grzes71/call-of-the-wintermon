@@ -114,7 +114,23 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
 
 @valid_id
     sta active_scene_id
-    tax                     ; X = scene_id
+
+    ; 0. Clear PMG rows for any previous active secrets and reset active flags
+    ldx #0
+@clear_prev_loop
+    cpx #MAX_SECRETS
+    bcs @clear_done
+    lda secrets_active,x
+    beq @next_prev
+    jsr clear_secret_rows
+    lda #0
+    sta secrets_active,x
+@next_prev
+    inx
+    bne @clear_prev_loop
+@clear_done
+
+    ldx active_scene_id     ; X = scene_id
     lda scene_secret_count,x
     sta secrets_count
     bne @has_secrets

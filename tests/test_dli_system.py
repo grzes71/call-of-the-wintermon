@@ -192,7 +192,7 @@ def test_dli_init_execution():
 
     expected_p1 = [0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]
     expected_p2 = [0xFF, 0xFF, 0xFF, 0xF0, 0xF0, 0xFF]
-    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+    expected_p3 = [0xFF, 0xFF, 0xFF, 0xC0, 0xFF, 0xFF]
 
     for idx, p_start in enumerate(pas_scanline_starts):
         exp1 = expected_p1[idx]
@@ -210,6 +210,52 @@ def test_dli_init_execution():
     for gl in guard_lines:
         assert mem[pmg_p1 + gl] == 0x00, f"Guard line {gl} in Player 1 must be $00"
         assert mem[pmg_m + gl] == 0x00, f"Guard line {gl} in Missiles must be $00"
+
+
+def test_dli_init_scene1_patterns():
+    """Verify that dli_init dynamically loads Scene 1 patterns when active_scene_id == 1."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mem[labels["ACTIVE_SCENE_ID"]] = 1
+    run_subroutine(mpu, labels["DLI_INIT"])
+
+    pas_scanline_starts = [48, 80, 112, 144, 176, 208]
+    pmg_p1 = labels["PMG_PLAYER1"]
+    pmg_p2 = labels["PMG_PLAYER2"]
+    pmg_p3 = labels["PMG_PLAYER3"]
+    pmg_m  = labels["PMG_MISSILES"]
+
+    # Scene 1 (Forest Castle) patterns from gen/scenes_dli_data.asm:
+    # Pas 0: $F0, $FF, $FF
+    # Pas 1: $FF, $FF, $FF
+    # Pas 2: $FF, $FF, $FF
+    # Pas 3: $F0, $FF, $FF
+    # Pas 4: $FF, $F0, $C0
+    # Pas 5: $FF, $FF, $FF
+    expected_p1 = [0xF0, 0xFF, 0xFF, 0xF0, 0xFF, 0xFF]
+    expected_p2 = [0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF]
+    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xC0, 0xFF]
+
+    for idx, p_start in enumerate(pas_scanline_starts):
+        exp1 = expected_p1[idx]
+        exp2 = expected_p2[idx]
+        exp3 = expected_p3[idx]
+        for sl in range(8):
+            curr_sl = p_start + sl
+            assert mem[pmg_p1 + curr_sl] == exp1, (
+                f"Scene 1 Player 1 pas {idx} row {curr_sl} must be ${exp1:02X}, got ${mem[pmg_p1 + curr_sl]:02X}"
+            )
+            assert mem[pmg_p2 + curr_sl] == exp2, (
+                f"Scene 1 Player 2 pas {idx} row {curr_sl} must be ${exp2:02X}, got ${mem[pmg_p2 + curr_sl]:02X}"
+            )
+            assert mem[pmg_p3 + curr_sl] == exp3, (
+                f"Scene 1 Player 3 pas {idx} row {curr_sl} must be ${exp3:02X}, got ${mem[pmg_p3 + curr_sl]:02X}"
+            )
+            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas {idx} row {curr_sl} must be $FF"
 
 
 # ==============================================================================

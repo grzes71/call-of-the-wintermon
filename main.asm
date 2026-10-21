@@ -294,6 +294,10 @@ title_vs_buf
 ; Title screen state handler & 2bpp text generator
     icl 'scenes/title.asm'
 
+; Player 0 Hero Engine & Intro Music Data (residing in $4000 block)
+    icl 'engine/player.asm'
+    icl 'gen/intro_music.asm'
+
 ; ==============================================================================
 ; SCENE DEFINITIONS, PLATFORMS, OBJECTS & DLI DATA SEGMENT ($5000)
 ; Relocated from $2C30 and $79D0 into the expanded $5000 block
@@ -302,8 +306,7 @@ title_vs_buf
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
     icl 'engine/secrets.asm'
-    icl 'engine/player.asm'
-    icl 'gen/intro_music.asm'
+    icl 'engine/enemies.asm'
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)

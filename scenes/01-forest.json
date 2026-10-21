@@ -181,10 +181,10 @@
       "id": "platform-012",
       "type": "sprite",
       "position": {
-        "x": 112,
+        "x": 104,
         "y": 56
       },
-      "width": 16,
+      "width": 24,
       "height": 4,
       "color_profile_id": 3
     },
@@ -217,9 +217,9 @@
       "type": "enemy",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 110,
+      "x": 120,
       "sprite_id": 4,
-      "speed": "slow",
+      "speed": "medium",
       "movement_strategy": "left_right"
     },
     {
@@ -227,9 +227,9 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-006",
-      "x": 8,
+      "x": 5,
       "sprite_id": 4,
-      "speed": "medium",
+      "speed": "slow",
       "movement_strategy": "right_left"
     },
     {
@@ -237,14 +237,14 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-006",
-      "x": 20
+      "x": 18
     },
     {
       "id": 6,
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 119
+      "x": 106
     },
     {
       "id": 5,
@@ -258,9 +258,9 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-012",
-      "x": 116,
+      "x": 107,
       "sprite_id": 4,
-      "speed": "medium",
+      "speed": "slow",
       "movement_strategy": "stationary"
     }
   ],
