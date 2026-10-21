@@ -66,7 +66,11 @@ class SceneSerializer:
     SUPPORTED_SCHEMA_VERSIONS = {1}
 
     @staticmethod
-    def to_dict(scene: Scene, base_dir: Path | str | None = None) -> dict[str, Any]:
+    def to_dict(
+        scene: Scene,
+        base_dir: Path | str | None = None,
+        catalogues: Optional[Any] = None,
+    ) -> dict[str, Any]:
         """Convert a Scene object to a serializable dictionary with relative paths."""
         scene.validate()
         base_path = Path(base_dir).resolve() if base_dir else None
@@ -100,7 +104,7 @@ class SceneSerializer:
 
         objects_data = []
         for obj in scene.objects:
-            obj_data = obj.to_dict()
+            obj_data = obj.to_dict(catalogues=catalogues)
             if base_path and obj.source:
                 source_path = Path(obj.source)
                 if source_path.is_absolute():
@@ -124,9 +128,15 @@ class SceneSerializer:
         return res
 
     @classmethod
-    def to_json(cls, scene: Scene, indent: int = 2, base_dir: Path | str | None = None) -> str:
+    def to_json(
+        cls,
+        scene: Scene,
+        indent: int = 2,
+        base_dir: Path | str | None = None,
+        catalogues: Optional[Any] = None,
+    ) -> str:
         """Serialize scene to a formatted JSON string."""
-        data = cls.to_dict(scene, base_dir=base_dir)
+        data = cls.to_dict(scene, base_dir=base_dir, catalogues=catalogues)
         return json.dumps(data, indent=indent, ensure_ascii=False)
 
     @classmethod
@@ -304,6 +314,7 @@ class SceneSerializer:
         file_path: Path | str,
         base_dir: Path | str | None = None,
         indent: int = 2,
+        catalogues: Optional[Any] = None,
     ) -> None:
         """Save a scene to a JSON file atomically using a temporary file and rename."""
         target_path = Path(file_path).resolve()
@@ -312,7 +323,7 @@ class SceneSerializer:
         if base_dir is None:
             base_dir = find_project_root(target_path)
 
-        json_text = cls.to_json(scene, indent=indent, base_dir=base_dir)
+        json_text = cls.to_json(scene, indent=indent, base_dir=base_dir, catalogues=catalogues)
 
         # Atomic write in the same directory to guarantee atomic replace across filesystems
         temp_file = tempfile.NamedTemporaryFile(

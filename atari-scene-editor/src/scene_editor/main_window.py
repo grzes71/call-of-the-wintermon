@@ -1182,6 +1182,7 @@ class MainWindow(QMainWindow):
                 self.scene_model,
                 self.current_file_path,
                 base_dir=self.base_dir,
+                catalogues=self.catalogues,
             )
             self._is_dirty = False
             self.undo_stack.setClean()
@@ -2249,23 +2250,26 @@ class MainWindow(QMainWindow):
     def _populate_sprite_combo(
         self,
         combo: Optional[QComboBox],
-        current_sprite_id: Optional[int],
+        current_sprite: Optional[Any],
         allow_default: bool = False,
-        defn_sprite_id: Optional[int] = None,
+        defn_sprite: Optional[Any] = None,
+        defn_sprite_id: Optional[Any] = None,  # for backward compatibility
     ) -> None:
         if combo is None:
             return
         combo.blockSignals(True)
         combo.clear()
 
+        effective_defn = defn_sprite if defn_sprite is not None else defn_sprite_id
+
         has_sprites = bool(self.catalogues and self.catalogues.sprites)
         combo.setEnabled(has_sprites)
 
         if not has_sprites:
-            if allow_default and defn_sprite_id is not None:
-                combo.addItem(f"Default (Sprite {defn_sprite_id}) [definicje nie załadowane]", None)
-            elif current_sprite_id is not None:
-                combo.addItem(f"Sprite ID {current_sprite_id} [definicje nie załadowane]", current_sprite_id)
+            if allow_default and effective_defn is not None:
+                combo.addItem(f"Default ({effective_defn}) [definicje nie załadowane]", None)
+            elif current_sprite is not None:
+                combo.addItem(f"Sprite '{current_sprite}' [definicje nie załadowane]", current_sprite)
             else:
                 combo.addItem("Brak [definicje sprite'ów nie załadowane]", None)
             combo.setCurrentIndex(0)
@@ -2275,8 +2279,8 @@ class MainWindow(QMainWindow):
 
         combo.setToolTip("Wybierz sprite ze Sprite Studio do zmapowania z tym obiektem.")
         if allow_default:
-            if defn_sprite_id is not None:
-                combo.addItem(f"Default (Sprite {defn_sprite_id})", None)
+            if effective_defn is not None:
+                combo.addItem(f"Default ({effective_defn})", None)
             else:
                 combo.addItem("Default / None (Brak)", None)
         else:
@@ -2288,15 +2292,34 @@ class MainWindow(QMainWindow):
             label = f"{spr.id}: {desc}" if desc else f"Sprite {spr.id}"
             combo.addItem(label, spr.id)
 
-        if current_sprite_id is None:
+        if current_sprite is None:
             combo.setCurrentIndex(0)
         else:
-            idx = combo.findData(current_sprite_id)
+            target_id = None
+            if isinstance(current_sprite, int):
+                target_id = current_sprite
+            elif str(current_sprite).strip().isdigit():
+                target_id = int(str(current_sprite).strip())
+            elif hasattr(self.catalogues, "sprites_by_name"):
+                norm_sn = str(current_sprite).strip().lower()
+                if norm_sn in self.catalogues.sprites_by_name:
+                    target_id = self.catalogues.sprites_by_name[norm_sn].id
+
+            idx = -1
+            if target_id is not None:
+                for i in range(combo.count()):
+                    val = combo.itemData(i)
+                    if val is not None and val == target_id:
+                        idx = i
+                        break
+
             if idx >= 0:
                 combo.setCurrentIndex(idx)
             else:
-                combo.addItem(f"Sprite ID {current_sprite_id}", current_sprite_id)
+                tip = f"⚠️ Nieznany sprite o ID {current_sprite}."
+                combo.addItem(f"⚠️ Nieznany ID: {current_sprite}", current_sprite)
                 combo.setCurrentIndex(combo.count() - 1)
+                combo.setToolTip(tip)
 
         combo.blockSignals(False)
 
@@ -2412,17 +2435,18 @@ class MainWindow(QMainWindow):
             if defn.rgb_color:
                 r, g, b = defn.rgb_color
                 color_badge = f"<span style='background-color: rgb({r},{g},{b}); border: 1px solid #aaa;'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
-            spr_str = f" | Sprite: <b>{defn.sprite_id}</b>" if getattr(defn, "sprite_id", None) is not None else ""
+            spr_val = getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None)
+            spr_str = f" | Sprite: <b>{spr_val}</b>" if spr_val is not None else ""
             self.new_obj_definition_info_lbl.setText(
                 f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: <b>{blink_str}</b>{spr_str}</small>"
             )
             if hasattr(self, "new_obj_sprite_combo"):
                 cur_sel = self.new_obj_sprite_combo.currentData()
-                self._populate_sprite_combo(self.new_obj_sprite_combo, cur_sel, allow_default=True, defn_sprite_id=getattr(defn, "sprite_id", None))
+                self._populate_sprite_combo(self.new_obj_sprite_combo, cur_sel, allow_default=True, defn_sprite=spr_val)
         else:
             self.new_obj_definition_info_lbl.setText("")
             if hasattr(self, "new_obj_sprite_combo"):
-                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite_id=None)
+                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite=None)
 
     def _refresh_object_creator_definitions(self) -> None:
         obj_type = self.new_obj_type_combo.currentData() or OBJECT_TYPE_ENEMY
@@ -2436,12 +2460,13 @@ class MainWindow(QMainWindow):
                 "<small style='color: #e57373;'>Catalogue is empty. Click 'Manage Catalogues...' to add definitions.</small>"
             )
             if hasattr(self, "new_obj_sprite_combo"):
-                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite_id=None)
+                self._populate_sprite_combo(self.new_obj_sprite_combo, None, allow_default=True, defn_sprite=None)
         else:
             for defn_id, defn in defs.items():
                 label = f"{defn.name} [{defn.id}]"
-                if getattr(defn, "sprite_id", None) is not None:
-                    label += f" [Sprite: {defn.sprite_id}]"
+                spr_val = getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None)
+                if spr_val is not None:
+                    label += f" [Sprite: {spr_val}]"
                 self.new_obj_definition_combo.addItem(label, defn.id)
             self._update_new_obj_definition_info()
 
@@ -2537,7 +2562,16 @@ class MainWindow(QMainWindow):
 
         speed = self.new_obj_speed_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
         strategy = self.new_obj_strategy_combo.currentData() if obj_type == OBJECT_TYPE_ENEMY else None
-        sprite_id = self.new_obj_sprite_combo.currentData() if hasattr(self, "new_obj_sprite_combo") and self.new_obj_sprite_combo.isEnabled() else None
+        sprite_sel = self.new_obj_sprite_combo.currentData() if hasattr(self, "new_obj_sprite_combo") and self.new_obj_sprite_combo.isEnabled() else None
+        sprite_id = None
+        if sprite_sel is not None:
+            try:
+                sprite_id = int(sprite_sel)
+            except (ValueError, TypeError):
+                if hasattr(self.catalogues, "sprites_by_name"):
+                    norm_sn = str(sprite_sel).strip().lower()
+                    if norm_sn in self.catalogues.sprites_by_name:
+                        sprite_id = self.catalogues.sprites_by_name[norm_sn].id
 
         obj = SceneObjectElement(
             id=obj_id,
@@ -2549,6 +2583,7 @@ class MainWindow(QMainWindow):
             source_rect=self._new_obj_rect.clone() if self._new_obj_rect else None,
             speed=speed,
             movement_strategy=strategy,
+            sprite=None,
             sprite_id=sprite_id,
         )
 
@@ -2784,12 +2819,24 @@ class MainWindow(QMainWindow):
         if not obj:
             return
         new_spr = self.obj_prop_sprite_combo.currentData()
-        if new_spr == obj.sprite_id:
+        new_sprite_id_val = None
+        if new_spr is not None:
+            try:
+                new_sprite_id_val = int(new_spr)
+            except (ValueError, TypeError):
+                if hasattr(self.catalogues, "sprites_by_name"):
+                    norm_sn = str(new_spr).strip().lower()
+                    if norm_sn in self.catalogues.sprites_by_name:
+                        new_sprite_id_val = self.catalogues.sprites_by_name[norm_sn].id
+
+        if obj.sprite is None and obj.sprite_id == new_sprite_id_val:
             return
+
         cmd = UpdateSceneObjectPropsCommand(
             self.scene_model,
             selected_id,
-            new_sprite_id=new_spr,
+            new_sprite="",
+            new_sprite_id=new_sprite_id_val if new_sprite_id_val is not None else "",
             callback=lambda: self._on_object_command_executed(selected_id),
         )
         self.undo_stack.push(cmd)
@@ -2812,7 +2859,12 @@ class MainWindow(QMainWindow):
             strat_info = f", {obj.movement_strategy}" if obj.movement_strategy else ""
             spd_info = f", {obj.speed}" if obj.speed else ""
             eff_spr = obj.get_effective_sprite_id(self.catalogues)
-            spr_info = f", spr={eff_spr}" if eff_spr is not None else ""
+            spr_desc = ""
+            if eff_spr is not None and self.catalogues and hasattr(self.catalogues, "sprites") and eff_spr in self.catalogues.sprites:
+                d_str = getattr(self.catalogues.sprites[eff_spr], "description", "")
+                if d_str:
+                    spr_desc = f": {d_str}"
+            spr_info = f", spr={eff_spr}{spr_desc}" if eff_spr is not None else ""
             text = f"[{type_tag}]{defn_name} {obj.id} @ {obj.platform_id} (x={obj.x}{spd_info}{strat_info}{spr_info})"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, obj.id)
@@ -2932,7 +2984,8 @@ class MainWindow(QMainWindow):
             if defn.rgb_color:
                 r, g, b = defn.rgb_color
                 color_badge = f"<span style='background-color: rgb({r},{g},{b}); border: 1px solid #aaa;'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
-            spr_str = f" | Sprite: <b>{defn.sprite_id}</b>" if getattr(defn, "sprite_id", None) is not None else ""
+            spr_val = getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None)
+            spr_str = f" | Sprite: <b>{spr_val}</b>" if spr_val is not None else ""
             self.obj_prop_definition_info_lbl.setText(
                 f"<small>{color_badge}Atari: <code>{atari_str}</code> | Blink: {blink_str}{spr_str}</small>"
             )
@@ -2941,8 +2994,11 @@ class MainWindow(QMainWindow):
 
         # Sprite combo
         if hasattr(self, "obj_prop_sprite_combo"):
-            def_spr = getattr(defn, "sprite_id", None) if defn else None
-            self._populate_sprite_combo(self.obj_prop_sprite_combo, obj.sprite_id, allow_default=True, defn_sprite_id=def_spr)
+            def_spr = getattr(defn, "sprite", None) if defn else None
+            if def_spr is None and defn:
+                def_spr = getattr(defn, "sprite_id", None)
+            curr_spr = obj.sprite if obj.sprite is not None else obj.sprite_id
+            self._populate_sprite_combo(self.obj_prop_sprite_combo, curr_spr, allow_default=True, defn_sprite=def_spr)
 
         # Platform combo - read-only
         self.obj_prop_platform_combo.blockSignals(True)

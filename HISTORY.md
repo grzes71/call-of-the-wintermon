@@ -2,6 +2,83 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Sprite Linkage Exclusively by Numeric ID (De-namification & Reversion)
+
+- **Numeric ID As Sole Linkage Key ([scripts/sprite_links.py](scripts/sprite_links.py))**:
+  - Reverted primary linkage from sprite description names to numeric `sprite_id` (integer) exclusively.
+  - Removed name-based primary resolution, typo suggestions, and duplicate name constraints (duplicate sprite names are now allowed).
+  - Maintained duplicate `id` detection, non-existent `id` check, missing link check, and role conflict check (wróg vs Sekret).
+  - Retained legacy `sprite` field strictly as backward-compatible read-only fallback with `UserWarning`.
+  - Added build-time resolution table generation (`format_resolution_table`) printing mapping `source -> sprite_id -> name (info) -> role`.
+  - Added Polish error reporting when `sprite_id` does not exist, presenting list of available sprite IDs and informative names.
+- **Migration Tooling ([scripts/migrate_sprite_links.py](scripts/migrate_sprite_links.py))**:
+  - Implemented reverse migration converting legacy `sprite` string fields to `sprite_id` and deleting `sprite` fields.
+  - Preserved existing numeric-only definitions (`Yog-Sothoth`, `Gold Key`).
+  - Pruned redundant scene object overrides equal to catalog defaults.
+  - Applied migration (`--apply`) to [scenes/definitions.json](scenes/definitions.json) and scene files; verified idempotence and `.bak` backups.
+- **Scene Editor Refactoring (`atari-scene-editor`)**:
+  - Updated [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py) and [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py) to read legacy `sprite` with warning and save strictly `sprite_id` (never serializing `sprite`).
+  - Updated [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) and [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py): combos show `id: name` and store integer `spr.id`; warn when `sprite_id` is missing from loaded sprite JSON.
+  - Scene objects omit `sprite_id` when equal to catalog default.
+- **Build Pipeline & Compiler ([scripts/compile_scenes.py](scripts/compile_scenes.py), [scripts/sprite_roles.py](scripts/sprite_roles.py))**:
+  - Updated `compile_scenes.py` to print compilation resolution table and raise informative Polish error with available sprites list on invalid `sprite_id`.
+  - Supported in-memory `sprites_dict` in `resolve_object_sprite_id` for isolated unit tests.
+- **Documentation & Verification ([README.md](README.md), [tests/test_sprite_links.py](tests/test_sprite_links.py), [tests/test_catalogues.py](tests/test_catalogues.py))**:
+  - Documented authorial vs generated files, numeric `sprite_id` workflow in Sprite Studio & Scene Editor, and undetectable ID-swap behavior.
+  - Rewrote [tests/test_sprite_links.py](tests/test_sprite_links.py) with 8 tests covering all specified requirements.
+  - Full suite passing (507 passed), `make all` clean, memory check passing with 3,319 bytes headroom.
+
+## [2026-10-21] - Decoupling Type Catalog & Scenes from Sprite Numeric IDs (Name-Based Resolution)
+
+- **Shared Resolver Module ([scripts/sprite_links.py](scripts/sprite_links.py))**:
+  - Implemented `SpriteRegistry` loading `sprites/objects.sprite.json`, checking for duplicate sprite names, and providing O(1) resolution by name (`resolve_by_name`) and ID (`resolve_by_id`).
+  - Implemented Levenshtein distance matching (`max_distance=3`) for helpful typo suggestions in error messages and Scene Editor warnings.
+  - Implemented `resolve_object_sprite` with priority order: scene explicit `sprite` (name) > scene legacy `sprite_id` (warns) > catalog `sprite` (name) > catalog legacy `sprite_id` (warns).
+  - Implemented `resolve_definitions` generating `gen/definitions_resolved.json` (git-ignored build artifact) mapping catalog types to resolved numeric `sprite_id` and names, leaving authorial `scenes/definitions.json` intact.
+- **Build Pipeline Integration ([Makefile](Makefile), [scripts/compile_sprites.py](scripts/compile_sprites.py), [scripts/compile_scenes.py](scripts/compile_scenes.py), [scripts/sprite_roles.py](scripts/sprite_roles.py))**:
+  - Added `$(SCENES_DEFINITIONS_RESOLVED)` build target to [Makefile](Makefile); updated `$(SPRITES_ASM)` and `$(SCENES_ASM)` prerequisites.
+  - Enhanced `compile_sprites.py` and `compile_scenes.py` to consume resolved catalog definitions and resolve sprites via `SpriteRegistry`.
+  - Updated `determine_sprite_roles_from_scenes` in [scripts/sprite_roles.py](scripts/sprite_roles.py) to inspect scene overrides by name and preserve exact player vs missile PMG formatting.
+- **Scene Editor Refactoring (`atari-scene-editor`)**:
+  - Updated catalogue models ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py)) and dialog ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py)) to store sprite description names in `sprite` field and show warnings with typo suggestions on missing sprites.
+  - Updated scene models ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py)) and serializer ([atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py)) so objects omit the `sprite` field when matching catalog defaults, and serialize `sprite` string only when overriding.
+  - Updated main window property panels and commands ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py)) to populate sprite comboboxes with names and support undo/redo with name overrides.
+- **Migration Tooling ([scripts/migrate_sprite_links.py](scripts/migrate_sprite_links.py))**:
+  - Implemented one-time idempotent migration script supporting dry-run (default), `--apply`, `--map "Type=Sprite"`, and automatic `.bak` backups.
+  - Applied migration for unambiguous exact matches (Azathoth, Nyarlathotep, Shub-Niggurath, Hastog, Skull, CD, Mjolnir) in [scenes/definitions.json](scenes/definitions.json) and cleaned redundant overrides in [scenes/01-forest.json](scenes/01-forest.json).
+  - Preserved ambiguous entries (Yog-Sothoth and Gold Key) with backward-compatible legacy fields for user confirmation.
+- **Verification & Test Suite ([tests/test_sprite_links.py](tests/test_sprite_links.py), [tests/test_catalogues.py](tests/test_catalogues.py))**:
+  - Added comprehensive test suite with 8 tests: ID renumbering invariance, enemy-only scene override PMG validation, unknown name suggestions, duplicate name rejection, role conflict detection, legacy fallback warning, Scene Editor serialization, and repository PMG invariant checks.
+  - Full test suite passing 100% (507 passed), `make all` clean, memory check passing with 3,319 bytes headroom.
+
+
+- **Catalogue & Definition Synchronization ([scenes/definitions.json](scenes/definitions.json))**:
+  - Re-mapped enemy definitions to sequential IDs in `sprites/objects.sprite.json`: Azathoth (1), Nyarlathotep (2), Yog-Sothoth (3), Shub-Niggurath (4), Hastog (5).
+  - Synchronized secret definitions: Gold Key (`sprite_id: 8`), Skull (`sprite_id: 7`, replacing Ladder), CD (`sprite_id: 6`), Mjolnir (`sprite_id: 9`).
+- **Scene Objects Linkage ([scenes/01-forest.json](scenes/01-forest.json))**:
+  - Updated enemy objects to reference Azathoth (`sprite_id: 1`) and Nyarlathotep (`sprite_id: 2`).
+  - Secret 2 (`definition_id: 2`) now manifests as Skull on platform-011.
+- **Pipeline Baseline Roles ([scripts/sprite_roles.py](scripts/sprite_roles.py))**:
+  - Enhanced `determine_sprite_roles_from_scenes` to register catalog enemy definitions as baseline `player` format and secrets as `missiles` format, preventing unplaced enemy sprites from falling back to missile packing.
+- **Test Suite Alignment ([tests/test_catalogues.py](tests/test_catalogues.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py), [tests/test_enemy_sprites_bitmap.py](tests/test_enemy_sprites_bitmap.py))**:
+  - Updated catalog integration tests to verify sprite 1 (Azathoth) and sprite 6 (CD).
+  - Updated secret runtime tests for Gold Key (`SPRITE_8_FRAME_0/1`) and Skull (`SPRITE_7_FRAME_0`, height 15 at PMG Y=62).
+  - Updated enemy runtime tests for Azathoth (`SPRITE_1_FRAME_0`) and Nyarlathotep (sprite 2).
+  - Updated missile regression tests to check secret IDs (6, 7, 8, 9).
+  - Full test suite passing 100% (499 passed), `make all` clean.
+
+## [2026-10-21] - Sprite Studio: Horizontal (H Mirror) and Vertical (V Mirror) Transformations
+
+- **UI & Controls ([sprite_studio/widgets/timeline.py](sprite_studio/widgets/timeline.py), [sprite_studio/main.py](sprite_studio/main.py))**:
+  - Renamed `Mirror` button to `H Mirror` (`btn_mirror_h`), retaining horizontal pixel flipping across each scanline row (`row[::-1]`).
+  - Added new `V Mirror` button (`btn_mirror_v`) and menu action `Edit -> V Mirror Frame` for vertical axis reflection (`reversed(pixels)`).
+  - Added `mirror_h_requested` and `mirror_v_requested` Qt signals to `TimelineWidget` with backward-compatible aliases for `mirror_requested`.
+  - Added full undo/redo command execution support for both `H Mirror Frame` and `V Mirror Frame`.
+- **Automated Verification ([tests/test_sprite_studio.py](tests/test_sprite_studio.py))**:
+  - Added `test_timeline_mirror_h_and_v_signals` to verify button labels and signal emissions.
+  - Added `test_frame_h_and_v_mirror_with_undo_redo` validating pixel array transformations and undo/redo state preservation.
+  - All 15 tests in `test_sprite_studio.py` passing cleanly.
+
 ## [2026-10-21] - Memory Optimization MEM-006: Reclaimed Unused PMG DMA Space for Render Tables
 
 - **PMG Memory Reorganization & Reclaim ([main.asm](main.asm))**:

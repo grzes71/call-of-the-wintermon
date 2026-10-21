@@ -367,7 +367,7 @@ class CataloguesDialog(QDialog):
     # -------------------------------------------------------------------------
     # Sprites Mapping Helpers
     # -------------------------------------------------------------------------
-    def _populate_sprite_combo(self, combo: Optional[QComboBox], current_sprite_id: Optional[int]) -> None:
+    def _populate_sprite_combo(self, combo: Optional[QComboBox], current_sprite: Optional[str | int]) -> None:
         if combo is None:
             return
         combo.blockSignals(True)
@@ -377,8 +377,8 @@ class CataloguesDialog(QDialog):
         combo.setEnabled(has_sprites)
 
         if not has_sprites:
-            if current_sprite_id is not None:
-                combo.addItem(f"Sprite ID {current_sprite_id} (definicje nie załadowane)", current_sprite_id)
+            if current_sprite is not None:
+                combo.addItem(f"Sprite '{current_sprite}' (definicje nie załadowane)", current_sprite)
             else:
                 combo.addItem("Brak (definicje sprite'ów nie załadowane)", None)
             combo.setCurrentIndex(0)
@@ -395,15 +395,34 @@ class CataloguesDialog(QDialog):
             label = f"{spr.id}: {desc}" if desc else f"Sprite {spr.id}"
             combo.addItem(label, spr.id)
 
-        if current_sprite_id is None:
+        if current_sprite is None:
             combo.setCurrentIndex(0)
         else:
-            idx = combo.findData(current_sprite_id)
+            target_id = None
+            if isinstance(current_sprite, int):
+                target_id = current_sprite
+            elif str(current_sprite).strip().isdigit():
+                target_id = int(str(current_sprite).strip())
+            elif hasattr(self.catalogues, "sprites_by_name"):
+                norm_sn = str(current_sprite).strip().lower()
+                if norm_sn in self.catalogues.sprites_by_name:
+                    target_id = self.catalogues.sprites_by_name[norm_sn].id
+
+            idx = -1
+            if target_id is not None:
+                for i in range(combo.count()):
+                    val = combo.itemData(i)
+                    if val is not None and val == target_id:
+                        idx = i
+                        break
+
             if idx >= 0:
                 combo.setCurrentIndex(idx)
             else:
-                combo.addItem(f"Sprite ID {current_sprite_id}", current_sprite_id)
+                tip = f"⚠️ Nieznany sprite o ID {current_sprite}."
+                combo.addItem(f"⚠️ Nieznany ID: {current_sprite}", current_sprite)
                 combo.setCurrentIndex(combo.count() - 1)
+                combo.setToolTip(tip)
 
         combo.blockSignals(False)
 
@@ -421,12 +440,14 @@ class CataloguesDialog(QDialog):
             count = self.catalogues.load_sprites_from_json(Path(path_str))
             cur_enemy_sprite = None
             if self._cur_editing_enemy_id and self._cur_editing_enemy_id in self.catalogues.enemies:
-                cur_enemy_sprite = getattr(self.catalogues.enemies[self._cur_editing_enemy_id], "sprite_id", None)
+                e_def = self.catalogues.enemies[self._cur_editing_enemy_id]
+                cur_enemy_sprite = getattr(e_def, "sprite", None) or getattr(e_def, "sprite_id", None)
             self._populate_sprite_combo(self.enemy_sprite_combo, cur_enemy_sprite)
 
             cur_secret_sprite = None
             if self._cur_editing_secret_id and self._cur_editing_secret_id in self.catalogues.secrets:
-                cur_secret_sprite = getattr(self.catalogues.secrets[self._cur_editing_secret_id], "sprite_id", None)
+                s_def = self.catalogues.secrets[self._cur_editing_secret_id]
+                cur_secret_sprite = getattr(s_def, "sprite", None) or getattr(s_def, "sprite_id", None)
             self._populate_sprite_combo(self.secret_sprite_combo, cur_secret_sprite)
 
             self._refresh_enemies_list(select_id=self._cur_editing_enemy_id)
@@ -450,14 +471,35 @@ class CataloguesDialog(QDialog):
         row_to_select = -1
         for idx, (defn_id, defn) in enumerate(self.catalogues.enemies.items()):
             text = f"{defn.name} [{defn.id}]"
-            if getattr(defn, "sprite_id", None) is not None:
-                text += f" [Sprite: {defn.sprite_id}]"
+            spr_id = getattr(defn, "sprite_id", None)
+            if spr_id is not None:
+                spr_desc = ""
+                if self.catalogues and hasattr(self.catalogues, "sprites") and spr_id in self.catalogues.sprites:
+                    desc = getattr(self.catalogues.sprites[spr_id], "description", "")
+                    if desc:
+                        spr_desc = f": {desc}"
+                text += f" [Sprite {spr_id}{spr_desc}]"
+            elif getattr(defn, "sprite", None):
+                text += f" [Sprite: {defn.sprite}]"
+
+            warn_msg = None
+            if spr_id is not None and self.catalogues and hasattr(self.catalogues, "sprites") and self.catalogues.sprites:
+                if spr_id not in self.catalogues.sprites:
+                    text += " ⚠️"
+                    warn_msg = f"Ostrzeżenie: sprite o ID {spr_id} nie istnieje w załadowanym pliku sprite'ów."
+            elif getattr(defn, "sprite", None) and hasattr(self.catalogues, "sprites_by_name") and self.catalogues.sprites_by_name:
+                if defn.sprite.strip().lower() not in self.catalogues.sprites_by_name:
+                    text += " ⚠️"
+                    warn_msg = f"Ostrzeżenie: nieznany sprite '{defn.sprite}'."
+
             if defn.atari_color is not None:
                 text += f" (Atari: ${defn.atari_color:02X})"
             if defn.blink:
                 text += " [BLINK]"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, defn.id)
+            if warn_msg:
+                item.setToolTip(warn_msg)
 
             if defn.rgb_color is not None:
                 pm = QPixmap(12, 12)
@@ -510,7 +552,10 @@ class CataloguesDialog(QDialog):
             self._update_atari_enabled(True, False)
 
         self.enemy_blink_check.setChecked(defn.blink)
-        self._populate_sprite_combo(getattr(self, "enemy_sprite_combo", None), getattr(defn, "sprite_id", None))
+        self._populate_sprite_combo(
+            getattr(self, "enemy_sprite_combo", None),
+            getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None),
+        )
         self.enemy_btn_delete.setEnabled(True)
 
     def _on_new_enemy_clicked(self) -> None:
@@ -563,7 +608,16 @@ class CataloguesDialog(QDialog):
             atari = self.enemy_atari_spin.value()
 
         blink = self.enemy_blink_check.isChecked()
-        sprite_id = self.enemy_sprite_combo.currentData() if hasattr(self, "enemy_sprite_combo") and self.enemy_sprite_combo else None
+        sprite_val = self.enemy_sprite_combo.currentData() if hasattr(self, "enemy_sprite_combo") and self.enemy_sprite_combo else None
+        sprite_id = None
+        if sprite_val is not None:
+            try:
+                sprite_id = int(sprite_val)
+            except (ValueError, TypeError):
+                if hasattr(self.catalogues, "sprites_by_name"):
+                    norm_sn = str(sprite_val).strip().lower()
+                    if norm_sn in self.catalogues.sprites_by_name:
+                        sprite_id = self.catalogues.sprites_by_name[norm_sn].id
 
         try:
             defn = EnemyDefinition(
@@ -573,6 +627,7 @@ class CataloguesDialog(QDialog):
                 atari_color=atari,
                 blink=blink,
                 sprite_id=sprite_id,
+                sprite=None,
             )
             defn.validate()
 
@@ -646,8 +701,27 @@ class CataloguesDialog(QDialog):
         row_to_select = -1
         for idx, (defn_id, defn) in enumerate(self.catalogues.secrets.items()):
             text = f"{defn.name} [{defn.id}]"
-            if getattr(defn, "sprite_id", None) is not None:
-                text += f" [Sprite: {defn.sprite_id}]"
+            spr_id = getattr(defn, "sprite_id", None)
+            if spr_id is not None:
+                spr_desc = ""
+                if self.catalogues and hasattr(self.catalogues, "sprites") and spr_id in self.catalogues.sprites:
+                    desc = getattr(self.catalogues.sprites[spr_id], "description", "")
+                    if desc:
+                        spr_desc = f": {desc}"
+                text += f" [Sprite {spr_id}{spr_desc}]"
+            elif getattr(defn, "sprite", None):
+                text += f" [Sprite: {defn.sprite}]"
+
+            warn_msg = None
+            if spr_id is not None and self.catalogues and hasattr(self.catalogues, "sprites") and self.catalogues.sprites:
+                if spr_id not in self.catalogues.sprites:
+                    text += " ⚠️"
+                    warn_msg = f"Ostrzeżenie: sprite o ID {spr_id} nie istnieje w załadowanym pliku sprite'ów."
+            elif getattr(defn, "sprite", None) and hasattr(self.catalogues, "sprites_by_name") and self.catalogues.sprites_by_name:
+                if defn.sprite.strip().lower() not in self.catalogues.sprites_by_name:
+                    text += " ⚠️"
+                    warn_msg = f"Ostrzeżenie: nieznany sprite '{defn.sprite}'."
+
             if defn.dependency is not None:
                 parent = self.catalogues.get_secret(defn.dependency)
                 p_name = parent.name if parent else f"ID {defn.dependency}"
@@ -660,6 +734,8 @@ class CataloguesDialog(QDialog):
                 text += " [BLINK]"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, defn.id)
+            if warn_msg:
+                item.setToolTip(warn_msg)
 
             if defn.rgb_color is not None:
                 pm = QPixmap(12, 12)
@@ -761,7 +837,10 @@ class CataloguesDialog(QDialog):
 
         self.secret_blink_check.setChecked(defn.blink)
         self._populate_secret_dependency_options(defn.id, defn.dependency)
-        self._populate_sprite_combo(getattr(self, "secret_sprite_combo", None), getattr(defn, "sprite_id", None))
+        self._populate_sprite_combo(
+            getattr(self, "secret_sprite_combo", None),
+            getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None),
+        )
         self.secret_btn_delete.setEnabled(True)
 
     def _on_new_secret_clicked(self) -> None:
@@ -815,7 +894,16 @@ class CataloguesDialog(QDialog):
 
         blink = self.secret_blink_check.isChecked()
         dependency = self.secret_dep_combo.currentData() if hasattr(self, "secret_dep_combo") and self.secret_dep_combo else None
-        sprite_id = self.secret_sprite_combo.currentData() if hasattr(self, "secret_sprite_combo") and self.secret_sprite_combo else None
+        sprite_val = self.secret_sprite_combo.currentData() if hasattr(self, "secret_sprite_combo") and self.secret_sprite_combo else None
+        sprite_id = None
+        if sprite_val is not None:
+            try:
+                sprite_id = int(sprite_val)
+            except (ValueError, TypeError):
+                if hasattr(self.catalogues, "sprites_by_name"):
+                    norm_sn = str(sprite_val).strip().lower()
+                    if norm_sn in self.catalogues.sprites_by_name:
+                        sprite_id = self.catalogues.sprites_by_name[norm_sn].id
 
         try:
             defn = SecretDefinition(
@@ -826,6 +914,7 @@ class CataloguesDialog(QDialog):
                 blink=blink,
                 dependency=dependency,
                 sprite_id=sprite_id,
+                sprite=None,
             )
             defn.validate()
 

@@ -132,6 +132,7 @@ class CatalogueItem:
     blink: bool = False
     dependency: Optional[int] = None
     sprite_id: Optional[int] = None
+    sprite: Optional[str] = None
 
 
 @dataclass
@@ -720,15 +721,19 @@ def resolve_tileset_id(source_str: str | None) -> int:
 
 
 def load_catalogues(
-    enemies_file: Path, secrets_file: Path
+    enemies_file: Path, secrets_file: Path, sprites_file: Optional[Path] = None
 ) -> tuple[dict[int, CatalogueItem], dict[int, CatalogueItem]]:
     """Load enemies and secrets definitions for attribute and color resolution."""
-    # Check if enemies_file is or points to unified definitions.json
+    # Check if enemies_file is or points to unified definitions.json or definitions_resolved.json
     def_file: Optional[Path] = None
-    if enemies_file.name == "definitions.json" and enemies_file.is_file():
+    if enemies_file.name in ("definitions.json", "definitions_resolved.json") and enemies_file.is_file():
         def_file = enemies_file
+    elif (enemies_file.parent / "definitions_resolved.json").is_file():
+        def_file = enemies_file.parent / "definitions_resolved.json"
     elif (enemies_file.parent / "definitions.json").is_file() and not enemies_file.is_file():
         def_file = enemies_file.parent / "definitions.json"
+    elif (Path("gen") / "definitions_resolved.json").is_file() and not enemies_file.is_file():
+        def_file = Path("gen") / "definitions_resolved.json"
     elif (Path("scenes") / "definitions.json").is_file() and not enemies_file.is_file():
         def_file = Path("scenes") / "definitions.json"
 
@@ -738,24 +743,54 @@ def load_catalogues(
     if def_file and def_file.is_file():
         try:
             data = json.loads(def_file.read_text(encoding="utf-8"))
+            reg = None
+            if sprites_file and sprites_file.is_file():
+                try:
+                    from scripts.sprite_links import SpriteRegistry
+                    reg = SpriteRegistry(sprites_file)
+                except Exception:
+                    reg = None
+            elif Path("sprites/objects.sprite.json").is_file():
+                try:
+                    from scripts.sprite_links import SpriteRegistry
+                    reg = SpriteRegistry(Path("sprites/objects.sprite.json"))
+                except Exception:
+                    reg = None
+
             for item in data.get("enemies", []):
+                sid = item.get("sprite_id")
+                sname = item.get("sprite")
+                if sid is None and sname and reg:
+                    try:
+                        sid, sname = reg.resolve_by_name(sname)
+                    except Exception:
+                        pass
                 enemies[item["id"]] = CatalogueItem(
                     id=item["id"],
                     name=item.get("name", f"Enemy {item['id']}"),
                     atari_color=item.get("atari_color", 0x42),
                     blink=bool(item.get("blink", False)),
-                    sprite_id=item.get("sprite_id"),
+                    sprite_id=sid,
+                    sprite=sname,
                 )
             for item in data.get("secrets", []):
                 raw_dep = item.get("dependency")
                 dep = int(raw_dep) if (raw_dep is not None and str(raw_dep).strip() != "") else None
+                sid = item.get("sprite_id")
+                sname = item.get("sprite")
+                if sid is None and sname and reg:
+                    try:
+                        sid, sname = reg.resolve_by_name(sname)
+                    except Exception:
+                        pass
                 secrets[item["id"]] = CatalogueItem(
                     id=item["id"],
                     name=item.get("name", f"Secret {item['id']}"),
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
-                    sprite_id=item.get("sprite_id"),
+                    sprite_id=sid,
+                    sprite=sname,
                 )
             return enemies, secrets
         except Exception as exc:
@@ -1070,7 +1105,13 @@ def parse_scene_json(
                 )
             deps_on_row[dep_val] = oid
 
-            spr_id = resolve_object_sprite_id(obj, secrets, name, scene_file.name)
+            spr_id = resolve_object_sprite_id(obj, secrets, name, scene_file.name, sprites_dict=sprites)
+            if sprites and spr_id not in sprites:
+                avail_str = ", ".join(f"{s.id}: {getattr(s, 'description', f'Sprite_{s.id}')}" for s in sorted(sprites.values(), key=lambda x: x.id))
+                raise ValueError(
+                    f"Błąd w scenie '{name}' ({scene_file.name}): sekret '{oid}' (typ {def_id}): "
+                    f"podany sprite_id={spr_id} nie istnieje w pliku sprite'ów. Dostępne sprite'y: [{avail_str}]."
+                )
             spr_def = sprites.get(spr_id) if sprites else None
 
             spr_h = spr_def.height if spr_def else 16
@@ -1121,10 +1162,12 @@ def parse_scene_json(
             blink = cat_item.blink if cat_item else False
             dep_id = 0
 
-            spr_id = resolve_object_sprite_id(obj, enemies, name, scene_file.name)
+            spr_id = resolve_object_sprite_id(obj, enemies, name, scene_file.name, sprites_dict=sprites)
             if sprites and spr_id not in sprites:
+                avail_str = ", ".join(f"{s.id}: {getattr(s, 'description', f'Sprite_{s.id}')}" for s in sorted(sprites.values(), key=lambda x: x.id))
                 raise ValueError(
-                    f"Błąd w scenie '{name}' ({scene_file.name}): wróg '{oid}' odwołuje się do nieistniejącego sprite_id {spr_id} (references non-existent sprite_id)."
+                    f"Błąd w scenie '{name}' ({scene_file.name}): wróg '{oid}' (typ {def_id}): "
+                    f"podany sprite_id={spr_id} nie istnieje w pliku sprite'ów. Dostępne sprite'y: [{avail_str}]."
                 )
 
             spr_def = sprites.get(spr_id) if sprites else None
@@ -1993,6 +2036,52 @@ def compile_scenes(
     dli_output_path = output_path.parent / "scenes_dli_data.asm"
     dli_output_path.write_text(dli_asm, encoding="utf-8")
     print(f"Generated ASM scene DLI data: {dli_output_path} ({len(dli_asm)} chars)")
+
+    # Print resolution table for all catalogue definitions and scene objects
+    res_entries: list[dict[str, Any]] = []
+    for eid, e in sorted(enemies.items(), key=lambda x: x[0]):
+        spr_name = getattr(sprites.get(e.sprite_id), "description", f"Sprite_{e.sprite_id}") if (sprites and e.sprite_id in sprites) else (e.sprite or f"Sprite_{e.sprite_id}")
+        res_entries.append({
+            "source": f"Katalog: Wróg typ {eid} ('{e.name}')",
+            "sprite_id": e.sprite_id,
+            "sprite_name": spr_name,
+            "role": "Wróg (Player)",
+        })
+    for sid, s in sorted(secrets.items(), key=lambda x: x[0]):
+        spr_name = getattr(sprites.get(s.sprite_id), "description", f"Sprite_{s.sprite_id}") if (sprites and s.sprite_id in sprites) else (s.sprite or f"Sprite_{s.sprite_id}")
+        res_entries.append({
+            "source": f"Katalog: Sekret typ {sid} ('{s.name}')",
+            "sprite_id": s.sprite_id,
+            "sprite_name": spr_name,
+            "role": "Sekret (Pociski)",
+        })
+    for sc in compiled_scenes:
+        for en in sc.enemies:
+            spr_name = getattr(sprites.get(en.sprite_id), "description", f"Sprite_{en.sprite_id}") if (sprites and en.sprite_id in sprites) else f"Sprite_{en.sprite_id}"
+            res_entries.append({
+                "source": f"Scena '{sc.file_stem}': wróg {en.id} (typ {en.def_id})",
+                "sprite_id": en.sprite_id,
+                "sprite_name": spr_name,
+                "role": "Wróg (Player)",
+            })
+        for sec in sc.secrets:
+            spr_name = getattr(sprites.get(sec.sprite_id), "description", f"Sprite_{sec.sprite_id}") if (sprites and sec.sprite_id in sprites) else f"Sprite_{sec.sprite_id}"
+            res_entries.append({
+                "source": f"Scena '{sc.file_stem}': sekret {sec.id} (typ {sec.def_id})",
+                "sprite_id": sec.sprite_id,
+                "sprite_name": spr_name,
+                "role": "Sekret (Pociski)",
+            })
+
+    try:
+        try:
+            from scripts.sprite_links import format_resolution_table
+        except ImportError:
+            from sprite_links import format_resolution_table
+        print(format_resolution_table(res_entries))
+    except Exception as e:
+        print(f"Warning: Could not format resolution table ({e})", file=sys.stderr)
+
     return 0
 
 

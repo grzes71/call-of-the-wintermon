@@ -57,6 +57,7 @@ class CatalogDefinition:
     atari_color: Optional[int] = None
     blink: bool = False
     sprite_id: Optional[int] = None
+    sprite: Optional[str] = None
 
     def validate(self) -> None:
         """Validate definition integrity."""
@@ -98,6 +99,9 @@ class CatalogDefinition:
                 raise InvalidDefinitionError(
                     f"Definition 'sprite_id' must be an integer between 1 and 255, got {self.sprite_id!r}."
                 )
+
+        if self.sprite is not None and not isinstance(self.sprite, str):
+            raise InvalidDefinitionError(f"Definition 'sprite' must be a string, got {type(self.sprite).__name__}.")
 
     def clone(self) -> CatalogDefinition:
         """Create a deep copy."""
@@ -162,6 +166,17 @@ class CatalogDefinition:
                     f"Definition 'sprite_id' must be an integer between 1 and 255, got {raw_sprite_id!r}."
                 )
 
+        raw_sprite = data.get("sprite")
+        sprite: Optional[str] = str(raw_sprite).strip() if (raw_sprite is not None and str(raw_sprite).strip()) else None
+        if sprite is not None:
+            import warnings
+            warnings.warn(
+                f"Ostrzeżenie: typ katalogu '{data.get('name')}' używa przestarzałego pola 'sprite': '{sprite}'. "
+                f"Zalecane pole 'sprite_id'.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         defn = cls(
             id=defn_id,
             name=str(data["name"]).strip(),
@@ -169,6 +184,7 @@ class CatalogDefinition:
             atari_color=atari,
             blink=blink,
             sprite_id=sprite_id,
+            sprite=sprite,
         )
         defn.validate()
         return defn
@@ -234,6 +250,7 @@ class SecretDefinition(CatalogDefinition):
             atari_color=base_defn.atari_color,
             blink=base_defn.blink,
             sprite_id=base_defn.sprite_id,
+            sprite=base_defn.sprite,
             dependency=dep,
         )
         defn.validate()
@@ -360,6 +377,7 @@ class ProjectCatalogues:
     secrets: dict[int, SecretDefinition] = field(default_factory=dict)
     platform_profiles: dict[int, PlatformColorProfile] = field(default_factory=dict)
     sprites: dict[int, Any] = field(default_factory=dict)
+    sprites_by_name: dict[str, Any] = field(default_factory=dict)
     sprites_path: Optional[Path] = None
     definitions_path: Optional[Path] = None
     enemies_path: Optional[Path] = None
@@ -391,9 +409,28 @@ class ProjectCatalogues:
                 sprites_list.append(SimpleNamespace(id=s_id, description=desc))
 
         self.sprites.clear()
+        self.sprites_by_name.clear()
         for spr in sprites_list:
+            norm_name = str(getattr(spr, "description", "")).strip().lower()
+            if not norm_name:
+                norm_name = f"sprite_{spr.id}"
+            if norm_name in self.sprites_by_name:
+                prev_spr = self.sprites_by_name[norm_name]
+                raise DuplicateDefinitionIdError(
+                    f"Błąd pliku sprite'ów '{target_path.name}': zduplikowana nazwa sprite'a '{getattr(spr, 'description', '')}' "
+                    f"dla ID {prev_spr.id} oraz ID {spr.id}."
+                )
             self.sprites[spr.id] = spr
+            self.sprites_by_name[norm_name] = spr
         self.sprites_path = target_path
+
+        # Sync in-memory definitions
+        for defn in list(self.enemies.values()) + list(self.secrets.values()):
+            if defn.sprite and defn.sprite.strip().lower() in self.sprites_by_name:
+                defn.sprite_id = self.sprites_by_name[defn.sprite.strip().lower()].id
+            elif not defn.sprite and defn.sprite_id in self.sprites:
+                defn.sprite = getattr(self.sprites[defn.sprite_id], "description", f"Sprite_{defn.sprite_id}")
+
         return len(self.sprites)
 
     @staticmethod

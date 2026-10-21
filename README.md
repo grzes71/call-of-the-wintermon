@@ -153,3 +153,22 @@ lub przez Makefile:
 make tests
 ```
 
+---
+
+## Powiązania sprite'ów (Model numerycznego `sprite_id`)
+
+Sprite Studio oraz Scene Editor łączą się wyłącznie poprzez numeryczny identyfikator `sprite_id` (liczba całkowita).
+
+- **Pliki autorskie vs pliki generowane**:
+  - *Pliki autorskie* (edycja ręczna / przez edytory GUI): `sprites/objects.sprite.json`, `scenes/definitions.json`, pliki scen `scenes/*.json`.
+  - *Pliki generowane* (przebudowywane przez `make`, nie edytować ręcznie): `gen/definitions_resolved.json`, `gen/sprites_data.asm`, `gen/sprites_manifest.json`, `gen/scenes_data.asm`.
+- **Klucz powiązania**:
+  - Jedynym kluczem powiązania typu obiektu w katalogu lub nadpisania w scenie ze sprite'em jest `sprite_id`.
+  - Nazwy sprite'ów (pole `description` w JSON sprite'ów) pełnią wyłącznie rolę etykiety pomocniczej dla człowieka i nie biorą udziału w walidacji ani w logice gry.
+- **Workflow przy celowej zmianie numeracji w Sprite Studio**:
+  - Po zmianie numerów ID sprite'ów w Sprite Studio należy otworzyć Scene Editor (`Ctrl+K`), w oknie katalogów ponownie wskazać sprite dla każdego wpisu z listy rozwijanej i zapisać zmiany (`Ctrl+S`).
+  - Jeśli `sprite_id` nie istnieje w pliku sprite'ów, proces budowy (`make`) zgłosi błąd z listą dostępnych ID i nazw pomocniczych.
+  - Przeniesienie sprite'a pod numer zajęty przez inny sprite nie jest wykrywane przez resolver (obiekty automatycznie przyjmą nowy wygląd przypisany do danego numeru).
+  - Obiekty sceny nie zapisują pola `sprite_id`, jeśli ich powiązanie jest identyczne z domyślnym z katalogu.
+
+

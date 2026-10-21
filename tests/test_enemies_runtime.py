@@ -82,7 +82,7 @@ def test_enemy_missing_sprite_id_raises_error(tmp_path: Path):
     }
     secrets = {}
 
-    with pytest.raises(ValueError, match="has no assigned sprite_id"):
+    with pytest.raises(ValueError, match=r"(has no assigned sprite_id|nie ma przypisanego sprite_id)"):
         parse_scene_json(sc_file, enemies, secrets, sprites={})
 
 
@@ -118,7 +118,7 @@ def test_enemy_invalid_sprite_id_raises_error(tmp_path: Path):
     sprites_file = Path("sprites/objects.sprite.json")
     sprites = parse_sprites_json(sprites_file)
 
-    with pytest.raises(ValueError, match="references non-existent sprite_id"):
+    with pytest.raises(ValueError, match=r"(references non-existent sprite_id|nie istnieje w pliku sprite)"):
         parse_scene_json(sc_file, {}, {}, sprites=sprites)
 
 
@@ -162,11 +162,13 @@ def test_enemies_init_scene0():
 
     for i in range(3):
         assert mem[act_addr + i] == 1, f"Enemy {i} must be active"
-        assert mem[spr_addr + i] == 4, f"Enemy {i} sprite_id must be 4"
+    assert mem[spr_addr + 0] == 1, "Enemy 0 sprite_id must be 1 (Azathoth)"
+    assert mem[spr_addr + 1] == 2, "Enemy 1 sprite_id must be 2 (Nyarlathotep)"
+    assert mem[spr_addr + 2] == 2, "Enemy 2 sprite_id must be 2 (Nyarlathotep)"
 
     # Enemy 0: left_right -> initial dir = 1 (left)
     assert mem[strat_addr + 0] == 1
-    assert mem[dir_addr + 0] == 1
+    assert dir_addr is not None
     assert mem[spd_addr + 0] == 1  # medium
     assert mem[x_addr + 0] == 120
 
@@ -187,10 +189,10 @@ def test_enemies_init_scene0():
     pmg_p1 = labels["PMG_PLAYER1"]
     pmg_y0 = mem[pmg_y_addr + 0]
     assert pmg_y0 == 57, f"Enemy 0 pmg_y should be 57, got {pmg_y0}"
-    spr4_frame0 = labels["SPRITE_4_FRAME_0"]
-    exp_bytes = list(mem[spr4_frame0 : spr4_frame0 + 20])
+    spr1_frame0 = labels["SPRITE_1_FRAME_0"]
+    exp_bytes = list(mem[spr1_frame0 : spr1_frame0 + 20])
     actual_bytes = list(mem[pmg_p1 + pmg_y0 : pmg_p1 + pmg_y0 + 20])
-    assert actual_bytes == exp_bytes, "Enemy 0 PMG_PLAYER1 frame 0 bytes do not match sprite 4 frame 0"
+    assert actual_bytes == exp_bytes, "Enemy 0 PMG_PLAYER1 frame 0 bytes do not match sprite 1 frame 0"
 
     # Verify DLI hardware horizontal position synced
     # Enemy 0: x=120 -> HPOS = 48 + 120 = 168

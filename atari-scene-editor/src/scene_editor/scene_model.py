@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass, field
 import math
 from typing import Any, Optional
+import warnings
 
 
 class ModelValidationError(Exception):
@@ -553,6 +554,7 @@ class SceneObjectElement:
         custom_width: int = 8,
         custom_height: int = 8,
         sprite_id: Optional[int] = None,
+        sprite: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         raw_id = id
@@ -607,6 +609,12 @@ class SceneObjectElement:
         self.custom_width = int(custom_width)
         self.custom_height = int(custom_height)
 
+        raw_sprite_name = sprite if sprite is not None else kwargs.get("sprite")
+        if raw_sprite_name is not None and str(raw_sprite_name).strip() and str(raw_sprite_name).lower() != "none":
+            self.sprite: Optional[str] = str(raw_sprite_name).strip()
+        else:
+            self.sprite = None
+
         raw_sprite = sprite_id if sprite_id is not None else kwargs.get("sprite_id")
         if raw_sprite is not None and str(raw_sprite).strip() != "" and str(raw_sprite).lower() != "none":
             try:
@@ -616,17 +624,44 @@ class SceneObjectElement:
         else:
             self.sprite_id = None
 
-    def get_effective_sprite_id(self, catalogues: Any = None) -> Optional[int]:
-        """Return explicit sprite_id or fallback to definition's sprite_id from catalogues."""
-        if self.sprite_id is not None:
-            return self.sprite_id
+    def get_effective_sprite(self, catalogues: Any = None) -> Optional[str]:
+        """Return explicit sprite name or fallback to definition's sprite name from catalogues."""
+        if self.sprite:
+            return self.sprite
         if catalogues and self.definition_id:
             try:
                 norm_id = int(self.definition_id)
-                if self.type == OBJECT_TYPE_ENEMY and norm_id in catalogues.enemies:
-                    return catalogues.enemies[norm_id].sprite_id
-                elif norm_id in catalogues.secrets:
-                    return catalogues.secrets[norm_id].sprite_id
+                cat_item = catalogues.enemies.get(norm_id) if self.type == OBJECT_TYPE_ENEMY else catalogues.secrets.get(norm_id)
+                if cat_item:
+                    if getattr(cat_item, "sprite", None):
+                        return cat_item.sprite
+                    if getattr(cat_item, "sprite_id", None) and hasattr(catalogues, "sprites") and cat_item.sprite_id in catalogues.sprites:
+                        return getattr(catalogues.sprites[cat_item.sprite_id], "description", None)
+            except (ValueError, TypeError):
+                pass
+        if self.sprite_id is not None and catalogues and hasattr(catalogues, "sprites") and self.sprite_id in catalogues.sprites:
+            return getattr(catalogues.sprites[self.sprite_id], "description", None)
+        return None
+
+    def get_effective_sprite_id(self, catalogues: Any = None) -> Optional[int]:
+        """Return explicit sprite_id or resolved from sprite name or fallback to definition's sprite_id from catalogues."""
+        if self.sprite_id is not None:
+            return self.sprite_id
+        if self.sprite and catalogues and hasattr(catalogues, "sprites_by_name"):
+            norm_name = self.sprite.strip().lower()
+            if norm_name in catalogues.sprites_by_name:
+                return catalogues.sprites_by_name[norm_name].id
+        if catalogues and self.definition_id:
+            try:
+                norm_id = int(self.definition_id)
+                cat_item = catalogues.enemies.get(norm_id) if self.type == OBJECT_TYPE_ENEMY else catalogues.secrets.get(norm_id)
+                if cat_item:
+                    if getattr(cat_item, "sprite_id", None) is not None:
+                        return cat_item.sprite_id
+                    if getattr(cat_item, "sprite", None) and hasattr(catalogues, "sprites_by_name"):
+                        norm_cat_name = cat_item.sprite.strip().lower()
+                        if norm_cat_name in catalogues.sprites_by_name:
+                            return catalogues.sprites_by_name[norm_cat_name].id
             except (ValueError, TypeError):
                 pass
         return None
@@ -694,7 +729,7 @@ class SceneObjectElement:
                     f"assigned platform '{plat.id}' at x={plat.position.x} (width={plat.width})."
                 )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, catalogues: Optional[Any] = None) -> dict[str, Any]:
         d: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
@@ -702,8 +737,32 @@ class SceneObjectElement:
             "platform_id": self.platform_id,
             "x": int(self.x),
         }
-        if self.sprite_id is not None:
-            d["sprite_id"] = int(self.sprite_id)
+        # Check catalogue default
+        default_id: Optional[int] = None
+        if catalogues and self.definition_id:
+            try:
+                norm_id = int(self.definition_id)
+                cat_item = catalogues.enemies.get(norm_id) if self.type == OBJECT_TYPE_ENEMY else catalogues.secrets.get(norm_id)
+                if cat_item:
+                    default_id = getattr(cat_item, "sprite_id", None)
+                    if default_id is None and getattr(cat_item, "sprite", None) and hasattr(catalogues, "sprites_by_name"):
+                        norm_dn = cat_item.sprite.strip().lower()
+                        if norm_dn in catalogues.sprites_by_name:
+                            default_id = catalogues.sprites_by_name[norm_dn].id
+            except (ValueError, TypeError):
+                pass
+
+        effective_sid = self.sprite_id
+        if effective_sid is None and self.sprite and catalogues and hasattr(catalogues, "sprites_by_name"):
+            norm_sn = self.sprite.strip().lower()
+            if norm_sn in catalogues.sprites_by_name:
+                effective_sid = catalogues.sprites_by_name[norm_sn].id
+
+        if effective_sid is not None:
+            is_default = (default_id is not None and effective_sid == default_id)
+            if not is_default:
+                d["sprite_id"] = int(effective_sid)
+
         if self.type == OBJECT_TYPE_ENEMY:
             d["speed"] = self.speed
             d["movement_strategy"] = self.movement_strategy
@@ -754,6 +813,16 @@ class SceneObjectElement:
         if "source_rect" in data and isinstance(data["source_rect"], dict):
             source_rect = Rect.from_dict(data["source_rect"])
 
+        raw_sprite = data.get("sprite")
+        sprite = str(raw_sprite).strip() if (raw_sprite is not None and str(raw_sprite).strip()) else None
+        if sprite is not None:
+            warnings.warn(
+                f"Obiekt '{obj_id}' używa przestarzałego pola 'sprite' ('{sprite}'). "
+                f"Używaj numerycznego pola 'sprite_id'.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         raw_sprite_id = data.get("sprite_id")
         sprite_id = None
         if raw_sprite_id is not None and str(raw_sprite_id).strip() != "":
@@ -773,6 +842,7 @@ class SceneObjectElement:
             source=source,
             source_rect=source_rect,
             sprite_id=sprite_id,
+            sprite=sprite,
         )
 
     def clone(self) -> SceneObjectElement:
@@ -1641,6 +1711,7 @@ class Scene:
         new_speed: Optional[str] = None,
         new_strategy: Optional[str] = None,
         new_sprite_id: Optional[int | str] = None,
+        new_sprite: Optional[str] = None,
     ) -> None:
         """Update properties of an existing object with validation."""
         obj = self.get_object(object_id)
@@ -1655,6 +1726,7 @@ class Scene:
         old_speed = obj.speed
         old_strategy = obj.movement_strategy
         old_sprite_id = obj.sprite_id
+        old_sprite = obj.sprite
 
         if new_platform_id is not None and new_platform_id != obj.platform_id:
             target_plat = self.get_platform(new_platform_id)
@@ -1694,6 +1766,12 @@ class Scene:
             if new_strategy is not None:
                 obj.movement_strategy = new_strategy
 
+        if new_sprite is not None:
+            if str(new_sprite).strip() and str(new_sprite).lower() != "none":
+                obj.sprite = str(new_sprite).strip()
+            else:
+                obj.sprite = None
+
         if new_sprite_id is not None:
             if str(new_sprite_id).strip() != "" and str(new_sprite_id).lower() != "none":
                 try:
@@ -1716,6 +1794,7 @@ class Scene:
             obj.speed = old_speed
             obj.movement_strategy = old_strategy
             obj.sprite_id = old_sprite_id
+            obj.sprite = old_sprite
             raise
 
     def clone(self) -> Scene:

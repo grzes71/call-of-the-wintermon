@@ -49,3 +49,4 @@ gen/
 *~
 .DS_Store
 Thumbs.db
+*.bak

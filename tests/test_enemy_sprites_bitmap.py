@@ -162,10 +162,10 @@ def test_secrets_all_frames_missiles_regression():
     spr_json = json.loads(spr_path.read_text(encoding="utf-8"))
     mem, labels = load_xex_and_symbols()
 
-    # Secrets currently used: 1 (CD), 2 (Ladder), 3 (Key)
+    # Secrets currently used: 6 (CD), 7 (Skull), 8 (Key), 9 (Mjolnir)
     for spr in spr_json.get("sprites", []):
         sid = spr["id"]
-        if sid not in (1, 2, 3):
+        if sid not in (6, 7, 8, 9):
             continue
         for f_idx, frame in enumerate(spr["frames"]):
             lbl = f"SPRITE_{sid}_FRAME_{f_idx}"

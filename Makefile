@@ -51,6 +51,7 @@ PLAYER_SPRITE_ASM := $(GEN_DIR)/player_sprites.asm
 SCENES_MANIFEST    := scenes/scenes.json
 SCENES_DIR         := scenes
 SCENES_DEFINITIONS := scenes/definitions.json
+SCENES_DEFINITIONS_RESOLVED := $(GEN_DIR)/definitions_resolved.json
 SCENES_SRCS        := $(wildcard $(SCENES_DIR)/*.json)
 SCENES_ASM         := $(GEN_DIR)/scenes_data.asm
 SCENES_DLI_ASM     := $(GEN_DIR)/scenes_dli_data.asm
@@ -111,19 +112,24 @@ $(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 # 4. Data generation (Scene structures, platforms, objects, sprites)
 # ------------------------------------------------------------------------------
-data: $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
+data: $(SCENES_DEFINITIONS_RESOLVED) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
 
-$(SPRITES_ASM): $(SPRITES_SRC) $(SCENES_DEFINITIONS) $(SCENES_MANIFEST) $(SCENES_SRCS) scripts/compile_sprites.py scripts/sprite_roles.py
+$(SCENES_DEFINITIONS_RESOLVED): $(SCENES_DEFINITIONS) $(SPRITES_SRC) scripts/sprite_links.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $(SPRITES_SRC) -o $@ --definitions $(SCENES_DEFINITIONS) --scenes $(SCENES_MANIFEST)
+	$(PYTHON) scripts/sprite_links.py --definitions $(SCENES_DEFINITIONS) --sprites $(SPRITES_SRC) --output $@
+
+$(SPRITES_ASM): $(SPRITES_SRC) $(SCENES_DEFINITIONS_RESOLVED) $(SCENES_MANIFEST) $(SCENES_SRCS) scripts/compile_sprites.py scripts/sprite_roles.py scripts/sprite_links.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $(SPRITES_SRC) -o $@ --definitions $(SCENES_DEFINITIONS_RESOLVED) --scenes $(SCENES_MANIFEST)
 
 $(PLAYER_SPRITE_ASM): $(PLAYER_SPRITE_SRC) scripts/compile_sprites.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_sprites.py --mode player -i $< -o $@
 
-$(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFINITIONS) $(SPRITES_SRC) $(SPRITES_ASM) scripts/compile_scenes.py
+$(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFINITIONS_RESOLVED) $(SPRITES_SRC) $(SPRITES_ASM) scripts/compile_scenes.py scripts/sprite_links.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM) --definitions $(SCENES_DEFINITIONS) --sprites $(SPRITES_SRC)
+	$(PYTHON) scripts/compile_scenes.py --manifest $(SCENES_MANIFEST) --output $(SCENES_ASM) --definitions $(SCENES_DEFINITIONS_RESOLVED) --sprites $(SPRITES_SRC)
+
 
 # ------------------------------------------------------------------------------
 # 5. Binary assembly (MADS)

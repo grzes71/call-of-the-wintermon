@@ -12,6 +12,8 @@ class TimelineWidget(QWidget):
     copy_requested = Signal(int)
     paste_requested = Signal(int)
     mirror_requested = Signal(int)
+    mirror_h_requested = Signal(int)
+    mirror_v_requested = Signal(int)
     inverse_requested = Signal(int)
     clear_requested = Signal(int)
     shift_requested = Signal(str)
@@ -62,8 +64,11 @@ class TimelineWidget(QWidget):
         self.btn_copy.clicked.connect(self._on_copy)
         self.btn_paste = QPushButton("Paste")
         self.btn_paste.clicked.connect(self._on_paste)
-        self.btn_mirror = QPushButton("Mirror")
-        self.btn_mirror.clicked.connect(self._on_mirror)
+        self.btn_mirror_h = QPushButton("H Mirror")
+        self.btn_mirror_h.clicked.connect(self._on_mirror_h)
+        self.btn_mirror = self.btn_mirror_h
+        self.btn_mirror_v = QPushButton("V Mirror")
+        self.btn_mirror_v.clicked.connect(self._on_mirror_v)
         self.btn_inverse = QPushButton("Inverse")
         self.btn_inverse.clicked.connect(self._on_inverse)
         self.btn_clear = QPushButton("Clear")
@@ -80,7 +85,8 @@ class TimelineWidget(QWidget):
         
         transform_layout.addWidget(self.btn_copy)
         transform_layout.addWidget(self.btn_paste)
-        transform_layout.addWidget(self.btn_mirror)
+        transform_layout.addWidget(self.btn_mirror_h)
+        transform_layout.addWidget(self.btn_mirror_v)
         transform_layout.addWidget(self.btn_inverse)
         transform_layout.addWidget(self.btn_clear)
         transform_layout.addWidget(self.btn_sl)
@@ -134,10 +140,19 @@ class TimelineWidget(QWidget):
         if idx >= 0:
             self.paste_requested.emit(idx)
 
-    def _on_mirror(self):
+    def _on_mirror_h(self):
         idx = self.list_widget.currentRow()
         if idx >= 0:
+            self.mirror_h_requested.emit(idx)
             self.mirror_requested.emit(idx)
+
+    def _on_mirror(self):
+        self._on_mirror_h()
+
+    def _on_mirror_v(self):
+        idx = self.list_widget.currentRow()
+        if idx >= 0:
+            self.mirror_v_requested.emit(idx)
 
     def _on_inverse(self):
         idx = self.list_widget.currentRow()

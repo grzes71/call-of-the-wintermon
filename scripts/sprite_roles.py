@@ -26,6 +26,11 @@ class SpriteValidationError(ValueError):
     pass
 
 
+class SpriteRoleConflictError(SpriteValidationError):
+    """Raised when a sprite is used simultaneously as an enemy and a secret."""
+    pass
+
+
 @dataclass
 class ResolvedObjectSprite:
     """Result of resolving an object's sprite_id."""
@@ -51,15 +56,41 @@ class SpriteManifestEntry:
     frame_labels: list[str] = field(default_factory=list)
 
 
+try:
+    from scripts.sprite_links import (
+        SpriteLinkError,
+        SpriteRegistry,
+        resolve_object_sprite,
+    )
+except ImportError:
+    try:
+        from sprite_links import (
+            SpriteLinkError,
+            SpriteRegistry,
+            resolve_object_sprite,
+        )
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.resolve()))
+        from sprite_links import (
+            SpriteLinkError,
+            SpriteRegistry,
+            resolve_object_sprite,
+        )
+
+
 def resolve_object_sprite_id(
     obj: dict[str, Any],
     catalog_items: dict[int, Any],
     scene_name: str,
     scene_file: str,
+    registry: Optional[SpriteRegistry] = None,
+    sprites_path: Optional[Path] = None,
+    sprites_dict: Optional[dict[int, Any]] = None,
 ) -> int:
     """Resolve sprite_id for an object: explicit in scene has priority, then catalog fallback.
 
-    Raises SpriteValidationError if no sprite_id is found.
+    Supports both 'sprite' (name string) and legacy 'sprite_id' (integer).
+    Raises SpriteValidationError if no sprite can be resolved.
     """
     oid = obj.get("id", "?")
     otype = obj.get("type", "unknown")
@@ -69,6 +100,31 @@ def resolve_object_sprite_id(
             f"Błąd w scenie '{scene_name}' ({scene_file}): obiekt '{oid}' ({otype}) nie posiada 'definition_id'."
         )
 
+    cat_item = catalog_items.get(int(def_id))
+
+    # If registry is available or can be loaded, use full resolution
+    reg = registry
+    if reg is None and sprites_path is not None and sprites_path.is_file():
+        try:
+            reg = SpriteRegistry(sprites_path)
+        except Exception:
+            reg = None
+    elif reg is None and sprites_dict is None:
+        default_spr = Path("sprites/objects.sprite.json")
+        if default_spr.is_file():
+            try:
+                reg = SpriteRegistry(default_spr)
+            except Exception:
+                reg = None
+
+    if reg is not None:
+        try:
+            sid, _, _ = resolve_object_sprite(obj, cat_item, reg, scene_name, scene_file)
+            return sid
+        except SpriteLinkError as err:
+            raise SpriteValidationError(str(err)) from err
+
+    # Fallback if no sprite registry (e.g. lightweight isolated unit test)
     # 1. Explicit sprite_id in scene object
     raw_spr = obj.get("sprite_id")
     if raw_spr is not None:
@@ -80,7 +136,6 @@ def resolve_object_sprite_id(
             )
 
     # 2. Catalog fallback
-    cat_item = catalog_items.get(int(def_id))
     if cat_item is not None:
         cat_spr = getattr(cat_item, "sprite_id", None)
         if cat_spr is None and isinstance(cat_item, dict):
@@ -99,6 +154,7 @@ def determine_sprite_roles_from_scenes(
     manifest_path: Path,
     definitions_path: Path,
     scenes_dir: Optional[Path] = None,
+    sprites_path: Optional[Path] = None,
 ) -> tuple[dict[int, str], dict[int, list[str]], dict[int, list[str]]]:
     """Inspect all scenes in manifest and determine the packing format for every sprite_id.
 
@@ -126,6 +182,14 @@ def determine_sprite_roles_from_scenes(
         for s in defs_data.get("secrets", []):
             secret_cats[int(s["id"])] = s
 
+    spr_p = sprites_path or Path("sprites/objects.sprite.json")
+    registry: Optional[SpriteRegistry] = None
+    if spr_p.is_file():
+        try:
+            registry = SpriteRegistry(spr_p)
+        except Exception:
+            registry = None
+
     enemy_usages: dict[int, list[str]] = {}
     secret_usages: dict[int, list[str]] = {}
 
@@ -140,10 +204,14 @@ def determine_sprite_roles_from_scenes(
             otype = obj.get("type")
             oid = obj.get("id", "?")
             if otype == "enemy":
-                sid = resolve_object_sprite_id(obj, enemy_cats, sc_name, sc_path.name)
+                sid = resolve_object_sprite_id(
+                    obj, enemy_cats, sc_name, sc_path.name, registry=registry, sprites_path=spr_p
+                )
                 enemy_usages.setdefault(sid, []).append(f"{sc_path.name}:obiekt_{oid}")
             elif otype == "secret":
-                sid = resolve_object_sprite_id(obj, secret_cats, sc_name, sc_path.name)
+                sid = resolve_object_sprite_id(
+                    obj, secret_cats, sc_name, sc_path.name, registry=registry, sprites_path=spr_p
+                )
                 secret_usages.setdefault(sid, []).append(f"{sc_path.name}:obiekt_{oid}")
 
     # Check for conflicts
@@ -153,9 +221,12 @@ def determine_sprite_roles_from_scenes(
         for cid in sorted(conflicting_ids):
             e_str = ", ".join(enemy_usages[cid])
             s_str = ", ".join(secret_usages[cid])
-            conflict_details.append(f"- Sprite ID {cid} użyty jako Wróg ({e_str}) oraz jako Sekret ({s_str})")
-        raise SpriteValidationError(
-            "Błąd kompilacji: konflikt formatów sprite'ów! Ten sam sprite nie może być jednocześnie Wrogiem i Sekretem:\n"
+            cname = registry.id_to_name.get(cid, f"ID {cid}") if registry else f"ID {cid}"
+            conflict_details.append(
+                f"- Sprite '{cname}' (ID {cid}) użyty jako Wróg ({e_str}) oraz jako Sekret ({s_str})"
+            )
+        raise SpriteRoleConflictError(
+            "Błąd kompilacji: Konflikt ról (konflikt formatów sprite'ów)! Ten sam sprite nie może być jednocześnie Wrogiem i Sekretem:\n"
             + "\n".join(conflict_details)
         )
 
@@ -164,6 +235,33 @@ def determine_sprite_roles_from_scenes(
         roles[sid] = "player"
     for sid in secret_usages:
         roles[sid] = "missiles"
+
+    # Also register catalogue definitions as baseline roles if not yet used in any scene
+    for e in enemy_cats.values():
+        sid = None
+        if registry and isinstance(e, dict) and e.get("sprite"):
+            try:
+                sid, _ = registry.resolve_by_name(e["sprite"])
+            except Exception:
+                sid = None
+        if sid is None:
+            raw_s = e.get("sprite_id") if isinstance(e, dict) else getattr(e, "sprite_id", None)
+            sid = int(raw_s) if raw_s is not None else None
+        if sid is not None and sid not in roles:
+            roles[sid] = "player"
+
+    for s in secret_cats.values():
+        sid = None
+        if registry and isinstance(s, dict) and s.get("sprite"):
+            try:
+                sid, _ = registry.resolve_by_name(s["sprite"])
+            except Exception:
+                sid = None
+        if sid is None:
+            raw_s = s.get("sprite_id") if isinstance(s, dict) else getattr(s, "sprite_id", None)
+            sid = int(raw_s) if raw_s is not None else None
+        if sid is not None and sid not in roles:
+            roles[sid] = "missiles"
 
     return roles, enemy_usages, secret_usages
 

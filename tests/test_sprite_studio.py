@@ -293,3 +293,83 @@ def test_timeline_copy_paste_signals(qapp):
     widget.btn_paste.click()
     assert paste_calls == [1]
 
+
+def test_timeline_mirror_h_and_v_signals(qapp):
+    from sprite_studio.widgets.timeline import TimelineWidget
+    widget = TimelineWidget()
+    widget.set_frames(3, 1)
+
+    assert widget.btn_mirror_h.text() == "H Mirror"
+    assert widget.btn_mirror_v.text() == "V Mirror"
+
+    h_calls = []
+    v_calls = []
+    legacy_calls = []
+    widget.mirror_h_requested.connect(h_calls.append)
+    widget.mirror_v_requested.connect(v_calls.append)
+    widget.mirror_requested.connect(legacy_calls.append)
+
+    widget.btn_mirror_h.click()
+    assert h_calls == [1]
+    assert legacy_calls == [1]
+
+    widget.btn_mirror_v.click()
+    assert v_calls == [1]
+
+
+def test_frame_h_and_v_mirror_with_undo_redo(qapp):
+    window = MainWindow()
+    window._on_add_sprite()
+    spr = window.project.sprites[0]
+    window._on_sprite_selected(spr)
+
+    original_pixels = [
+        "11000000",
+        "11110000",
+        "00000000",
+        "00000011",
+    ]
+    spr.height = 4
+    spr.frames[0].pixels = list(original_pixels)
+
+    # Test H Mirror (horizontal pixel flip per row)
+    window._on_mirror_h_frame(0)
+    expected_h = [
+        "00000011",
+        "00001111",
+        "00000000",
+        "11000000",
+    ]
+    assert spr.frames[0].pixels == expected_h
+
+    # Undo restores original
+    window._undo()
+    assert spr.frames[0].pixels == original_pixels
+
+    # Redo re-applies H mirror
+    window._redo()
+    assert spr.frames[0].pixels == expected_h
+
+    # Reset back to original
+    window._undo()
+    assert spr.frames[0].pixels == original_pixels
+
+    # Test V Mirror (vertical row order flip)
+    window._on_mirror_v_frame(0)
+    expected_v = [
+        "00000011",
+        "00000000",
+        "11110000",
+        "11000000",
+    ]
+    assert spr.frames[0].pixels == expected_v
+
+    # Undo restores original
+    window._undo()
+    assert spr.frames[0].pixels == original_pixels
+
+    # Redo re-applies V mirror
+    window._redo()
+    assert spr.frames[0].pixels == expected_v
+
+

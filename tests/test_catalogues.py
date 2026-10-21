@@ -815,7 +815,9 @@ class TestSpriteStudioIntegration:
         assert 1 in cats.sprites
         spr = cats.sprites[1]
         assert spr.id == 1
-        assert "CD" in spr.description
+        assert "Azathoth" in spr.description
+        assert 6 in cats.sprites
+        assert "CD" in cats.sprites[6].description
 
     def test_catalogues_dialog_sprite_combo_unlock_and_mapping(self, qapp, tmp_path: Path):
         cats = ProjectCatalogues()
@@ -856,14 +858,15 @@ class TestSpriteStudioIntegration:
         assert dlg.enemy_sprite_combo.isEnabled()
         assert dlg.secret_sprite_combo.isEnabled()
 
-        # Select sprite 1 for Enemy 1
+        # Select sprite 1 (by numeric id) for Enemy 1
         idx = dlg.enemy_sprite_combo.findData(1)
         assert idx >= 0
         dlg.enemy_sprite_combo.setCurrentIndex(idx)
         dlg._on_save_enemy_clicked()
         assert cats.get_enemy(1).sprite_id == 1
+        assert cats.get_enemy(1).sprite is None
 
-        # Select the SAME sprite 1 for Secret (same sprite can be used in different definitions)
+        # Select the SAME sprite for Secret
         dlg.tabs.setCurrentIndex(1)
         dlg._on_secret_selected(0)
         idx_s = dlg.secret_sprite_combo.findData(1)
@@ -871,17 +874,25 @@ class TestSpriteStudioIntegration:
         dlg.secret_sprite_combo.setCurrentIndex(idx_s)
         dlg._on_save_secret_clicked()
         assert cats.get_secret(1).sprite_id == 1
+        assert cats.get_secret(1).sprite is None
 
     def test_scene_object_effective_sprite_id(self):
         cats = ProjectCatalogues()
-        cats.add_enemy(EnemyDefinition(id=1, name="Spider", sprite_id=3))
+        cats.add_enemy(EnemyDefinition(id=1, name="Spider", sprite="SpiderSprite", sprite_id=3))
 
-        # Object inherits definition sprite_id
+        # Object inherits definition sprite_id and sprite name
         obj = SceneObjectElement(id=10, type=OBJECT_TYPE_ENEMY, definition_id=1, platform_id="plat_1", x=10)
         assert obj.sprite_id is None
+        assert obj.sprite is None
+        assert obj.get_effective_sprite(cats) == "SpiderSprite"
         assert obj.get_effective_sprite_id(cats) == 3
 
-        # Object with explicit sprite_id override
+        # Object with explicit sprite override
+        obj.sprite = "CustomSprite"
+        assert obj.get_effective_sprite(cats) == "CustomSprite"
+
+        # Object with explicit legacy sprite_id override
+        obj.sprite = None
         obj.sprite_id = 7
         assert obj.get_effective_sprite_id(cats) == 7
 

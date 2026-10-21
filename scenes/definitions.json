@@ -11,7 +11,7 @@
         0
       ],
       "atari_color": 66,
-      "sprite_id": 4
+      "sprite_id": 1
     },
     {
       "id": 2,
@@ -22,7 +22,8 @@
         0,
         255
       ],
-      "atari_color": 132
+      "atari_color": 132,
+      "sprite_id": 2
     },
     {
       "id": 3,
@@ -33,7 +34,8 @@
         170,
         0
       ],
-      "atari_color": 195
+      "atari_color": 195,
+      "sprite_id": 3
     },
     {
       "id": 4,
@@ -44,7 +46,8 @@
         170,
         0
       ],
-      "atari_color": 252
+      "atari_color": 252,
+      "sprite_id": 4
     },
     {
       "id": 5,
@@ -55,7 +58,8 @@
         255,
         0
       ],
-      "atari_color": 254
+      "atari_color": 254,
+      "sprite_id": 5
     }
   ],
   "secrets": [
@@ -69,11 +73,11 @@
         0
       ],
       "atari_color": 26,
-      "sprite_id": 3
+      "sprite_id": 8
     },
     {
       "id": 2,
-      "name": "Ladder",
+      "name": "Skull",
       "blink": true,
       "rgb_color": [
         255,
@@ -81,8 +85,32 @@
         255
       ],
       "atari_color": 72,
-      "sprite_id": 2,
-      "dependency": 1
+      "dependency": 1,
+      "sprite_id": 7
+    },
+    {
+      "id": 3,
+      "name": "CD",
+      "blink": false,
+      "rgb_color": [
+        0,
+        255,
+        255
+      ],
+      "atari_color": 150,
+      "sprite_id": 6
+    },
+    {
+      "id": 4,
+      "name": "Mjolnir",
+      "blink": false,
+      "rgb_color": [
+        255,
+        255,
+        255
+      ],
+      "atari_color": 14,
+      "sprite_id": 9
     }
   ],
   "platform_profiles": [

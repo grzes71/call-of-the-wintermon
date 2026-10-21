@@ -158,19 +158,46 @@ def parse_sprites_json(
         roles, e_usages, s_usages = determine_sprite_roles_from_scenes(
             manifest_path=scenes_manifest_path,
             definitions_path=definitions_path,
+            sprites_path=json_path,
         )
         sprite_roles = roles
     elif definitions_path and definitions_path.is_file():
         try:
+            try:
+                from scripts.sprite_links import SpriteRegistry
+            except ImportError:
+                from sprite_links import SpriteRegistry
+            reg = None
+            if json_path.is_file():
+                try:
+                    reg = SpriteRegistry(json_path)
+                except Exception:
+                    reg = None
+
             defs = json.loads(definitions_path.read_text(encoding="utf-8"))
             for enemy in defs.get("enemies", []):
-                sid = enemy.get("sprite_id")
+                sid = None
+                if reg and enemy.get("sprite"):
+                    try:
+                        sid, _ = reg.resolve_by_name(enemy["sprite"])
+                    except Exception:
+                        sid = None
+                if sid is None and enemy.get("sprite_id") is not None:
+                    sid = int(enemy["sprite_id"])
                 if sid is not None:
-                    sprite_roles[int(sid)] = "player"
+                    sprite_roles[sid] = "player"
+
             for secret in defs.get("secrets", []):
-                sid = secret.get("sprite_id")
+                sid = None
+                if reg and secret.get("sprite"):
+                    try:
+                        sid, _ = reg.resolve_by_name(secret["sprite"])
+                    except Exception:
+                        sid = None
+                if sid is None and secret.get("sprite_id") is not None:
+                    sid = int(secret["sprite_id"])
                 if sid is not None:
-                    sprite_roles[int(sid)] = "missiles"
+                    sprite_roles[sid] = "missiles"
         except Exception as exc:
             print(f"Warning: Failed to read definitions for sprite packing mode: {exc}", file=sys.stderr)
 

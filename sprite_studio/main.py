@@ -82,7 +82,9 @@ class MainWindow(QMainWindow):
         self.timeline.reorder_requested.connect(self._on_reorder_frame)
         self.timeline.copy_requested.connect(self._on_copy_frame)
         self.timeline.paste_requested.connect(self._on_paste_frame)
-        self.timeline.mirror_requested.connect(self._on_mirror_frame)
+        self.timeline.mirror_requested.connect(self._on_mirror_h_frame)
+        self.timeline.mirror_h_requested.connect(self._on_mirror_h_frame)
+        self.timeline.mirror_v_requested.connect(self._on_mirror_v_frame)
         self.timeline.inverse_requested.connect(self._on_inverse_frame)
         self.timeline.clear_requested.connect(self._on_clear_frame)
         self.timeline.shift_requested.connect(self._on_shift_frame)
@@ -168,9 +170,13 @@ class MainWindow(QMainWindow):
         act_clear.triggered.connect(lambda: self._on_clear_frame(self.current_frame_idx))
         edit_menu.addAction(act_clear)
         
-        act_mirror = QAction("Mirror Frame", self)
-        act_mirror.triggered.connect(lambda: self._on_mirror_frame(self.current_frame_idx))
-        edit_menu.addAction(act_mirror)
+        act_mirror_h = QAction("H Mirror Frame", self)
+        act_mirror_h.triggered.connect(lambda: self._on_mirror_h_frame(self.current_frame_idx))
+        edit_menu.addAction(act_mirror_h)
+
+        act_mirror_v = QAction("V Mirror Frame", self)
+        act_mirror_v.triggered.connect(lambda: self._on_mirror_v_frame(self.current_frame_idx))
+        edit_menu.addAction(act_mirror_v)
 
     # --- Commands Framework ---
     
@@ -466,8 +472,8 @@ class MainWindow(QMainWindow):
             f.pixels = list(old_pixels)
         self._execute_cmd("Paste Frame", do, undo, self._refresh_frame)
 
-    def _on_mirror_frame(self, idx):
-        if not self.current_sprite: return
+    def _on_mirror_h_frame(self, idx):
+        if not self.current_sprite or idx < 0 or idx >= len(self.current_sprite.frames): return
         spr = self.current_sprite
         f = spr.frames[idx]
         old_pixels = list(f.pixels)
@@ -476,7 +482,22 @@ class MainWindow(QMainWindow):
             f.pixels = mirrored
         def undo():
             f.pixels = old_pixels
-        self._execute_cmd("Mirror Frame", do, undo, self._refresh_frame)
+        self._execute_cmd("H Mirror Frame", do, undo, self._refresh_frame)
+
+    def _on_mirror_frame(self, idx):
+        self._on_mirror_h_frame(idx)
+
+    def _on_mirror_v_frame(self, idx):
+        if not self.current_sprite or idx < 0 or idx >= len(self.current_sprite.frames): return
+        spr = self.current_sprite
+        f = spr.frames[idx]
+        old_pixels = list(f.pixels)
+        mirrored = list(reversed(old_pixels))
+        def do():
+            f.pixels = mirrored
+        def undo():
+            f.pixels = old_pixels
+        self._execute_cmd("V Mirror Frame", do, undo, self._refresh_frame)
 
     def _on_inverse_frame(self, idx):
         if not self.current_sprite or idx < 0 or idx >= len(self.current_sprite.frames): return
