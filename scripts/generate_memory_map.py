@@ -103,11 +103,13 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x6100:
         return "Unified DLI Engine & Buffers", "CODE", COLORS["CODE"], "Double-buffered DLI tables and 3-phase DLI interrupt handler"
     if start == 0x6800:
-        return "Player-Missile & Audio", "PMG", COLORS["PMG"], "2 KB PMG buffer ($6800) + Audio Player & Title Music ($7000)"
+        return "Render Lookup Tables", "CODE", COLORS["CODE"], "2bpp horizontal flip table + Playfield row offsets (MEM-006)"
+    if start == 0x6B00:
+        return "Player-Missile & Audio", "PMG", COLORS["PMG"], "1.25 KB active PMG buffer ($6B00) + Audio Player & Music ($7000)"
     if start == 0x7000:
         return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], "POKEY Player engine & Title track"
     if start in (0x79D0, 0x7A00):
-        return "Render Tables & Engine", "CODE", COLORS["CODE"], "2bpp horizontal flip table + Playfield blitter engine"
+        return "Playfield Blitter & Sprites", "CODE", COLORS["CODE"], "Playfield blitter engine & sprite bitmaps"
     if start == 0x8000:
         return "ANTIC Mode E Tilesets", "BITMAPS", COLORS["BITMAPS"], "Bitmapped sheets: Castles, Depths, Hell, Trees (16.2 KB)"
 
@@ -120,6 +122,8 @@ def describe_free_gap(start: int, end: int, size: int) -> str:
         return "Low RAM gap before Gameplay VRAM ($3000) — vacated by scenes data"
     if end == 0x5FFF:
         return "Free expansion headroom in $5000 block before Title DLIST ($6000)"
+    if end == 0x6AFF or start == 0x69C0:
+        return "Free headroom in PMG block ($6800-$6AFF) before PMG missiles ($6B00)"
     if end == 0x7FFF:
         return "Free headroom in $7000 block before ANTIC Mode E Tilesets ($8000)"
     if end == 0x23FF:

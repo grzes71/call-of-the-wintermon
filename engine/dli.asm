@@ -117,18 +117,15 @@ dli_table_ptrs_hi
     sta dli_swap_requested
     sta dli_pas_idx
 
-    ; 2. Clear entire PMG memory buffer ($6800-$6FFF, 2,048 bytes)
+    ; 2. Clear active PMG memory buffer ($6B00-$6FFF, 1,280 bytes: Missiles + P0..P3)
     lda #0
     tax
 @clr_pmg
-    sta PMG_ADDR + $0000,x
-    sta PMG_ADDR + $0100,x
-    sta PMG_ADDR + $0200,x
-    sta PMG_ADDR + $0300,x
-    sta PMG_ADDR + $0400,x
-    sta PMG_ADDR + $0500,x
-    sta PMG_ADDR + $0600,x
-    sta PMG_ADDR + $0700,x
+    sta PMG_MISSILES,x
+    sta PMG_PLAYER0,x
+    sta PMG_PLAYER1,x
+    sta PMG_PLAYER2,x
+    sta PMG_PLAYER3,x
     inx
     bne @clr_pmg
 

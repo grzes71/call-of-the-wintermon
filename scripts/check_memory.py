@@ -89,11 +89,13 @@ def check_memory(xex_path: Path) -> int:
         elif start == 0x6710:
             seg_type = "Game Over / Victory State Handler"
         elif start == 0x6800:
-            seg_type = "Player-Missile Graphics (PMG 2 KB) + Audio"
+            seg_type = "Render Lookup Tables (Flip & Row Pointers)"
+        elif start == 0x6B00:
+            seg_type = "Active PMG (1.25 KB) + Audio Player & Music"
         elif start == 0x7000:
             seg_type = "Audio Player & Music Buffers"
         elif start in (0x79D0, 0x7A00):
-            seg_type = "Render Lookup Tables (Flip & Row Pointers)"
+            seg_type = "Playfield Blitter Engine & Sprites Data"
         elif start == 0x8000:
             seg_type = "ANTIC Mode E Tileset Bitmaps"
 
@@ -129,15 +131,15 @@ def check_memory(xex_path: Path) -> int:
                 f"Segment ${start:04X}-${end:04X} overlaps Hardware Registers ($D000-$DFFF)!"
             )
 
-    # Dedicated check for Render Tables / Sprites segment ($7A00-$7FFF) headroom before $8000
+    # Dedicated check for Render Code / Sprites segment ($7A00-$7FFF) headroom before $8000
     # Cost of a typical sprite: 20 rows/frame * 2 frames + 2 frames * 2 bytes pointer = 44 bytes (or 48 bytes with SoA tables)
     TYPICAL_SPRITE_COST = 44
-    render_tables_seg = next((s for s in segments if s[0] == 0x7A00 or s[0] == 0x79D0), None)
-    if render_tables_seg:
-        r_start, r_end, r_size = render_tables_seg
+    render_code_seg = next((s for s in segments if s[0] == 0x7A00 or s[0] == 0x79D0), None)
+    if render_code_seg:
+        r_start, r_end, r_size = render_code_seg
         r_headroom = 0x8000 - (r_end + 1)
         print(
-            f"Sprite/Render Tables Segment ($7A00-$7FFF) Headroom before $8000: "
+            f"Sprite/Render Engine Segment ($7A00-$7FFF) Headroom before $8000: "
             f"{r_headroom} bytes (Typical sprite cost: {TYPICAL_SPRITE_COST} B)"
         )
         if r_headroom < TYPICAL_SPRITE_COST:

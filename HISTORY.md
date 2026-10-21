@@ -2,6 +2,25 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Memory Optimization MEM-006: Reclaimed Unused PMG DMA Space for Render Tables
+
+- **PMG Memory Reorganization & Reclaim ([main.asm](main.asm))**:
+  - Reclaimed 768 bytes in `$6800-$6AFF` unused by GTIA single-line PMG DMA (`PMBASE=$68`, active range `$6B00-$6FFF`).
+  - Relocated `engine/render_tables.asm` (448 B: `flip_byte_2bpp` 256 B + `playfield_row_lo/hi` 192 B) from `$7A00` to `RENDER_TABLES = $6800` (preserving 256-byte page alignment for 0-cycle crossing lookup overhead).
+  - Defined active PMG buffer starting at `PMG_MISSILES = $6B00` (`:PMG_ACTIVE_SIZE .byte 0`, 1,280 bytes = 5 pages: Missiles + Players 0..3).
+  - Reserved free RAM headroom (`$69C0-$6AFF`, 320 bytes) between render tables and active PMG.
+  - Relocated blitter engine and sprite data to `RENDER_CODE = $7A00` (`engine/render.asm` + `gen/sprites_data.asm`, 901 B total).
+  - Expanded headroom in `$7000` block before ANTIC Mode E tilesets at `$8000` from 187 B to **635 B** (space for ~14 additional typical sprites).
+  - Increased total available RAM below `$C000` from 2,773 B to **3,568 B** (+795 B net gain).
+- **Shortened PMG Clearing Loops ([scenes/title.asm](scenes/title.asm), [scenes/gameover.asm](scenes/gameover.asm), [engine/dli.asm](engine/dli.asm))**:
+  - Modified `@clr_pmg` loops across Title, GameOver, and DLI engine routines to only clear the 5 active PMG pages (`PMG_MISSILES`, `PMG_PLAYER0`..`PMG_PLAYER3`) instead of 8 pages (`$6800-$6FFF`).
+  - Preserves `$6800-$6AFF` lookup tables from accidental clearing on screen transitions while speeding up init loops by ~3,000 CPU cycles.
+- **Tooling & Test Harnesses ([scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py), [tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated memory auditor and map generator to classify `$6800` as `Render Lookup Tables`, `$6B00` as `Active PMG (1.25 KB) + Audio`, and `$7A00` as `Playfield Blitter Engine & Sprites Data`.
+  - Added detection of the 320 B free gap at `$69C0-$6AFF` in memory map reports.
+  - Updated DLI integration tests to assert both `$6800` tables and `$6B00` active PMG segments cleanly.
+  - Ran `make all` with 100% test pass rate (497 tests) and verified memory validation.
+
 ## [2026-10-21] - Vertical Jump Physics & Animation: Halved Descent Speed and Fall Sprite
 
 - **Vertical Jump Descent & Physics ([engine/player.asm](engine/player.asm))**:

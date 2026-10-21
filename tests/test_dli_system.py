@@ -145,10 +145,14 @@ def test_dli_memory_bounds_and_zeropage_allocations():
     assert start == 0x6100
     assert end < 0x6800, f"DLI segment ($6100-${end:04X}) must end strictly below PMG at $6800"
 
-    # Verify PMG segment at $6800 exists and starts strictly after DLI segment
-    pmg_seg = next((s for s in segments if s[0] == 0x6800), None)
-    assert pmg_seg is not None, "PMG segment starting at $6800 not found"
-    assert pmg_seg[0] > end, "PMG segment must not overlap DLI segment"
+    # Verify segment at $6800 exists and starts strictly after DLI segment
+    seg_6800 = next((s for s in segments if s[0] == 0x6800), None)
+    assert seg_6800 is not None, "Segment starting at $6800 not found"
+    assert seg_6800[0] > end, "Segment at $6800 must not overlap DLI segment"
+
+    # Verify active PMG segment at $6B00 exists
+    pmg_seg = next((s for s in segments if s[0] == 0x6B00), None)
+    assert pmg_seg is not None, "Active PMG segment starting at $6B00 not found"
 
     # Verify Zero Page variables
     mem, labels = load_xex_and_symbols()

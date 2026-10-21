@@ -21,9 +21,10 @@ SCENES_DATA = $5000     ; Scene definitions, platforms, objects & DLI data SoA t
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_ADDR = $6710   ; Game Over / Victory screen handler (~157 bytes: $6710-$67AD)
-PMG_ADDR    = $6800     ; Player-Missile Graphics: 2 KB aligned (2,048 bytes: $6800-$6FFF)
+RENDER_TABLES = $6800   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) — reclaims $6800-$6AFF (MEM-006)
+PMG_ADDR    = $6800     ; Player-Missile Graphics base: 2 KB aligned (PMBASE=$68, active memory $6B00-$6FFF)
 AUDIO_ADDR  = $7000     ; Audio Player & Music Buffers
-RENDER_TABLES = $7A00   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) + blitter
+RENDER_CODE = $7A00     ; Playfield Blitter Engine & Sprites Data (headroom before $8000 expanded)
 TILES_ADDR  = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
 
 ; --- Gameplay & Title Buffer Equates ---
@@ -32,8 +33,9 @@ GAME_VRAM_LINES       = 96
 GAME_VRAM_PITCH       = 40
 TITLE_VS_BUF_LEN      = 120   ; 3 lines * 40 bytes for vertical scroll window (L0, L1, L2)
 
-; --- PMG Equates (2 KB Single-Line Resolution at $6800, PMBASE=$68) ---
-PMG_SIZE        = 2048
+; --- PMG Equates (Single-Line Resolution at PMBASE=$68, active memory $6B00-$6FFF) ---
+PMG_ACTIVE_SIZE = 1280  ; 5 pages: Missiles ($6B00) + P0..P3 ($6C00..$6FFF)
+PMG_SIZE        = 1280  ; Alias for active PMG size
 PMBASE_PAGE     = >PMG_ADDR
 PMG_MISSILES    = PMG_ADDR + $0300
 PMG_PLAYER0     = PMG_ADDR + $0400
@@ -449,18 +451,25 @@ title_dl_vs_addr
     icl 'scenes/gameover.asm'
 
 ; ==============================================================================
-; PLAYER-MISSILE GRAPHICS (PMG) MEMORY SEGMENT ($6800)
-; 2 KB boundary aligned ($6800-$6FFF, 2,048 bytes, PMBASE=$68)
-; Supports single-line resolution (full 2 KB) and double-line resolution (1 KB)
+; RENDER LOOKUP TABLES SEGMENT ($6800)
+; Reclaims $6800-$6AFF (768 B) unused by GTIA single-line PMG DMA (MEM-006)
+; Page-aligned at $6800 for 0-cycle crossing overhead on flip_byte_2bpp
+; ==============================================================================
+    org RENDER_TABLES
+    icl 'engine/render_tables.asm'
+
+; ==============================================================================
+; PLAYER-MISSILE GRAPHICS (PMG) ACTIVE MEMORY SEGMENT ($6B00)
+; GTIA single-line resolution DMA (PMBASE=$68) only accesses $6B00-$6FFF (1,280 B):
 ; - Missiles: $6B00
 ; - Player 0: $6C00
 ; - Player 1: $6D00
 ; - Player 2: $6E00
 ; - Player 3: $6F00
 ; ==============================================================================
-    org PMG_ADDR
+    org PMG_MISSILES
 pmg_memory
-    :PMG_SIZE .byte 0
+    :PMG_ACTIVE_SIZE .byte 0
 
 ; ==============================================================================
 ; AUDIO SYSTEM SEGMENT ($7000)
@@ -471,10 +480,10 @@ pmg_memory
     icl 'gen/title_music.asm'
 
 ; ==============================================================================
-; RENDER LOOKUP TABLES SEGMENT ($7A00)
+; RENDER CODE & SPRITES DATA SEGMENT ($7A00)
+; Playfield blitter engine and sprite bitmaps (room expanded before $8000)
 ; ==============================================================================
-    org RENDER_TABLES
-    icl 'engine/render_tables.asm'
+    org RENDER_CODE
     icl 'engine/render.asm'
     icl 'gen/sprites_data.asm'
 
