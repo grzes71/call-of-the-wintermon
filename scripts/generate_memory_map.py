@@ -95,11 +95,11 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x3F00:
         return "Gameplay Display List", "DLIST", COLORS["DLIST"], "96-line ANTIC Mode D Display List + Title Card DLIST"
     if start == 0x4000:
-        return "Title Scroll VRAM & Text", "GRAPHICS", COLORS["GRAPHICS"], "Scroll VRAM line ($4000) + Marquee text ($4030)"
+        return "Title VScroll VRAM & Text", "GRAPHICS", COLORS["GRAPHICS"], "Vertical scroll VRAM ($4000) + Centered text lines ($4078)"
     if start in (0x5000, 0x2C30, 0x2D00):
         return "Scene Data, Title & Intro Music", "METADATA", COLORS["METADATA"], "Scene SoA tables ($5000), Title logic ($55BE), Intro music ($5758)"
     if start == 0x6000:
-        return "Title Display List", "DLIST", COLORS["DLIST"], "Procedural 2bpp Title Display List with Mode 2 Scroller"
+        return "Title Display List", "DLIST", COLORS["DLIST"], "Procedural 2bpp Title Display List with Mode 2 VScroller"
     if start == 0x6100:
         return "Unified DLI Engine & Buffers", "CODE", COLORS["CODE"], "Double-buffered DLI tables and 3-phase DLI interrupt handler"
     if start == 0x6800:

@@ -30,7 +30,7 @@ TILES_ADDR  = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6
 GAME_VRAM_SIZE        = 3840  ; 40 bytes/line * 96 lines
 GAME_VRAM_LINES       = 96
 GAME_VRAM_PITCH       = 40
-TITLE_SCROLL_VRAM_LEN = 48    ; ANTIC normal width fetches 48 bytes with DL_HSCROL
+TITLE_VS_BUF_LEN      = 120   ; 3 lines * 40 bytes for vertical scroll window (L0, L1, L2)
 
 ; --- PMG Equates (2 KB Single-Line Resolution at $6800, PMBASE=$68) ---
 PMG_SIZE        = 2048
@@ -279,17 +279,17 @@ status_line_vram
     :40 .byte 0
 
 ; ==============================================================================
-; TITLE SCROLLER DATA SEGMENT ($4000)
-; 48-byte ANTIC Mode 2 scroll VRAM buffer ($4000-$402F)
-; and marquee scroll text data ($4030-$40C6).
+; TITLE VERTICAL SCROLLER DATA SEGMENT ($4000)
+; 120-byte ANTIC Mode 2 vertical scroll buffer ($4000-$4077: 3x 40B L0, L1, L2)
+; and centered text lines ($4078-...).
 ; Strictly within $4000-$4FFF (never crosses 4 KB boundary)
 ; ==============================================================================
     org TITLE_VRAM
-title_scroll_vram
-    :TITLE_SCROLL_VRAM_LEN .byte 0
+title_vs_buf
+    :TITLE_VS_BUF_LEN .byte 0
 
-; Compiled marquee scroll text data (internal screen codes)
-    icl 'gen/title_scroll_text.asm'
+; Compiled vertical scroll text lines (internal screen codes, 40 bytes each)
+    icl 'gen/title_vscroll_data.asm'
 
 ; Title screen state handler & 2bpp text generator
     icl 'scenes/title.asm'
@@ -317,11 +317,24 @@ title_scroll_vram
 ;   - WINTERMOON: ANTIC Mode D, 16 lines (32 scanlines, 8 rows duplicated via 16x LMS)
 ;   - 110 blank scanlines padding (13x DL_BLANK8 + 1x DL_BLANK6)
 ;   - 3 blank scanlines DLI prolog (2x DL_BLANK1 + 1x DL_BLANK1 with DLI)
-;   - 1 line ANTIC Mode 2 scroller with LMS & HSCROL (8 scanlines)
+; ==============================================================================
+; PROCEDURAL TITLE SCREEN DISPLAY LIST ($6000)
+; Structure:
+;   - 24 blank scanlines top margin (3x DL_BLANK8, third has DL_DLI)
+;   - 8 scanlines CALL in ANTIC Mode E with LMS
+;   - 8 blank scanlines spacing with DL_DLI
+;   - 16 scanlines OF THE in ANTIC Mode D with LMS
+;   - 8 blank scanlines spacing with DL_DLI
+;   - 32 scanlines WINTERMOON in ANTIC Mode D (8 rows x 2 lines each with LMS)
+;   - 8 blank scanlines spacing with DL_DLI (sets logo colors)
+;   - 64 scanlines ATARI LOGO in ANTIC Mode D (1 LMS + 31 successive Mode D lines)
+;   - 8 blank scanlines margin (DL_BLANK8)
+;   - 3 blank scanlines scroll prolog (3x DL_BLANK1, second has DL_DLI)
+;   - 2 lines ANTIC Mode 2 vertical scroll window with LMS & VSCROL (9 scanlines)
 ;   - Tail: 12 blank scanlines (DL_BLANK1 + DL_BLANK8 + DL_BLANK3)
 ;   - JVB to dlist_title
-; Total height = 24 + 8 + 8 + 16 + 8 + 32 + 110 + 3 + 8 + 12 = 229 scanlines
-; Total bytes = 99 bytes (strictly within $6000-$6062, max $60FF)
+; Total height = 24 + 8 + 8 + 16 + 8 + 32 + 8 + 64 + 8 + 3 + 9 + 12 = 200 scanlines
+; Total bytes = 122 bytes (strictly within $6000-$6079, max $60FF)
 ; ==============================================================================
     org DLIST_ADDR
 dlist_title
@@ -384,18 +397,29 @@ dlist_title
     .byte DL_MODE_D | DL_LMS
     .word title_text_wintermoon + 280
 
-    ; Padding to maintain scroll line position: 110 scanlines (13*8 + 6)
-    :13 .byte DL_BLANK8
-    .byte DL_BLANK6
+    ; Spacing: 8 scanlines (DLI triggers on last scanline before LOGO, no WSYNC needed)
+    .byte DL_BLANK8 | DL_DLI
+
+    ; ATARI LOGO: ANTIC Mode D (2 scanlines/line * 32 lines = 64 scanlines)
+    ; 1 LMS instruction + 31 successive Mode D lines (ANTIC automatically advances address)
+    .byte DL_MODE_D | DL_LMS
+    .word title_text_logo
+    :31 .byte DL_MODE_D
+
+    ; Spacing margin between logo and scroll: 8 scanlines
+    .byte DL_BLANK8
 
     ; DLI Prolog: 3 scanlines
     .byte DL_BLANK1
     .byte DL_BLANK1 | DL_DLI
     .byte DL_BLANK1
 
-    ; ANTIC Mode 2 scroller line (8 scanlines)
-    .byte DL_MODE_2 | DL_LMS | DL_HSCROL
-    .word title_scroll_vram
+    ; ANTIC Mode 2 vertical scroll window (2 lines with VSCROL = 9 scanlines)
+title_dl_vs_lms
+    .byte DL_MODE_2 | DL_LMS | DL_VSCROL
+title_dl_vs_addr
+    .word title_vs_buf
+    .byte DL_MODE_2 | DL_VSCROL
 
     ; Tail (12 scanlines) copied directly from original display list
     .byte DL_BLANK1

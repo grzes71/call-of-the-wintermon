@@ -16,9 +16,8 @@ RM               := $(PYTHON) -c "import os, sys, shutil; [shutil.rmtree(a, igno
 TARGET           := call_of_the_wintermon.xex
 GEN_DIR          := gen
 
-# Assets sources and artifacts
-TITLE_SCROLL_SRC := scroll/title.txt
-TITLE_SCROLL_ASM := $(GEN_DIR)/title_scroll_text.asm
+TITLE_VSCROLL_SRC := scroll/title.txt
+TITLE_VSCROLL_ASM := $(GEN_DIR)/title_vscroll_data.asm
 
 TITLE_TXT_SRC    := texts/title.txt
 TITLE_TXT_ASM    := $(GEN_DIR)/title_text_data.asm
@@ -66,11 +65,11 @@ all: assets tiles music data xex tests check_memory
 # ------------------------------------------------------------------------------
 # 1. Assets conversion
 # ------------------------------------------------------------------------------
-assets: $(TITLE_SCROLL_ASM) $(TITLE_TXT_ASM) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
+assets: $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(INTRO_TXT_BIN) $(TILES_ARTIFACTS)
 
-$(TITLE_SCROLL_ASM): $(TITLE_SCROLL_SRC) scripts/compile_scroll_text.py
+$(TITLE_VSCROLL_ASM): $(TITLE_VSCROLL_SRC) scripts/compile_title_vscroll.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_scroll_text.py -i $(TITLE_SCROLL_SRC) -o $(TITLE_SCROLL_ASM)
+	$(PYTHON) scripts/compile_title_vscroll.py -i $(TITLE_VSCROLL_SRC) -o $(TITLE_VSCROLL_ASM)
 
 $(TITLE_TXT_ASM): $(TITLE_TXT_SRC) scripts/compile_title_text.py
 	@$(MKDIR) $(GEN_DIR)
@@ -124,7 +123,7 @@ $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFI
 # ------------------------------------------------------------------------------
 xex: $(TARGET)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_SCROLL_ASM) $(TITLE_TXT_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
+$(TARGET): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
 	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
 

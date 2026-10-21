@@ -22,6 +22,7 @@ DL_MODE_D = 0x0D
 DL_MODE_E = 0x0E
 
 DL_HSCROL = 0x10
+DL_VSCROL = 0x20
 DL_LMS = 0x40
 DL_DLI = 0x80
 DL_JVB = 0x41
@@ -353,13 +354,13 @@ def test_text_centering_and_row_margins(emu_env):
 
 
 def test_clearing_bounds_and_sentinels(emu_env):
-    """Verify that title_init clears exactly 960 bytes ($3000-$33BF) and does not touch $33C0+."""
+    """Verify that title_init clears exactly 2,240 bytes ($3000-$38BF) and does not touch $38C0+."""
     mpu, labels = emu_env
 
     # Fill sentinels
     mpu.memory[0x2FFE] = 0xAA
     mpu.memory[0x2FFF] = 0x55
-    for addr in range(0x33C0, 0x3400):
+    for addr in range(0x38C0, 0x3900):
         mpu.memory[addr] = 0xEE
 
     run_subroutine(mpu, labels["TITLE_INIT"])
@@ -368,9 +369,64 @@ def test_clearing_bounds_and_sentinels(emu_env):
     assert mpu.memory[0x2FFE] == 0xAA
     assert mpu.memory[0x2FFF] == 0x55
 
-    # Sentinels at $33C0 and beyond must remain completely untouched
-    for addr in range(0x33C0, 0x3400):
+    # Sentinels at $38C0 and beyond must remain completely untouched
+    for addr in range(0x38C0, 0x3900):
         assert mpu.memory[addr] == 0xEE, f"Memory corrupted at 0x{addr:04X}"
+
+
+def test_logo_codes_and_generation(emu_env):
+    """Verify Atari logo codes table, reference rendering of 1280B buffer, centering, and margins."""
+    mpu, labels = emu_env
+
+    # Hardcoded logo codes from specification
+    logo_lines = [
+        [0, 125, 126, 127, 0],
+        [0, 124, 80, 96, 0],
+        [75, 76, 77, 78, 79],
+        [91, 92, 93, 94, 95],
+    ]
+
+    # 1. Verify title_logo_codes table in memory
+    codes_addr = labels["TITLE_LOGO_CODES"]
+    expected_flat = [c for line in logo_lines for c in line]
+    mem_codes = [mpu.memory[codes_addr + i] for i in range(20)]
+    assert mem_codes == expected_flat, "title_logo_codes memory table does not match specification"
+
+    # 2. Run title_init to populate buffers
+    run_subroutine(mpu, labels["TITLE_INIT"])
+
+    font_file = Path("fonts/font.fnt")
+    font_bytes = font_file.read_bytes()
+
+    logo_base = labels["TITLE_TEXT_LOGO"]
+    assert logo_base == labels["GAME_VRAM"] + 0x03C0
+
+    # 3. Verify byte-by-byte match with independent Python reference
+    for k, line_codes in enumerate(logo_lines):
+        line_ref = render_text_reference(font_bytes, line_codes, x_offset=15)
+        actual_line = bytes(mpu.memory[logo_base + k * 320 : logo_base + (k + 1) * 320])
+        assert actual_line == bytes(line_ref), f"Logo line {k} does not match reference model"
+
+    # 4. Centering & margin check for all 32 display rows
+    for r in range(32):
+        row_base = logo_base + r * 40
+        # Left margin (15 bytes)
+        assert all(mpu.memory[row_base + i] == 0x00 for i in range(15)), f"Row {r} left margin non-zero"
+        # Right margin (15 bytes: cols 25..39)
+        assert all(mpu.memory[row_base + i] == 0x00 for i in range(25, 40)), f"Row {r} right margin non-zero"
+
+    # 5. Space character (code 0) zero verification in lines 0 and 1
+    # Line 0: chars 0 and 4 are spaces -> cols 15..16 and cols 23..24 must be 0x00
+    for r in range(8):
+        row_base = logo_base + r * 40
+        assert mpu.memory[row_base + 15] == 0x00 and mpu.memory[row_base + 16] == 0x00
+        assert mpu.memory[row_base + 23] == 0x00 and mpu.memory[row_base + 24] == 0x00
+
+    # Line 1: chars 0 and 4 are spaces -> cols 15..16 and cols 23..24 must be 0x00
+    for r in range(8, 16):
+        row_base = logo_base + r * 40
+        assert mpu.memory[row_base + 15] == 0x00 and mpu.memory[row_base + 16] == 0x00
+        assert mpu.memory[row_base + 23] == 0x00 and mpu.memory[row_base + 24] == 0x00
 
 
 def test_generator_validation_rejects_invalid_parameters(emu_env):
@@ -442,7 +498,7 @@ def test_generator_validation_accepts_valid_boundary_parameters(emu_env):
 
 
 def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
-    """Verify exact sequence of instructions, LMS addresses, scanline height (229) and size (99B)."""
+    """Verify exact sequence of instructions, LMS addresses, scanline height (199) and size (122B)."""
     mpu, labels = emu_env
 
     dlist_addr = labels["DLIST_TITLE"]
@@ -514,19 +570,32 @@ def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
 
     assert total_scanlines == 96, f"Text block total scanlines must be 96, got {total_scanlines}"
 
-    # 7. Padding: 13x DL_BLANK8 + 1x DL_BLANK6 = 110 scanlines
-    for _ in range(13):
-        assert mem[pc] == DL_BLANK8
-        pc += 1
-        total_scanlines += 8
-
-    assert mem[pc] == DL_BLANK6
+    # 7. Spacing before Logo: 1x (DL_BLANK8 | DL_DLI) = 8 scanlines
+    assert mem[pc] == (DL_BLANK8 | DL_DLI)
     pc += 1
-    total_scanlines += 6
+    total_scanlines += 8
 
-    assert total_scanlines == 206, f"Scanlines before prolog must be 206, got {total_scanlines}"
+    # 8. Logo: Mode D with LMS (title_text_logo), then 31x Mode D = 64 scanlines
+    assert mem[pc] == (DL_MODE_D | DL_LMS)
+    pc += 1
+    logo_addr = mem[pc] | (mem[pc + 1] << 8)
+    pc += 2
+    assert logo_addr == labels["TITLE_TEXT_LOGO"]
+    total_scanlines += 2
 
-    # 8. DLI Prolog: 3 blank scanlines
+    for _ in range(31):
+        assert mem[pc] == DL_MODE_D
+        pc += 1
+        total_scanlines += 2
+
+    # 9. Spacing margin between logo and scroll: 1x DL_BLANK8 = 8 scanlines
+    assert mem[pc] == DL_BLANK8
+    pc += 1
+    total_scanlines += 8
+
+    assert total_scanlines == 176, f"Scanlines before scroll prolog must be 176, got {total_scanlines}"
+
+    # 10. DLI Prolog: 3 blank scanlines
     assert mem[pc] == DL_BLANK1
     pc += 1
     total_scanlines += 1
@@ -539,17 +608,19 @@ def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
     pc += 1
     total_scanlines += 1
 
-    assert total_scanlines == 209, f"Mode 2 must start at scanline 209, got {total_scanlines}"
+    assert total_scanlines == 179, f"Mode 2 must start at scanline 179, got {total_scanlines}"
 
-    # 9. Scroller line: Mode 2 with LMS & HSCROL = 8 scanlines
-    assert mem[pc] == (DL_MODE_2 | DL_LMS | DL_HSCROL)
+    # 11. Vertical scroll window: 2 lines Mode 2 with DL_VSCROL = 9 scanlines
+    assert mem[pc] == (DL_MODE_2 | DL_LMS | DL_VSCROL)
     pc += 1
-    scroller_vram = mem[pc] | (mem[pc + 1] << 8)
+    vs_addr = mem[pc] | (mem[pc + 1] << 8)
     pc += 2
-    assert scroller_vram == labels["TITLE_SCROLL_VRAM"]
-    total_scanlines += 8
+    assert vs_addr == labels["TITLE_VS_BUF"]
+    assert mem[pc] == (DL_MODE_2 | DL_VSCROL)
+    pc += 1
+    total_scanlines += 9
 
-    # 10. Tail (12 scanlines) copied directly from original DL
+    # 12. Tail (12 scanlines) copied directly from original DL
     assert mem[pc] == DL_BLANK1
     pc += 1
     total_scanlines += 1
@@ -562,7 +633,7 @@ def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
     pc += 1
     total_scanlines += 3
 
-    # 11. End of display list: JVB to dlist_title
+    # 13. End of display list: JVB to dlist_title
     assert mem[pc] == DL_JVB
     pc += 1
     jvb_target = mem[pc] | (mem[pc + 1] << 8)
@@ -570,14 +641,14 @@ def test_dlist_title_exact_instruction_sequence_and_height(emu_env):
     assert jvb_target == dlist_addr
 
     # Verifications
-    assert total_scanlines == 229, f"Total Display List scanlines must be 229, got {total_scanlines}"
+    assert total_scanlines == 200, f"Total Display List scanlines must be 200, got {total_scanlines}"
     dl_size = pc - dlist_addr
-    assert dl_size == 99, f"Display list size must be exactly 99 bytes, got {dl_size}"
+    assert dl_size == 122, f"Display list size must be exactly 122 bytes, got {dl_size}"
     assert pc <= labels["DLI_BUFFERS"], "Display list exceeds into DLI_BUFFERS segment"
 
 
-def test_dlist_title_exactly_four_dli_bits(emu_env):
-    """Verify that exactly 4 instructions in dlist_title have DL_DLI ($80) bit set."""
+def test_dlist_title_exactly_five_dli_bits(emu_env):
+    """Verify that exactly 5 instructions in dlist_title have DL_DLI ($80) bit set."""
     mpu, labels = emu_env
     dlist_addr = labels["DLIST_TITLE"]
     mem = mpu.memory
@@ -585,7 +656,7 @@ def test_dlist_title_exactly_four_dli_bits(emu_env):
     dli_offsets = []
     pc = dlist_addr
     # Parse instructions in display list
-    while pc < dlist_addr + 99:
+    while pc < dlist_addr + 121:
         inst = mem[pc]
         offset = pc - dlist_addr
         if inst & DL_DLI:
@@ -602,12 +673,13 @@ def test_dlist_title_exactly_four_dli_bits(emu_env):
             else:
                 pc += 1
 
-    assert len(dli_offsets) == 4, f"Expected exactly 4 DLI instructions in dlist_title, got {len(dli_offsets)}: {dli_offsets}"
+    assert len(dli_offsets) == 5, f"Expected exactly 5 DLI instructions in dlist_title, got {len(dli_offsets)}: {dli_offsets}"
     expected_dli = [
-        (2, DL_BLANK8 | DL_DLI),   # Blank line 3 before CALL
-        (13, DL_BLANK8 | DL_DLI),  # Spacing blank line before OF THE
-        (24, DL_BLANK8 | DL_DLI),  # Spacing blank line before WINTERMOON
-        (88, DL_BLANK1 | DL_DLI),  # Scroll prolog blank line
+        (2, DL_BLANK8 | DL_DLI),    # Blank line 3 before CALL
+        (13, DL_BLANK8 | DL_DLI),   # Spacing blank line before OF THE
+        (24, DL_BLANK8 | DL_DLI),   # Spacing blank line before WINTERMOON
+        (73, DL_BLANK8 | DL_DLI),   # Spacing blank line before LOGO
+        (110, DL_BLANK1 | DL_DLI),  # Scroll prolog blank line
     ]
     assert dli_offsets == expected_dli
 
@@ -653,13 +725,14 @@ def test_title_init_hardware_and_shadow_registers(emu_env):
     assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
     assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]
 
-    # Title row colors table (9 bytes in RAM, default values)
+    # Title row colors table (12 bytes in RAM, default values)
     table_addr = labels["TITLE_ROW_COLORS"]
-    table_colors = [mpu.memory[table_addr + i] for i in range(9)]
+    table_colors = [mpu.memory[table_addr + i] for i in range(12)]
     expected_table = [
         labels["TITLE_CALL_PF0"], labels["TITLE_CALL_PF1"], labels["TITLE_CALL_PF2"],
         labels["TITLE_OFTHE_PF0"], labels["TITLE_OFTHE_PF1"], labels["TITLE_OFTHE_PF2"],
         labels["TITLE_WINTER_PF0"], labels["TITLE_WINTER_PF1"], labels["TITLE_WINTER_PF2"],
+        labels["TITLE_LOGO_PF0"], labels["TITLE_LOGO_PF1"], labels["TITLE_LOGO_PF2"],
     ]
     assert table_colors == expected_table
     for i, c in enumerate(table_colors):
@@ -689,8 +762,8 @@ def run_dli_handler(mpu: MPU, addr: int) -> int:
 @pytest.mark.parametrize(
     "test_colors",
     [
-        [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
-        [0x84, 0x9A, 0x32, 0x62, 0x48, 0x56, 0x36, 0x1E, 0x2A],
+        [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC],
+        [0x84, 0x9A, 0x32, 0x62, 0x48, 0x56, 0x36, 0x1E, 0x2A, 0x46, 0x58, 0x6A],
     ],
 )
 def test_title_color_handlers_and_chain(emu_env, test_colors):
@@ -726,6 +799,15 @@ def test_title_color_handlers_and_chain(emu_env, test_colors):
     assert mpu.memory[labels["COLPF1"]] == test_colors[7]
     assert mpu.memory[labels["COLPF2"]] == test_colors[8]
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
+    assert vdslst == labels["DLI_TITLE_COLOR_LOGO"]
+
+    # 4. dli_title_color_logo
+    cycles_logo = run_dli_handler(mpu, labels["DLI_TITLE_COLOR_LOGO"])
+    assert cycles_logo == 49, f"Expected 49 cycles for dli_title_color_logo, got {cycles_logo}"
+    assert mpu.memory[labels["COLPF0"]] == test_colors[9]
+    assert mpu.memory[labels["COLPF1"]] == test_colors[10]
+    assert mpu.memory[labels["COLPF2"]] == test_colors[11]
+    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_SCROLL"]
 
 
@@ -737,6 +819,7 @@ def test_title_color_handlers_isolation_and_registers(emu_env):
         labels["DLI_TITLE_COLOR_CALL"],
         labels["DLI_TITLE_COLOR_OF_THE"],
         labels["DLI_TITLE_COLOR_WINTER"],
+        labels["DLI_TITLE_COLOR_LOGO"],
     ]
 
     allowed_writes = {
@@ -777,7 +860,7 @@ def test_title_color_handlers_isolation_and_registers(emu_env):
 
 
 def test_title_full_frame_dli_chain_simulation(emu_env):
-    """Simulate a complete frame through all 4 DLIs and verify self-resetting loop."""
+    """Simulate a complete frame through all 5 DLIs and verify self-resetting loop."""
     mpu, labels = emu_env
 
     run_subroutine(mpu, labels["TITLE_INIT"])
@@ -799,9 +882,14 @@ def test_title_full_frame_dli_chain_simulation(emu_env):
     # 3rd DLI: WINTERMOON
     run_dli_handler(mpu, vdslst)
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
+    assert vdslst == labels["DLI_TITLE_COLOR_LOGO"]
+
+    # 4th DLI: LOGO
+    run_dli_handler(mpu, vdslst)
+    vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_SCROLL"]
 
-    # 4th DLI: SCROLL
+    # 5th DLI: SCROLL
     run_dli_handler(mpu, vdslst)
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_COLOR_CALL"], "DLI chain must self-reset to dli_title_color_call"

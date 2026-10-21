@@ -143,7 +143,7 @@ texts:
   - id: "title_scroll"
     path: "scroll/title.txt"
     encoding: "utf-8"
-    description: "Title screen bottom continuous marquee scroll text"
+    description: "Title screen bottom vertical scrolling messages (converted to centered 40-byte lines)"
 
 # ------------------------------------------------------------------------------
 # 5. Scenes & Level Definitions
@@ -169,6 +169,8 @@ scenes:
 tools:
   - path: "scripts/compile_title_text.py"
     purpose: "Compiles title screen 3-line text into centered 2bpp MADS screen code tables"
+  - path: "scripts/compile_title_vscroll.py"
+    purpose: "Compiles title screen vertical scroll messages into centered 40-byte screen code tables"
   - path: "scripts/convert_image.py"
     purpose: "Converts PNG title images into ANTIC Mode D 2bpp binary format"
   - path: "scripts/convert_tiles.py"

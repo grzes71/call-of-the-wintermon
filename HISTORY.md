@@ -2,6 +2,75 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Fix Text Visibility Below Title Screen Vertical Scroll Window
+
+- **Below-Window Black Palette Configuration ([scenes/title.asm](scenes/title.asm))**:
+  - Defined constants `TITLE_BELOW_PF1 = $00` and `TITLE_BELOW_PF2 = $00` for color registers after the vertical scroll window.
+  - In `dli_title_scroll`: on the first scanline after the 9-scanline window gradient (following the final `WSYNC`), sets `COLPF1 = TITLE_BELOW_PF1` ($00), `COLPF2 = TITLE_BELOW_PF2` ($00), and `COLBK = $00` (8 additional cycles, zero extra WSYNCs), preventing any residual text below the window from being rendered against bright Mode D/E restoration colors.
+  - Hardware registers remain black until VBI / next frame's first DLI.
+- **Display List Tail Verification ([main.asm](main.asm))**:
+  - Verified Display List tail instructions at `$6074`–`$6076`: strictly contains blank margin instructions (`DL_BLANK1`, `DL_BLANK8`, `DL_BLANK3`) followed by `DL_JVB dlist_title`.
+- **Test Suite Updates ([tests/test_title_vscroll.py](tests/test_title_vscroll.py), [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py))**:
+  - Updated `test_dli_title_scroll_execution_and_clean_exit` and `test_title_scroll_rainbow_dli` to assert that `COLPF1 == TITLE_BELOW_PF1`, `COLPF2 == TITLE_BELOW_PF2`, and `COLBK == $00` upon completing the handler.
+  - All 452 unit and py65 integration tests passed in `make all`.
+
+## [2026-10-21] - Vertical Scroll Window (ANTIC Mode 2 VSCROL) on Title Screen
+
+- **Vertical Scroll Data Compilation Pipeline ([scripts/compile_title_vscroll.py](scripts/compile_title_vscroll.py), [Makefile](Makefile))**:
+  - Implemented `compile_title_vscroll.py` compiling non-empty lines from [scroll/title.txt](scroll/title.txt) into 40-byte centered, space-padded screen code lines [gen/title_vscroll_data.asm](gen/title_vscroll_data.asm).
+  - Shortened GitHub repo URL in [scroll/title.txt](scroll/title.txt) to 37 characters (`github.com/grzes71/call-of-the-wintermon`) to conform to the 40-character playfield width constraint; added build-time assertion raising `ValueError` and exit code 1 if any line exceeds 40 characters.
+  - Generates `TITLE_VS_COUNT = 4`, `title_vs_lines` array (N × 40 bytes), and Structure-of-Arrays pointer tables `title_vs_lines_ptr_lo` / `title_vs_lines_ptr_hi`.
+  - Updated [Makefile](Makefile) with `TITLE_VSCROLL_SRC` / `TITLE_VSCROLL_ASM` rules and dependencies, removing obsolete horizontal scroll text artifacts.
+- **Display List VSCROL Geometry ([main.asm](main.asm))**:
+  - Replaced single-line HSCROL instruction with 2 consecutive ANTIC Mode 2 lines with `DL_VSCROL` (`DL_MODE_2 | DL_LMS | DL_VSCROL title_vs_buf` and `DL_MODE_2 | DL_VSCROL`).
+  - Total Display List height is exactly 200 scanlines (window contributes constant 9 scanlines: `8 - VSCROL + VSCROL + 1`), total size 122 bytes (`$6000`–`$6079`, well within `$6000`–`$60FF` 1 KB page limit).
+  - Kept exactly 5 DLI bits across the Display List; scroll window contains no HSCROL or extra DLI bits.
+- **Vertical Scroll State Machine & DLI Handler ([scenes/title.asm](scenes/title.asm))**:
+  - Replaced horizontal scroll variables with vertical scroll state variables: `title_vs_pos` (p, 7..15), `title_vs_state` (IN=0, HOLD=1, OUT=2, PAUSE=3), `title_vs_timer`, `title_vs_index`, and `title_vs_ptr`.
+  - Configured PAL 50 Hz timings: `TITLE_VS_FRAMES_PER_STEP = 3` (24 frames for 8 scanlines in/out), `TITLE_VS_HOLD_FRAMES = 200` (4 seconds), `TITLE_VS_PAUSE_FRAMES = 100` (2 seconds), with compile-time 8-bit bounds assertions `<= 255`.
+  - Implemented `update_title_vscroll`: steps `p` 7→15 in `IN`, holds at 15 in `HOLD`, steps 15→7 in `OUT`, swaps message in L2 (`title_vs_buf + 80`) via `title_vs_load_message` on reaching hidden state `p = 7` (wrapping after N messages), and pauses for 100 frames in `PAUSE`.
+  - Updates hardware `VSCROL = p & 7` and DL LMS operand `title_dl_vs_addr` (`title_vs_buf` for `p < 8`, `title_vs_buf + 40` for `p >= 8`) atomically in the same frame.
+  - In `title_init`: clears 120-byte buffer `title_vs_buf` (`$4000`–`$4077`), sets `p = 7`, `VSCROL = 7`, LMS = `title_vs_buf`, loads message 0 into L2, and sets state to `IN`.
+  - In `title_run`: executes `update_title_vscroll` once per frame; resets `VSCROL = 0`, `HSCROL = 0`, `NMIEN = $40` upon fire button or keypress exit.
+  - In `dli_title_scroll`: removed all `HSCROL` operations; adapted rainbow gradient to span 9 scanlines (`$C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0, $C0`), restoring Mode D/E `COLPF1` and `COLPF2` on the following blank scanline.
+- **Memory Map & Documentation Updates ([scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py), [manifest.yaml](manifest.yaml))**:
+  - Allocated 120-byte buffer `title_vs_buf` at `$4000`–`$4077` and compiled text lines at `$4078`–`$4117`.
+  - Updated segment identifiers to `Title Vertical Scroll VRAM & Text` in memory checkers and visual map generators.
+  - Documented asset pipeline in [manifest.yaml](manifest.yaml).
+- **Unit and py65 Emulation Test Harnesses ([tests/test_title_vscroll.py](tests/test_title_vscroll.py), [tests/test_title_text.py](tests/test_title_text.py), [tests/test_title_scroll.py](tests/test_title_scroll.py), [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py))**:
+  - Created [tests/test_title_vscroll.py](tests/test_title_vscroll.py) testing source text bounds, compile-time error rejection on lines > 40 chars, DL instructions/scanlines, initial state, full state machine frame simulation across all messages and wrap, 9-scanline DLI gradient without HSCROL, and exit cleanup.
+  - Updated [tests/test_title_text.py](tests/test_title_text.py) for 200 scanlines, 122 bytes, and 2-line Mode 2 VSCROL sequence.
+  - Updated [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py) for 9-scanline rainbow DLI.
+  - Removed legacy horizontal scroll emulation tests from [tests/test_title_scroll.py](tests/test_title_scroll.py).
+  - All 452 unit and py65 tests passed in `make all`; memory check verified 4,081 bytes of headroom below `$C000`.
+
+## [2026-10-21] - Procedural Atari Logo, 12-Value DLI Colors, and Relocated Scroller
+
+- **Atari Logo Data & Procedural Generation ([scenes/title.asm](scenes/title.asm))**:
+  - Defined 20-byte logo screen codes table `title_logo_codes` (4 lines × 5 characters from `intro_font`):
+    - Line 0: `$00, $7D, $7E, $7F, $00`
+    - Line 1: `$00, $7C, $50, $60, $00`
+    - Line 2: `$4B, $4C, $4D, $4E, $4F`
+    - Line 3: `$5B, $5C, $5D, $5E, $5F`
+  - Sub-allocated 1,280 bytes in `GAME_VRAM` at `$33C0`–`$38BF` (`title_text_logo`) contiguous with prior title buffers.
+  - Implemented `title_generate_logo` invoking `title_text_generate` 4 times with symmetric centering (`x_offset = 15`, width = 10 bytes).
+  - Added compile-time MADS bounds assertions for logo dimensions, offset, code table length, and buffer termination.
+  - Expanded `title_init` overlay clearing from 960 bytes to exactly 2,240 bytes (`$3000`–`$38BF`) while leaving `$38C0+` untouched.
+- **12-Value DLI Color Table & Extended Chain ([scenes/title.asm](scenes/title.asm))**:
+  - Added logo color constants `TITLE_LOGO_PF0 = $24` (dark red), `TITLE_LOGO_PF1 = $2C` (bright red), `TITLE_LOGO_PF2 = $28` (medium red).
+  - Expanded `title_row_colors` to 12 bytes in RAM (offset 9 for logo).
+  - Implemented `dli_title_color_logo` (49 cycles, writes `COLPF0`, `COLPF1`, `COLPF2`) and re-chained: `call` → `of_the` → `winter` → `logo` → `scroll` → `call`.
+- **Display List Restructuring ([main.asm](main.asm))**:
+  - Replaced 110-scanline padding with: 8-scanline spacing DLI (`DL_BLANK8 | DL_DLI`), 64-scanline logo in ANTIC Mode D (`DL_MODE_D | DL_LMS title_text_logo` + 31× `DL_MODE_D`), and 8-scanline spacing margin (`DL_BLANK8`).
+  - Total Display List height reduced to 199 scanlines (within 240-scanline limit), with scroller starting at scanline 179 directly under the logo.
+  - Total DL size is 121 bytes (within `$6000`–`$6078`). Exactly 5 DLI instructions across the Display List.
+- **py65 Emulation & Integration Tests ([tests/test_title_text.py](tests/test_title_text.py))**:
+  - Added `test_logo_codes_and_generation` verifying byte-by-byte match of all 1,280 bytes with independent Python reference, centering, zero margins, and space rendering.
+  - Updated clearing test for 2,240 bytes with sentinels at `$38C0`–`$38FF`.
+  - Updated Display List test for 199 scanlines, 121 bytes, and exactly 5 DLI bits.
+  - Updated color table tests for 12 bytes and simulated the full 5-DLI frame chain.
+  - All 449 unit and py65 tests passed in `make all` with 4,365 bytes of headroom below `$C000`.
+
 ## [2026-10-20] - 2+4+2 Glyph Conversion and 9-Value DLI Color Table
 
 - **2+4+2 Glyph-to-2bpp Conversion ([scenes/title.asm](scenes/title.asm))**:

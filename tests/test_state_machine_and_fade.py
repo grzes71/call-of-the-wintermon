@@ -112,12 +112,11 @@ def test_title_init_immediate_full_brightness_and_normal_playfield(emu_env):
 
 
 def test_title_scroll_rainbow_dli(emu_env):
-    """Verify DLI renders 8-scanline rainbow ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0) on COLPF2 and restores state."""
+    """Verify DLI renders 9-scanline rainbow ($C0, $C2, $C4, $C6, $C6, $C4, $C2, $C0, $C0) on COLPF2 and restores state."""
     mpu, labels = emu_env
 
     mpu.memory[labels["DMACTL"]] = 0x22
     mpu.memory[labels["HSCROL"]] = 0
-    mpu.memory[labels["TITLE_SCROLL_FINE"]] = 2
 
     colpf2_writes = []
     sp = mpu.sp
@@ -133,15 +132,16 @@ def test_title_scroll_rainbow_dli(emu_env):
             colpf2_writes.append(mpu.a)
         mpu.step()
 
-    # 8 rainbow scanlines on COLPF2 followed by restoration to TITLE_COLOR_PF2 ($EE)
-    expected = [0xC0, 0xC2, 0xC4, 0xC6, 0xC6, 0xC4, 0xC2, 0xC0, labels["TITLE_COLOR_PF2"]]
+    # 9 rainbow scanlines on COLPF2 followed by below-window color TITLE_BELOW_PF2 ($00)
+    expected = [0xC0, 0xC2, 0xC4, 0xC6, 0xC6, 0xC4, 0xC2, 0xC0, 0xC0, labels["TITLE_BELOW_PF2"]]
     assert colpf2_writes == expected
 
-    # State restored after scroll line
+    # State below scroll window: black background, black playfield colors
     assert mpu.memory[labels["DMACTL"]] == 0x22
     assert mpu.memory[labels["HSCROL"]] == 0
-    assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
-    assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]
+    assert mpu.memory[labels["COLPF1"]] == labels["TITLE_BELOW_PF1"]
+    assert mpu.memory[labels["COLPF2"]] == labels["TITLE_BELOW_PF2"]
+    assert mpu.memory[labels["COLBK"]] == 0x00
 
 
 def test_scene_title_card_frame_progression(emu_env):

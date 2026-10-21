@@ -81,7 +81,7 @@ def check_memory(xex_path: Path) -> int:
         elif start == 0x3F00:
             seg_type = "Gameplay Display List"
         elif start == 0x4000:
-            seg_type = "Title Scroll VRAM & Text"
+            seg_type = "Title Vertical Scroll VRAM & Text"
         elif start == 0x6000:
             seg_type = "Title Display List"
         elif start == 0x6100:
