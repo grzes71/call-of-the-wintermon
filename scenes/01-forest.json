@@ -217,7 +217,8 @@
       "type": "enemy",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 107,
+      "x": 110,
+      "sprite_id": 4,
       "speed": "slow",
       "movement_strategy": "left_right"
     },
@@ -227,6 +228,7 @@
       "definition_id": 2,
       "platform_id": "platform-006",
       "x": 8,
+      "sprite_id": 4,
       "speed": "medium",
       "movement_strategy": "right_left"
     },
@@ -257,6 +259,7 @@
       "definition_id": 2,
       "platform_id": "platform-012",
       "x": 116,
+      "sprite_id": 4,
       "speed": "medium",
       "movement_strategy": "stationary"
     }

@@ -90,10 +90,10 @@ def test_generate_sprites_asm():
     sprites = parse_sprites_json(json_path)
     asm_text = generate_sprites_asm(sprites)
 
-    assert "MAX_SPRITE_ID = 3" in asm_text
-    assert "sprite_1_frame_0" in asm_text
-    assert "sprite_2_frame_0" in asm_text
-    assert "sprite_3_frame_0" in asm_text
+    max_id = max(sprites.keys()) if sprites else 0
+    assert f"MAX_SPRITE_ID = {max_id}" in asm_text
+    for sid in sprites:
+        assert f"sprite_{sid}_frame_0" in asm_text
     assert "sprite_height" in asm_text
     assert "sprite_frame_count" in asm_text
     assert "sprite_frame_dur" in asm_text
