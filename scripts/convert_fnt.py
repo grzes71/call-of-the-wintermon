@@ -10,6 +10,10 @@ The .fnt layout matches ``fonts/font.fnt``:
 
 The PNG glyph sheet is 128x64 pixels (16 glyphs per row, 8 rows) and uses an
 indexed palette with two entries: index 0 = background, index 1 = foreground.
+
+Example:
+python scripts/convert_fnt.py fonts/font.fnt preview.png
+python scripts/convert_fnt.py preview.png moj_font.fnt
 """
 
 from __future__ import annotations

@@ -95,21 +95,25 @@ def emu_env():
 # --- Python Independent Reference Implementations ---
 
 
-def hi(n: int) -> int:
-    """Convert high nibble (4 bits): 0 -> 00, 1 -> 10."""
-    return sum((0b10 << (2 * (3 - i))) for i in range(4) if n & (8 >> i))
-
-
-def lo(n: int) -> int:
-    """Convert low nibble (4 bits): 0 -> 00, 1 -> 01."""
-    return sum((0b01 << (2 * (3 - i))) for i in range(4) if n & (8 >> i))
+def conv(b: int) -> tuple[int, int]:
+    """Convert 1 byte of 1bpp font data to two 2bpp bytes (2+4+2 mapping: 10, 11, 01)."""
+    px = []
+    for i in range(8):                  # i = 0 -> bit 7
+        if not (b >> (7 - i)) & 1:
+            px.append(0b00)
+        elif i < 2:
+            px.append(0b10)
+        elif i < 6:
+            px.append(0b11)
+        else:
+            px.append(0b01)
+    left = (px[0] << 6) | (px[1] << 4) | (px[2] << 2) | px[3]
+    right = (px[4] << 6) | (px[5] << 4) | (px[6] << 2) | px[7]
+    return left, right
 
 
 def convert_byte_to_2bpp(b: int) -> tuple[int, int]:
-    """Convert 1 byte of 1bpp font data to two 2bpp bytes (high: 1 -> 10, low: 1 -> 01)."""
-    high_nibble = (b >> 4) & 0x0F
-    low_nibble = b & 0x0F
-    return hi(high_nibble), lo(low_nibble)
+    return conv(b)
 
 
 def render_text_reference(font_bytes: bytes, codes: list[int], x_offset: int, pitch: int = 40) -> bytearray:
@@ -145,23 +149,32 @@ def test_font_matches_font_file(emu_env):
 
 
 def test_conversion_lut_and_test_vectors(emu_env):
-    """Verify test vectors and 16-byte LUT tables (title_text_lut_hi, title_text_lut_lo) in memory."""
+    """Verify test vectors, 256-value reference match, and 16-byte LUT tables in memory."""
     mpu, labels = emu_env
 
     # 1. Test vectors
     assert convert_byte_to_2bpp(0x00) == (0x00, 0x00)
-    assert convert_byte_to_2bpp(0xFF) == (0xAA, 0x55)
-    assert convert_byte_to_2bpp(0xF0) == (0xAA, 0x00)
-    assert convert_byte_to_2bpp(0x0F) == (0x00, 0x55)
-    assert convert_byte_to_2bpp(0x9A) == (0x82, 0x44)
+    assert convert_byte_to_2bpp(0xFF) == (0xAF, 0xF5)
+    assert convert_byte_to_2bpp(0xC0) == (0xA0, 0x00)
+    assert convert_byte_to_2bpp(0x30) == (0x0F, 0x00)
+    assert convert_byte_to_2bpp(0x0C) == (0x00, 0xF0)
+    assert convert_byte_to_2bpp(0x03) == (0x00, 0x05)
+    assert convert_byte_to_2bpp(0x3C) == (0x0F, 0xF0)
     assert convert_byte_to_2bpp(0x81) == (0x80, 0x01)
+    assert convert_byte_to_2bpp(0x9A) == (0x83, 0xC4)
 
     # 2. Check reference generation of LUT tables
-    expected_hi = [hi(n) for n in range(16)]
-    expected_lo = [lo(n) for n in range(16)]
+    expected_hi = [
+        0x00, 0x03, 0x0C, 0x0F, 0x20, 0x23, 0x2C, 0x2F,
+        0x80, 0x83, 0x8C, 0x8F, 0xA0, 0xA3, 0xAC, 0xAF,
+    ]
+    expected_lo = [
+        0x00, 0x01, 0x04, 0x05, 0x30, 0x31, 0x34, 0x35,
+        0xC0, 0xC1, 0xC4, 0xC5, 0xF0, 0xF1, 0xF4, 0xF5,
+    ]
 
-    for n in range(16):
-        assert expected_lo[n] == (expected_hi[n] >> 1), f"lut_lo[{n}] != lut_hi[{n}] >> 1"
+    for b in range(256):
+        assert (expected_hi[b >> 4], expected_lo[b & 0x0F]) == conv(b)
 
     # 3. Compare tables in 6502 memory
     lut_hi_addr = labels.get("TITLE_TEXT_LUT_HI", labels["TITLE_TEXT_LUT"])
@@ -172,6 +185,10 @@ def test_conversion_lut_and_test_vectors(emu_env):
 
     assert mem_lut_hi == expected_hi
     assert mem_lut_lo == expected_lo
+
+    # 4. Compare all 256 combinations in memory against conv(b)
+    for b in range(256):
+        assert (mem_lut_hi[b >> 4], mem_lut_lo[b & 0x0F]) == conv(b)
 
 
 # Polish diacritics mapping for Atari 8-bit custom font
@@ -250,8 +267,11 @@ def test_title_generated_text_matches_reference_model(emu_env):
         assert actual == bytes(ref), f"Buffer for '{item['text']}' does not match reference model"
 
 
-def test_pixel_patterns_and_no_11_pairs(emu_env):
-    """Verify byte pairs have distinct color bit patterns (left=10, right=01) and no 11 pairs exist."""
+def test_pixel_patterns_and_structural_bands(emu_env):
+    """Verify byte pairs have valid structural pixel bands:
+    Left byte: px 0-1 in {00, 10}, px 2-3 in {00, 11}.
+    Right byte: px 4-5 in {00, 11}, px 6-7 in {00, 01}.
+    """
     mpu, labels = emu_env
 
     run_subroutine(mpu, labels["TITLE_INIT"])
@@ -271,18 +291,25 @@ def test_pixel_patterns_and_no_11_pairs(emu_env):
                 b_left = mpu.memory[row_base + x_offset + i * 2]
                 b_right = mpu.memory[row_base + x_offset + i * 2 + 1]
 
-                # Left byte can only contain %00 or %10 (never %01 or %11) -> odd bits must be 0
-                assert (b_left & 0x55) == 0, f"Left byte 0x{b_left:02X} contains %01 or %11 bits"
+                px0 = (b_left >> 6) & 0x03
+                px1 = (b_left >> 4) & 0x03
+                px2 = (b_left >> 2) & 0x03
+                px3 = b_left & 0x03
 
-                # Right byte can only contain %00 or %01 (never %10 or %11) -> even bits must be 0
-                assert (b_right & 0xAA) == 0, f"Right byte 0x{b_right:02X} contains %10 or %11 bits"
+                assert px0 in (0, 2), f"px0 ({px0:02b}) invalid in left byte 0x{b_left:02X}"
+                assert px1 in (0, 2), f"px1 ({px1:02b}) invalid in left byte 0x{b_left:02X}"
+                assert px2 in (0, 3), f"px2 ({px2:02b}) invalid in left byte 0x{b_left:02X}"
+                assert px3 in (0, 3), f"px3 ({px3:02b}) invalid in left byte 0x{b_left:02X}"
 
-        # Check that entire 320-byte buffer contains NO %11 pixels anywhere
-        for offset in range(320):
-            byte_val = mpu.memory[base + offset]
-            for p in range(4):
-                pixel = (byte_val >> (2 * p)) & 0x03
-                assert pixel != 0x03, f"Buffer at 0x{base:04X}+{offset} contains %11 pixel"
+                px4 = (b_right >> 6) & 0x03
+                px5 = (b_right >> 4) & 0x03
+                px6 = (b_right >> 2) & 0x03
+                px7 = b_right & 0x03
+
+                assert px4 in (0, 3), f"px4 ({px4:02b}) invalid in right byte 0x{b_right:02X}"
+                assert px5 in (0, 3), f"px5 ({px5:02b}) invalid in right byte 0x{b_right:02X}"
+                assert px6 in (0, 1), f"px6 ({px6:02b}) invalid in right byte 0x{b_right:02X}"
+                assert px7 in (0, 1), f"px7 ({px7:02b}) invalid in right byte 0x{b_right:02X}"
 
 
 # ==============================================================================
@@ -626,13 +653,13 @@ def test_title_init_hardware_and_shadow_registers(emu_env):
     assert mpu.memory[labels["COLPF1"]] == labels["TITLE_COLOR_PF1"]
     assert mpu.memory[labels["COLPF2"]] == labels["TITLE_COLOR_PF2"]
 
-    # Title row colors table (6 bytes in RAM, default values)
+    # Title row colors table (9 bytes in RAM, default values)
     table_addr = labels["TITLE_ROW_COLORS"]
-    table_colors = [mpu.memory[table_addr + i] for i in range(6)]
+    table_colors = [mpu.memory[table_addr + i] for i in range(9)]
     expected_table = [
-        labels["TITLE_CALL_PF0"], labels["TITLE_CALL_PF1"],
-        labels["TITLE_OFTHE_PF0"], labels["TITLE_OFTHE_PF1"],
-        labels["TITLE_WINTER_PF0"], labels["TITLE_WINTER_PF1"],
+        labels["TITLE_CALL_PF0"], labels["TITLE_CALL_PF1"], labels["TITLE_CALL_PF2"],
+        labels["TITLE_OFTHE_PF0"], labels["TITLE_OFTHE_PF1"], labels["TITLE_OFTHE_PF2"],
+        labels["TITLE_WINTER_PF0"], labels["TITLE_WINTER_PF1"], labels["TITLE_WINTER_PF2"],
     ]
     assert table_colors == expected_table
     for i, c in enumerate(table_colors):
@@ -662,12 +689,12 @@ def run_dli_handler(mpu: MPU, addr: int) -> int:
 @pytest.mark.parametrize(
     "test_colors",
     [
-        [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
-        [0x84, 0x9A, 0x62, 0x48, 0x36, 0x1E],
+        [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
+        [0x84, 0x9A, 0x32, 0x62, 0x48, 0x56, 0x36, 0x1E, 0x2A],
     ],
 )
 def test_title_color_handlers_and_chain(emu_env, test_colors):
-    """Verify each color handler reads from title_row_colors, sets COLPF0/COLPF1, and chains VDSLST."""
+    """Verify each color handler reads from title_row_colors, sets COLPF0/COLPF1/COLPF2, and chains VDSLST."""
     mpu, labels = emu_env
 
     table_addr = labels["TITLE_ROW_COLORS"]
@@ -676,31 +703,34 @@ def test_title_color_handlers_and_chain(emu_env, test_colors):
 
     # 1. dli_title_color_call
     cycles_call = run_dli_handler(mpu, labels["DLI_TITLE_COLOR_CALL"])
-    assert cycles_call == 41, f"Expected 41 cycles for dli_title_color_call, got {cycles_call}"
+    assert cycles_call == 49, f"Expected 49 cycles for dli_title_color_call, got {cycles_call}"
     assert mpu.memory[labels["COLPF0"]] == test_colors[0]
     assert mpu.memory[labels["COLPF1"]] == test_colors[1]
+    assert mpu.memory[labels["COLPF2"]] == test_colors[2]
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_COLOR_OF_THE"]
 
     # 2. dli_title_color_of_the
     cycles_of_the = run_dli_handler(mpu, labels["DLI_TITLE_COLOR_OF_THE"])
-    assert cycles_of_the == 41, f"Expected 41 cycles for dli_title_color_of_the, got {cycles_of_the}"
-    assert mpu.memory[labels["COLPF0"]] == test_colors[2]
-    assert mpu.memory[labels["COLPF1"]] == test_colors[3]
+    assert cycles_of_the == 49, f"Expected 49 cycles for dli_title_color_of_the, got {cycles_of_the}"
+    assert mpu.memory[labels["COLPF0"]] == test_colors[3]
+    assert mpu.memory[labels["COLPF1"]] == test_colors[4]
+    assert mpu.memory[labels["COLPF2"]] == test_colors[5]
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_COLOR_WINTER"]
 
     # 3. dli_title_color_winter
     cycles_winter = run_dli_handler(mpu, labels["DLI_TITLE_COLOR_WINTER"])
-    assert cycles_winter == 41, f"Expected 41 cycles for dli_title_color_winter, got {cycles_winter}"
-    assert mpu.memory[labels["COLPF0"]] == test_colors[4]
-    assert mpu.memory[labels["COLPF1"]] == test_colors[5]
+    assert cycles_winter == 49, f"Expected 49 cycles for dli_title_color_winter, got {cycles_winter}"
+    assert mpu.memory[labels["COLPF0"]] == test_colors[6]
+    assert mpu.memory[labels["COLPF1"]] == test_colors[7]
+    assert mpu.memory[labels["COLPF2"]] == test_colors[8]
     vdslst = mpu.memory[labels["VDSLST"]] | (mpu.memory[labels["VDSLST"] + 1] << 8)
     assert vdslst == labels["DLI_TITLE_SCROLL"]
 
 
 def test_title_color_handlers_isolation_and_registers(emu_env):
-    """Verify color handlers preserve A, X, Y and write ONLY to COLPF0, COLPF1, VDSLST, VDSLST+1."""
+    """Verify color handlers preserve A, X, Y and write ONLY to COLPF0, COLPF1, COLPF2, VDSLST, VDSLST+1."""
     mpu, labels = emu_env
 
     handlers = [
@@ -712,6 +742,7 @@ def test_title_color_handlers_isolation_and_registers(emu_env):
     allowed_writes = {
         labels["COLPF0"],
         labels["COLPF1"],
+        labels["COLPF2"],
         labels["VDSLST"],
         labels["VDSLST"] + 1,
     }

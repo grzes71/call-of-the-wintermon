@@ -32,13 +32,13 @@ htmlcov/
 .ruff_cache/
 
 # Atari 8-bit build artifacts
+tmp/
 *.xex
 *.obx
 *.lab
 *.lst
 *.atx
 *.atr
-*.fnt
 gen/
 
 # Environment & Editor

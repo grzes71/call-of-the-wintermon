@@ -16,13 +16,20 @@ TITLE_COLOR_SCROLL    = $CE   ; Green text foreground luminance/color
 TITLE_COLOR_SCROLL_BG = $C0   ; Mode 2 background: Black with Green hue ($C0) to colorize text
 TITLE_SCROLL_SPEED    = 2     ; Step fine scroll every 2 frames (smooth 25 fps, comfortable reading speed)
 
-; Default color pairs for each of the three title lines (COLPF0 = right half, COLPF1 = left half)
-TITLE_CALL_PF0        = TITLE_COLOR_PF0   ; $CA (Forest dark green on black)
-TITLE_CALL_PF1        = TITLE_COLOR_PF1   ; $C4 (Forest medium green)
-TITLE_OFTHE_PF0       = $34
-TITLE_OFTHE_PF1       = $3A
-TITLE_WINTER_PF0      = $74
-TITLE_WINTER_PF1      = $7A
+; Default color triples for each of the three title lines (COLPF0 = right 2 cols, COLPF1 = left 2 cols, COLPF2 = center 4 cols)
+TITLE_COLOR_PF2_TEXT  = $EE   ; Bright yellow-green moon glow (COLPF2: center 4 pixels of glyphs)
+
+TITLE_CALL_PF0        = $18        
+TITLE_CALL_PF1        = $1C     
+TITLE_CALL_PF2        = $1A  
+
+TITLE_OFTHE_PF0       = $38                    
+TITLE_OFTHE_PF1       = $3C                   
+TITLE_OFTHE_PF2       = $3A   
+
+TITLE_WINTER_PF0      = $78                   
+TITLE_WINTER_PF1      = $7C                  
+TITLE_WINTER_PF2      = $7A
 
 ; --- Title Text Generator Constants & Buffer Equates ---
 TITLE_TEXT_PITCH      = 40
@@ -222,25 +229,27 @@ title_text_wintermoon = GAME_VRAM + $0280 ; $3280–$33BF
 
 ; ==============================================================================
 ; TITLE ROW COLORS TABLE (Runtime-writable in RAM)
-; Layout: 2 bytes per row (COLPF0 = right half, COLPF1 = left half)
+; Layout: 3 bytes per row (COLPF0 = right 2 cols, COLPF1 = left 2 cols, COLPF2 = center 4 cols)
 ; ==============================================================================
 title_row_colors:
-    .byte TITLE_CALL_PF0,   TITLE_CALL_PF1
-    .byte TITLE_OFTHE_PF0,  TITLE_OFTHE_PF1
-    .byte TITLE_WINTER_PF0, TITLE_WINTER_PF1
+    .byte TITLE_CALL_PF0,   TITLE_CALL_PF1,   TITLE_CALL_PF2
+    .byte TITLE_OFTHE_PF0,  TITLE_OFTHE_PF1,  TITLE_OFTHE_PF2
+    .byte TITLE_WINTER_PF0, TITLE_WINTER_PF1, TITLE_WINTER_PF2
 
 ; ==============================================================================
 ; DLI ROUTINES — Title Line Colors (Self-Resetting Chain)
 ; Handlers trigger during DL_BLANK8 lines preceding each title line.
 ; No graphics are rendered during blank scanlines, making color updates invisible
-; without requiring WSYNC synchronization (~41 CPU cycles per handler).
+; without requiring WSYNC synchronization (~49 CPU cycles per handler).
 ; ==============================================================================
 .proc dli_title_color_call
     pha                         ; Save accumulator                    ; [3]
-    lda title_row_colors + 0    ; COLPF0 for CALL (right half)        ; [4]
+    lda title_row_colors + 0    ; COLPF0 for CALL (right 2 cols)      ; [4]
     sta COLPF0                  ;                                     ; [4]
-    lda title_row_colors + 1    ; COLPF1 for CALL (left half)         ; [4]
+    lda title_row_colors + 1    ; COLPF1 for CALL (left 2 cols)       ; [4]
     sta COLPF1                  ;                                     ; [4]
+    lda title_row_colors + 2    ; COLPF2 for CALL (center 4 cols)     ; [4]
+    sta COLPF2                  ;                                     ; [4]
     lda #<dli_title_color_of_the; Chain next DLI handler              ; [2]
     sta VDSLST                  ;                                     ; [4]
     lda #>dli_title_color_of_the;                                     ; [2]
@@ -251,10 +260,12 @@ title_row_colors:
 
 .proc dli_title_color_of_the
     pha                         ; Save accumulator                    ; [3]
-    lda title_row_colors + 2    ; COLPF0 for OF THE (right half)      ; [4]
+    lda title_row_colors + 3    ; COLPF0 for OF THE (right 2 cols)    ; [4]
     sta COLPF0                  ;                                     ; [4]
-    lda title_row_colors + 3    ; COLPF1 for OF THE (left half)       ; [4]
+    lda title_row_colors + 4    ; COLPF1 for OF THE (left 2 cols)     ; [4]
     sta COLPF1                  ;                                     ; [4]
+    lda title_row_colors + 5    ; COLPF2 for OF THE (center 4 cols)   ; [4]
+    sta COLPF2                  ;                                     ; [4]
     lda #<dli_title_color_winter; Chain next DLI handler              ; [2]
     sta VDSLST                  ;                                     ; [4]
     lda #>dli_title_color_winter;                                     ; [2]
@@ -265,10 +276,12 @@ title_row_colors:
 
 .proc dli_title_color_winter
     pha                         ; Save accumulator                    ; [3]
-    lda title_row_colors + 4    ; COLPF0 for WINTERMOON (right half)  ; [4]
+    lda title_row_colors + 6    ; COLPF0 for WINTERMOON (right 2 cols); [4]
     sta COLPF0                  ;                                     ; [4]
-    lda title_row_colors + 5    ; COLPF1 for WINTERMOON (left half)   ; [4]
+    lda title_row_colors + 7    ; COLPF1 for WINTERMOON (left 2 cols) ; [4]
     sta COLPF1                  ;                                     ; [4]
+    lda title_row_colors + 8    ; COLPF2 for WINTERMOON (center 4 cols); [4]
+    sta COLPF2                  ;                                     ; [4]
     lda #<dli_title_scroll      ; Chain scroll DLI handler            ; [2]
     sta VDSLST                  ;                                     ; [4]
     lda #>dli_title_scroll      ;                                     ; [2]
@@ -423,16 +436,16 @@ title_scroll_idx    .byte 0
 ; Screen codes, lengths, and centering offsets compiled from texts/title.txt
     icl 'gen/title_text_data.asm'
 
-; 16-byte nibble-to-2bpp lookup table for high nibble (bits 7-4, left 4 pixels: 0 -> 00, 1 -> 10 = COLPF1)
+; 16-byte nibble-to-2bpp lookup table for high nibble (bits 7-4: b7,b6 -> 10 = COLPF1, b5,b4 -> 11 = COLPF2)
 title_text_lut:
 title_text_lut_hi:
-    .byte $00,$02,$08,$0A,$20,$22,$28,$2A
-    .byte $80,$82,$88,$8A,$A0,$A2,$A8,$AA
+    .byte $00,$03,$0C,$0F,$20,$23,$2C,$2F
+    .byte $80,$83,$8C,$8F,$A0,$A3,$AC,$AF
 
-; 16-byte nibble-to-2bpp lookup table for low nibble (bits 3-0, right 4 pixels: 0 -> 00, 1 -> 01 = COLPF0)
+; 16-byte nibble-to-2bpp lookup table for low nibble (bits 3-0: b3,b2 -> 11 = COLPF2, b1,b0 -> 01 = COLPF0)
 title_text_lut_lo:
-    .byte $00,$01,$04,$05,$10,$11,$14,$15
-    .byte $40,$41,$44,$45,$50,$51,$54,$55
+    .byte $00,$01,$04,$05,$30,$31,$34,$35
+    .byte $C0,$C1,$C4,$C5,$F0,$F1,$F4,$F5
 
 ; Row offset lookup tables for pitch = 40 (rows 0..7)
 title_text_row_lo:

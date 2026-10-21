@@ -2,6 +2,28 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-20] - 2+4+2 Glyph Conversion and 9-Value DLI Color Table
+
+- **2+4+2 Glyph-to-2bpp Conversion ([scenes/title.asm](scenes/title.asm))**:
+  - Replaced the 4+4 LUT mapping with a 2+4+2 bit-per-glyph mapping:
+    - Bits 7–6 (pixels 0–1): `1 → 10` (`COLPF1`).
+    - Bits 5–2 (pixels 2–5): `1 → 11` (`COLPF2`).
+    - Bits 1–0 (pixels 6–7): `1 → 01` (`COLPF0`).
+    - Bit `0` maps strictly to `00` (`COLBK`).
+  - Updated explicit 16-byte lookup tables `title_text_lut_hi` and `title_text_lut_lo`.
+- **Expanded DLI Playfield Colors (9 Values) ([scenes/title.asm](scenes/title.asm))**:
+  - Added new default color constant `TITLE_COLOR_PF2_TEXT = $EE` (contrasting bright blue-white).
+  - Defined 9 color constants (`TITLE_CALL_PF0/PF1/PF2`, `TITLE_OFTHE_PF0/PF1/PF2`, `TITLE_WINTER_PF0/PF1/PF2`).
+  - Expanded `title_row_colors` to 9 bytes in RAM (`PF0`, `PF1`, `PF2` per title line).
+  - Expanded DLI handlers `dli_title_color_call`, `dli_title_color_of_the`, and `dli_title_color_winter` to write `COLPF0`, `COLPF1`, and `COLPF2` (49 cycles each, well within the 114-cycle blank line budget).
+  - Verified `COLPF2` isolation: `dli_title_scroll` sets `COLPF2 = $C0` at cycle 6 of scanline 0 of Mode 2 before pixel graphics rendering begins; preceding blank scanlines render background black (`COLBK = $00`), ensuring no color bleed onto the scroll line.
+- **Font Column Usage & py65 Test Suite ([tests/test_title_text.py](tests/test_title_text.py))**:
+  - Analyzed `intro_font` column usage for all title characters (`CALL`, `OF THE`, `WINTERMON`): verified that all 3 color bands (left: cols 0–1, center: cols 2–5, right: cols 6–7) contain active pixels across all characters.
+  - Implemented independent `conv(b)` reference function in Python and verified equivalence against memory LUTs for all 256 byte values and test vectors.
+  - Added structural pixel band verification replacing the legacy pair test.
+  - Updated DLI handler tests to check 9-byte color vectors, 49 cycles, and allowed writes to `COLPF0`, `COLPF1`, `COLPF2`, and `VDSLST`.
+  - All 448 automated unit and py65 tests and memory validation checks passed cleanly in `make all`.
+
 ## [2026-10-20] - Separate Colors (COLPF0/COLPF1) per Title Line via DLI
 
 - **Title Screen Display List ([main.asm](main.asm))**:
