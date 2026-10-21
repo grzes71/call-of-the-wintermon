@@ -307,6 +307,7 @@ title_vs_buf
     icl 'gen/scenes_dli_data.asm'
     icl 'engine/secrets.asm'
     icl 'engine/enemies.asm'
+    icl 'engine/status_line.asm'
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)
@@ -476,7 +477,6 @@ pmg_memory
     icl 'engine/render_tables.asm'
     icl 'engine/render.asm'
     icl 'gen/sprites_data.asm'
-    icl 'engine/status_line.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader

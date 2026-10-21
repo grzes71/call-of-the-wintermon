@@ -18,6 +18,36 @@ import sys
 from typing import Any
 
 try:
+    from scripts.sprite_roles import (
+        MAX_ZONE_SPRITE_HEIGHT,
+        MAX_ENEMIES_PER_ZONE,
+        MAX_ENEMIES_TOTAL,
+        MAX_SECRETS_TOTAL,
+        SpriteValidationError,
+        resolve_object_sprite_id,
+    )
+except ImportError:
+    try:
+        from sprite_roles import (
+            MAX_ZONE_SPRITE_HEIGHT,
+            MAX_ENEMIES_PER_ZONE,
+            MAX_ENEMIES_TOTAL,
+            MAX_SECRETS_TOTAL,
+            SpriteValidationError,
+            resolve_object_sprite_id,
+        )
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.resolve()))
+        from sprite_roles import (
+            MAX_ZONE_SPRITE_HEIGHT,
+            MAX_ENEMIES_PER_ZONE,
+            MAX_ENEMIES_TOTAL,
+            MAX_SECRETS_TOTAL,
+            SpriteValidationError,
+            resolve_object_sprite_id,
+        )
+
+try:
     from compile_sprites import parse_sprites_json, SpriteDefinition
 except ImportError:
     try:
@@ -1040,18 +1070,27 @@ def parse_scene_json(
                 )
             deps_on_row[dep_val] = oid
 
-            raw_spr = obj.get("sprite_id")
-            spr_id = int(raw_spr) if raw_spr is not None else (cat_item.sprite_id if (cat_item and cat_item.sprite_id is not None) else 1)
+            spr_id = resolve_object_sprite_id(obj, secrets, name, scene_file.name)
             spr_def = sprites.get(spr_id) if sprites else None
+
             spr_h = spr_def.height if spr_def else 16
             spr_dur = spr_def.frame_duration if spr_def else 4
             spr_cnt = len(spr_def.frames) if spr_def else 1
 
-            if spr_h > 20:
+            if spr_h > MAX_ZONE_SPRITE_HEIGHT:
                 raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}): secret '{oid}' has sprite height {spr_h} which "
-                    f"exceeds maximum safe height of 20 scanlines for the zone."
+                    f"Błąd w scenie '{name}' ({scene_file.name}): sekret '{oid}' ma wysokość sprite'a {spr_h} px, "
+                    f"co przekracza dopuszczalną wysokość strefy {MAX_ZONE_SPRITE_HEIGHT} px (exceeds maximum safe height)."
                 )
+
+            # Verify role against sprite manifest / definition format
+            if spr_def is not None:
+                spr_fmt = getattr(spr_def, "format", "missiles")
+                if spr_fmt != "missiles":
+                    raise ValueError(
+                        f"Błąd w scenie '{name}' ({scene_file.name}): sekret '{oid}' wskazuje sprite ID {spr_id} "
+                        f"skompilowany w formacie '{spr_fmt}' (Player), a sekrety wymagają formatu 'missiles'."
+                    )
 
             # Platform base scanline in PMG: 32 + (plat_y * 2)
             # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
@@ -1082,27 +1121,32 @@ def parse_scene_json(
             blink = cat_item.blink if cat_item else False
             dep_id = 0
 
-            raw_spr = obj.get("sprite_id")
-            spr_id = int(raw_spr) if raw_spr is not None else (cat_item.sprite_id if (cat_item and cat_item.sprite_id is not None) else None)
-            if spr_id is None:
-                raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' has no assigned sprite_id and definition ID {def_id} does not specify one."
-                )
+            spr_id = resolve_object_sprite_id(obj, enemies, name, scene_file.name)
             if sprites and spr_id not in sprites:
                 raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' references non-existent sprite_id {spr_id}."
+                    f"Błąd w scenie '{name}' ({scene_file.name}): wróg '{oid}' odwołuje się do nieistniejącego sprite_id {spr_id} (references non-existent sprite_id)."
                 )
 
             spr_def = sprites.get(spr_id) if sprites else None
+
             spr_h = spr_def.height if spr_def else 20
             spr_dur = spr_def.frame_duration if spr_def else 4
             spr_cnt = len(spr_def.frames) if spr_def else 1
 
-            if spr_h > 20:
+            if spr_h > MAX_ZONE_SPRITE_HEIGHT:
                 raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}): enemy '{oid}' has sprite height {spr_h} which "
-                    f"exceeds maximum safe height of 20 scanlines for the zone."
+                    f"Błąd w scenie '{name}' ({scene_file.name}): wróg '{oid}' ma wysokość sprite'a {spr_h} px, "
+                    f"co przekracza dopuszczalną wysokość strefy {MAX_ZONE_SPRITE_HEIGHT} px (exceeds maximum safe height)."
                 )
+
+            # Verify role against sprite manifest / definition format
+            if spr_def is not None:
+                spr_fmt = getattr(spr_def, "format", "player")
+                if spr_fmt != "player":
+                    raise ValueError(
+                        f"Błąd w scenie '{name}' ({scene_file.name}): wróg '{oid}' wskazuje sprite ID {spr_id} "
+                        f"skompilowany w formacie '{spr_fmt}' (pociski), a wrogowie wymagają formatu 'player'."
+                    )
 
             plat = platforms[plat_idx] if plat_idx < len(platforms) else None
             plat_x = plat.x if plat else 0
@@ -1121,9 +1165,10 @@ def parse_scene_json(
 
             zid = (plat_y - 8) // 16 if plat_y >= 8 else 0
             ch = zone_enemy_counts.get(zid, 0)
-            if ch >= 3:
+            if ch >= MAX_ENEMIES_PER_ZONE:
                 raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}) exceeds maximum 3 enemies per zone on zone {zid}."
+                    f"Błąd w scenie '{name}' ({scene_file.name}): przekroczono limit maksymalnie {MAX_ENEMIES_PER_ZONE} wrogów "
+                    f"w strefie {zid} (próba dodania wroga '{oid}')."
                 )
             zone_enemy_counts[zid] = ch + 1
 
@@ -1164,6 +1209,17 @@ def parse_scene_json(
                 atari_color=color,
                 blink=blink,
             )
+        )
+    if len(scene_enemies) > MAX_ENEMIES_TOTAL:
+        raise ValueError(
+            f"Błąd w scenie '{name}' ({scene_file.name}): liczba wrogów ({len(scene_enemies)}) "
+            f"przekracza dopuszczalny limit MAX_ENEMIES={MAX_ENEMIES_TOTAL}."
+        )
+
+    if len(scene_secrets) > MAX_SECRETS_TOTAL:
+        raise ValueError(
+            f"Błąd w scenie '{name}' ({scene_file.name}): liczba sekretów ({len(scene_secrets)}) "
+            f"przekracza dopuszczalny limit MAX_SECRETS={MAX_SECRETS_TOTAL}."
         )
 
     # Player start position and color (defaults to X=20, Y=68, Color=$98 if not defined)
@@ -1882,9 +1938,21 @@ def compile_scenes(
         if (manifest_path.parent.parent / "sprites" / "objects.sprite.json").is_file():
             spr_file = manifest_path.parent.parent / "sprites" / "objects.sprite.json"
 
-    enemies, secrets = load_catalogues(efile, sfile)
-    profiles = load_platform_profiles(pfile)
-    sprites = parse_sprites_json(spr_file) if spr_file.is_file() else {}
+    try:
+        enemies, secrets = load_catalogues(efile, sfile)
+        profiles = load_platform_profiles(pfile)
+        sprites = (
+            parse_sprites_json(
+                spr_file,
+                definitions_path=dfile if dfile.is_file() else None,
+                scenes_manifest_path=manifest_path if manifest_path.is_file() else None,
+            )
+            if spr_file.is_file()
+            else {}
+        )
+    except Exception as exc:
+        print(f"Błąd inicjalizacji zasobów: {exc}", file=sys.stderr)
+        return 1
 
     try:
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))

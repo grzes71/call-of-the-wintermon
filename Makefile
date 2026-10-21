@@ -113,9 +113,9 @@ $(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
 # ------------------------------------------------------------------------------
 data: $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM) $(SCENES_DLI_ASM)
 
-$(SPRITES_ASM): $(SPRITES_SRC) $(SCENES_DEFINITIONS) scripts/compile_sprites.py
+$(SPRITES_ASM): $(SPRITES_SRC) $(SCENES_DEFINITIONS) $(SCENES_MANIFEST) $(SCENES_SRCS) scripts/compile_sprites.py scripts/sprite_roles.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $(SPRITES_SRC) -o $@ --definitions $(SCENES_DEFINITIONS)
+	$(PYTHON) scripts/compile_sprites.py --mode missiles -i $(SPRITES_SRC) -o $@ --definitions $(SCENES_DEFINITIONS) --scenes $(SCENES_MANIFEST)
 
 $(PLAYER_SPRITE_ASM): $(PLAYER_SPRITE_SRC) scripts/compile_sprites.py
 	@$(MKDIR) $(GEN_DIR)

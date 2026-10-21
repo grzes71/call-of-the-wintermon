@@ -547,29 +547,42 @@ def test_player_jump_up_vertical():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
     assert mem[labels["PLAYER_JUMP_TYPE"]] == 0 # JUMP_TYPE_UP
-    assert mem[labels["PLAYER_JUMP_LEN"]] == 22
+    assert mem[labels["PLAYER_JUMP_LEN"]] == 30
     assert mem[labels["PLAYER_FRAME_IDX"]] == 0 # Phase 0 (Frame 0: fast ascent)
     assert mem[labels["PLAYER_X"]] == 96        # No horizontal motion
     assert mem[labels["PLAYER_Y"]] == 66        # First step: dy = -2
 
-    # Step through remaining frames of the 22-step jump
+    # Step through remaining frames of the ascent (steps 1..10)
     # Fire can now be released or held:
     mem[labels["STRIG0"]] = 1
-    for step in range(2, 12):
+    for _ in range(10):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         assert mem[labels["PLAYER_STATE"]] == 3 # Still in jump
         assert mem[labels["PLAYER_X"]] == 96    # Strictly vertical
 
-    # At step 11: apex reached (total dy = -18 -> y = 68 - 18 = 50)
+    # At step 10 (11 steps total, 0..10): apex reached (total dy = -18 -> y = 68 - 18 = 50)
     assert mem[labels["PLAYER_Y"]] == 50
 
-    # Steps 12..21: descent
-    for step in range(12, 22):
+    # Step 11: apex frame (dy = 0 -> y remains 50)
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3
+    assert mem[labels["PLAYER_Y"]] == 50
+
+    # Steps 12..28: descent at 1 px/frame (17 steps: y goes 51 to 67)
+    # Verify vertical motion is exactly 1 px per frame and renders fall animation frame
+    pmg_p0 = labels["PMG_PLAYER0"]
+    fall_frame_addr = labels["PLAYER_ANIM_FALL_FRAME_0"]
+    expected_y = 50
+    for _ in range(17):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        expected_y += 1
         assert mem[labels["PLAYER_STATE"]] == 3
         assert mem[labels["PLAYER_X"]] == 96
+        assert mem[labels["PLAYER_Y"]] == expected_y
+        pmg_y = mem[labels["PLAYER_PMG_Y"]]
+        assert mem[pmg_p0 + pmg_y] == mem[fall_frame_addr]
 
-    # Step 22: Lands back on Platform 0!
+    # Step 29: Final descent step lands back on Platform 0!
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
     assert mem[labels["PLAYER_PLAT_IDX"]] == 0  # Landed on Platform 0
@@ -831,7 +844,7 @@ def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
 
     mem[labels["STRIG0"]] = 1
     landed = False
-    for _ in range(21):
+    for _ in range(29):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         # Must NEVER bounce into fall state during vertical jump under platform at y=56
         assert mem[labels["PLAYER_STATE"]] != 2, "Must not bounce off ceiling at y=56 during vertical jump!"
@@ -868,7 +881,7 @@ def test_player_jump_animation_frames_in_pmg():
     # Compare first scanline
     assert mem[pmg_p0 + pmg_y] == mem[frame0_addr]
 
-    # Advance to Phase 1 (Frame 1) at step 8 (steps 8..13)
+    # Advance to Phase 1 (Frame 1) at step 8 (steps 8..11: apex)
     mem[labels["STRIG0"]] = 1
     for _ in range(8):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
@@ -877,13 +890,13 @@ def test_player_jump_animation_frames_in_pmg():
     pmg_y = mem[labels["PLAYER_PMG_Y"]]
     assert mem[pmg_p0 + pmg_y + 2] == mem[frame1_addr + 2]
 
-    # Advance to Phase 2 (Frame 2) at step 14 (6 more steps, steps 14..21)
-    for _ in range(6):
+    # Advance to descent at step 13 (post-incremented step >= 13):
+    # In vertical jump, descent uses fall animation frame 0!
+    for _ in range(5):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_FRAME_IDX"]] == 2
-    frame2_addr = labels["PLAYER_ANIM_JUMP_RIGHT_FRAME_2"]
+    fall_frame_addr = labels["PLAYER_ANIM_FALL_FRAME_0"]
     pmg_y = mem[labels["PLAYER_PMG_Y"]]
-    assert mem[pmg_p0 + pmg_y + 4] == mem[frame2_addr + 4]
+    assert mem[pmg_p0 + pmg_y] == mem[fall_frame_addr]
 
 
 def test_player_jump_on_row_1_full_height():
@@ -929,8 +942,8 @@ def test_player_jump_on_row_1_full_height():
     # PMG scanline at apex: (-14 * 2) + 52 = 24 (valid PMG scanline)
     assert mem[labels["PLAYER_PMG_Y"]] == 24
 
-    # Complete jump (11 descent steps) and verify clean landing back on Platform 6 at y=4
-    for _ in range(11):
+    # Complete jump (1 apex step + 18 descent steps = 19 steps) and verify clean landing back on Platform 6 at y=4
+    for _ in range(19):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
     assert mem[labels["PLAYER_PLAT_IDX"]] == 6  # Platform 6

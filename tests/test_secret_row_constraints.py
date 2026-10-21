@@ -223,8 +223,8 @@ class TestSecretRowConstraints:
 
         from scripts.compile_scenes import CatalogueItem
         sec_items = {
-            1: CatalogueItem(id=1, name="Gold Key", atari_color=0x1A, blink=False, dependency=None),
-            2: CatalogueItem(id=2, name="Silver Key", atari_color=0x1A, blink=False, dependency=None),
+            1: CatalogueItem(id=1, name="Gold Key", atari_color=0x1A, blink=False, dependency=None, sprite_id=3),
+            2: CatalogueItem(id=2, name="Silver Key", atari_color=0x1A, blink=False, dependency=None, sprite_id=3),
         }
         with pytest.raises(ValueError) as exc_export:
             parse_scene_json(

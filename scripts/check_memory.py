@@ -129,6 +129,23 @@ def check_memory(xex_path: Path) -> int:
                 f"Segment ${start:04X}-${end:04X} overlaps Hardware Registers ($D000-$DFFF)!"
             )
 
+    # Dedicated check for Render Tables / Sprites segment ($7A00-$7FFF) headroom before $8000
+    # Cost of a typical sprite: 20 rows/frame * 2 frames + 2 frames * 2 bytes pointer = 44 bytes (or 48 bytes with SoA tables)
+    TYPICAL_SPRITE_COST = 44
+    render_tables_seg = next((s for s in segments if s[0] == 0x7A00 or s[0] == 0x79D0), None)
+    if render_tables_seg:
+        r_start, r_end, r_size = render_tables_seg
+        r_headroom = 0x8000 - (r_end + 1)
+        print(
+            f"Sprite/Render Tables Segment ($7A00-$7FFF) Headroom before $8000: "
+            f"{r_headroom} bytes (Typical sprite cost: {TYPICAL_SPRITE_COST} B)"
+        )
+        if r_headroom < TYPICAL_SPRITE_COST:
+            errors.append(
+                f"Krytyczny brak pamięci: rezerwa segmentu danych sprite'ów ($7A00) wynosi tylko {r_headroom} B "
+                f"(wymagane minimum {TYPICAL_SPRITE_COST} B na 1 typowy sprite)!"
+            )
+
     print("-" * 60)
     print(f"Total User RAM Allocated: {total_user_bytes:,} bytes")
     # Base user RAM available: $2000 to $BFFF = $A000 (40,960 bytes)

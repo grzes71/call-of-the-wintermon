@@ -22,6 +22,33 @@ from pathlib import Path
 import sys
 from typing import Any
 
+try:
+    from scripts.sprite_roles import (
+        MAX_ZONE_SPRITE_HEIGHT,
+        SpriteValidationError,
+        determine_sprite_roles_from_scenes,
+        validate_sprite_definition_data,
+        check_sprite_id_uniqueness,
+    )
+except ImportError:
+    try:
+        from sprite_roles import (
+            MAX_ZONE_SPRITE_HEIGHT,
+            SpriteValidationError,
+            determine_sprite_roles_from_scenes,
+            validate_sprite_definition_data,
+            check_sprite_id_uniqueness,
+        )
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.resolve()))
+        from sprite_roles import (
+            MAX_ZONE_SPRITE_HEIGHT,
+            SpriteValidationError,
+            determine_sprite_roles_from_scenes,
+            validate_sprite_definition_data,
+            check_sprite_id_uniqueness,
+        )
+
 
 @dataclass
 class SpriteFrame:
@@ -40,6 +67,7 @@ class SpriteDefinition:
     height: int
     frame_duration: int
     loop: bool
+    format: str = "missiles"  # 'player' | 'missiles'
     frames: list[SpriteFrame] = field(default_factory=list)
 
 
@@ -90,25 +118,59 @@ def parse_sprites_json(
     json_path: Path,
     mode: str = "missiles",
     definitions_path: Path | None = None,
+    scenes_manifest_path: Path | None = None,
 ) -> dict[int, SpriteDefinition]:
     """Parse sprite studio JSON file into validated SpriteDefinition models.
 
-    When mode == 'missiles', if definitions_path is provided, sprites assigned to
-    enemies are automatically packed in 'player' format (1bpp bitmap for Players 1..3),
-    while secrets retain 'missiles' format (5th player M0..M3).
+    Validates:
+    - Width == 8, height in 1..MAX_ZONE_SPRITE_HEIGHT
+    - Non-empty frames with valid rows
+    - Duplicate ID checks across sprite files in sprites/ folder
+    - Roles resolved from actual scene usage (or fallback to definitions)
     """
     if not json_path.is_file():
-        raise FileNotFoundError(f"Sprites JSON file not found: {json_path}")
+        raise FileNotFoundError(f"Plik JSON sprite'ów nie istnieje: {json_path}")
 
-    # Determine enemy sprite IDs from definitions.json if in missiles mode
-    enemy_sprite_ids: set[int] = set()
-    if mode == "missiles" and definitions_path and definitions_path.is_file():
+    # Check unused files in sprites/ directory
+    sprites_dir = json_path.parent
+    all_sprite_files = sorted(sprites_dir.glob("*.sprite.json"))
+    if all_sprite_files:
+        for sf in all_sprite_files:
+            if sf.resolve() != json_path.resolve() and sf.name != "player.sprite.json":
+                print(f"Ostrzeżenie: nieużywany plik: {sf.name}", file=sys.stderr)
+
+        # Check internal duplicate IDs within json_path itself
+        raw_sprites_peek = json.loads(json_path.read_text(encoding="utf-8")).get("sprites", [])
+        seen_ids: dict[int, str] = {}
+        for s in raw_sprites_peek:
+            sid = int(s.get("id", 0))
+            if sid in seen_ids:
+                raise SpriteValidationError(
+                    f"Błąd integralności sprite'ów: powtórzony sprite ID {sid} w pliku '{json_path.name}'."
+                )
+            seen_ids[sid] = s.get("description", f"Sprite {sid}")
+
+    # Determine per-sprite packing format based on scenes manifest or definitions
+    sprite_roles: dict[int, str] = {}
+    if mode == "player":
+        pass
+    elif scenes_manifest_path and scenes_manifest_path.is_file() and definitions_path and definitions_path.is_file():
+        roles, e_usages, s_usages = determine_sprite_roles_from_scenes(
+            manifest_path=scenes_manifest_path,
+            definitions_path=definitions_path,
+        )
+        sprite_roles = roles
+    elif definitions_path and definitions_path.is_file():
         try:
             defs = json.loads(definitions_path.read_text(encoding="utf-8"))
             for enemy in defs.get("enemies", []):
                 sid = enemy.get("sprite_id")
                 if sid is not None:
-                    enemy_sprite_ids.add(int(sid))
+                    sprite_roles[int(sid)] = "player"
+            for secret in defs.get("secrets", []):
+                sid = secret.get("sprite_id")
+                if sid is not None:
+                    sprite_roles[int(sid)] = "missiles"
         except Exception as exc:
             print(f"Warning: Failed to read definitions for sprite packing mode: {exc}", file=sys.stderr)
 
@@ -117,7 +179,9 @@ def parse_sprites_json(
     sprites: dict[int, SpriteDefinition] = {}
 
     for raw in raw_sprites:
-        sid = int(raw.get("id", 0))
+        validate_sprite_definition_data(raw, source_file=json_path.name)
+
+        sid = int(raw["id"])
         desc = str(raw.get("description", f"Sprite {sid}"))
         w = int(raw.get("width", 8))
         h = int(raw.get("height", 16))
@@ -126,18 +190,22 @@ def parse_sprites_json(
         frame_dur = max(1, int(anim_data.get("frame_duration", 4)))
         loop = bool(anim_data.get("loop", True))
 
+        if mode == "player":
+            chosen_format = "player"
+        else:
+            chosen_format = sprite_roles.get(sid, "missiles")
+            if sid not in sprite_roles and mode == "missiles":
+                print(f"Informacja: Sprite {sid} ('{desc}') nie jest używany w żadnej scenie -> format pocisków (domyślny).")
+
         raw_frames = raw.get("frames", [])
         frames: list[SpriteFrame] = []
-
-        # Determine target packing format for this specific sprite
-        is_player_format = (mode == "player") or (sid in enemy_sprite_ids)
 
         for f in raw_frames:
             pixel_rows = f.get("pixels", [])
             packed_rows: list[int] = []
             for r_idx in range(h):
                 r_str = pixel_rows[r_idx] if r_idx < len(pixel_rows) else "00000000"
-                if is_player_format:
+                if chosen_format == "player":
                     packed_rows.append(pack_row_to_player_bitmap(r_str))
                 else:
                     packed_rows.append(pack_row_to_5th_player_missiles(r_str))
@@ -150,6 +218,7 @@ def parse_sprites_json(
             height=h,
             frame_duration=frame_dur,
             loop=loop,
+            format=chosen_format,
             frames=frames,
         )
 
@@ -297,17 +366,55 @@ def generate_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
     return "\n".join(lines)
 
 
+def generate_sprites_manifest(sprites: dict[int, SpriteDefinition]) -> dict[str, Any]:
+    """Generate manifest dictionary for gen/sprites_manifest.json."""
+    manifest: dict[str, Any] = {
+        "version": 1,
+        "max_sprite_id": max(sprites.keys()) if sprites else 0,
+        "sprites": {},
+    }
+
+    for sid in sorted(sprites.keys()):
+        sp = sprites[sid]
+        data_bytes = sum(len(f.rows) for f in sp.frames)
+        pointer_bytes = len(sp.frames) * 2
+        manifest["sprites"][str(sid)] = {
+            "id": sp.id,
+            "name": sp.description,
+            "format": sp.format,
+            "width": sp.width,
+            "height": sp.height,
+            "frame_count": len(sp.frames),
+            "frame_duration": sp.frame_duration,
+            "loop": sp.loop,
+            "data_size_bytes": data_bytes,
+            "pointer_size_bytes": pointer_bytes,
+            "total_bytes": data_bytes + pointer_bytes,
+            "frame_labels": [f"sprite_{sid}_frame_{f}" for f in range(len(sp.frames))],
+            "frames_label": f"sprite_{sid}_frames",
+        }
+
+    return manifest
+
+
 def compile_sprites(
     input_path: Path,
     output_path: Path,
     mode: str = "missiles",
     definitions_path: Path | None = None,
+    scenes_manifest_path: Path | None = None,
+    manifest_output_path: Path | None = None,
 ) -> int:
-    """Compile sprite studio JSON into 6502 assembly."""
+    """Compile sprite studio JSON into 6502 assembly and emit manifest."""
     try:
-        sprites = parse_sprites_json(input_path, mode=mode, definitions_path=definitions_path)
+        sprites = parse_sprites_json(
+            input_path,
+            mode=mode,
+            definitions_path=definitions_path,
+            scenes_manifest_path=scenes_manifest_path,
+        )
     except Exception as exc:
-        print(f"Error reading sprites JSON '{input_path}': {exc}", file=sys.stderr)
+        print(f"Błąd kompilacji sprite'ów '{input_path}': {exc}", file=sys.stderr)
         return 1
 
     if mode == "player":
@@ -318,6 +425,14 @@ def compile_sprites(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(asm_code, encoding="utf-8")
     print(f"Generated ASM sprite tables ({mode}): {output_path} ({len(asm_code)} chars, {len(sprites)} sprites)")
+
+    # Emit manifest for objects sprites
+    if mode != "player":
+        m_out = manifest_output_path or (output_path.parent / "sprites_manifest.json")
+        manifest_data = generate_sprites_manifest(sprites)
+        m_out.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+        print(f"Generated sprites manifest: {m_out}")
+
     return 0
 
 
@@ -351,8 +466,28 @@ def main() -> int:
         default=Path("scenes/definitions.json"),
         help="Path to definitions.json to identify enemy vs secret sprites",
     )
+    parser.add_argument(
+        "--scenes",
+        "-s",
+        type=Path,
+        default=Path("scenes/scenes.json"),
+        help="Path to scenes.json manifest to inspect all scenes for sprite roles",
+    )
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=Path("gen/sprites_manifest.json"),
+        help="Path to output sprites_manifest.json",
+    )
     args = parser.parse_args()
-    return compile_sprites(args.input, args.output, mode=args.mode, definitions_path=args.definitions)
+    return compile_sprites(
+        args.input,
+        args.output,
+        mode=args.mode,
+        definitions_path=args.definitions,
+        scenes_manifest_path=args.scenes,
+        manifest_output_path=args.manifest_out,
+    )
 
 
 if __name__ == "__main__":

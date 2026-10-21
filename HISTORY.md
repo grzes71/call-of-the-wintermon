@@ -2,6 +2,94 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-21] - Vertical Jump Physics & Animation: Halved Descent Speed and Fall Sprite
+
+- **Vertical Jump Descent & Physics ([engine/player.asm](engine/player.asm))**:
+  - Separated `jump_up` trajectory from `jump_long_dy`:
+    - Kept ascent intact (11 steps to apex at -18 lines).
+    - Reduced descent speed 2-fold from ~2 lines/frame to a steady 1 line/frame (`:18 .byte 1`), taking 18 frames to return cleanly to platform height.
+    - Updated `JUMP_UP_LEN` from 22 to 30 steps (`jump_up_dy`, `jump_up_dx`, `jump_up_anim`).
+- **Fall Animation Integration ([engine/player.asm](engine/player.asm))**:
+  - Updated `player_render_frame` during vertical jump descent (`JUMP_TYPE_UP`, post-incremented step >= 13): renders animation frames from `player_anim_fall_frames` (currently 1 frame from `sprites/player.sprite.json`, extensible to multi-frame) instead of jump directional frame 2.
+  - Standardized `PLAYER_STATE_FALL` to resolve frames through `player_anim_fall_frames`.
+- **Automated Verification ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Updated `test_player_jump_up_vertical` to trace the full 30-step trajectory, asserting exact 1 px/frame descent progression and validating PMG buffer content against `player_anim_fall_frame_0`.
+  - Updated ceiling and animation frame tests; full test suite passing (497 tests), `make all` and `check_memory` validated cleanly.
+
+- **Segment Relocation ([main.asm](main.asm))**:
+  - Implemented Option A: relocated `engine/status_line.asm` from the render tables segment (`$7A00`) to the scene data segment (`$5000`).
+  - Render tables segment (`$7A00`) size reduced from 1,486 bytes (`$7FCD`) to 1,349 bytes (`$7F44`).
+  - Increased available headroom before ANTIC Mode E tileset at `$8000` from 50 bytes to **187 bytes** (room for 4 additional typical sprites at 44 B each).
+  - Scene data segment (`$5000`) now ends at `$5C65`, retaining 922 bytes of headroom before Title DList at `$6000`.
+- **Automated Verification**:
+  - Full test suite passing (497 tests), `make all` and `check_memory` validated cleanly.
+
+### Instrukcja: Jak dodać nowego wroga / Sekret
+
+1. **Definicja sprite'a (`sprites/objects.sprite.json` lub Sprite Editor)**:
+   - Dodaj sprite o unikalnym `id` (int), stałej szerokości 8 pikseli (`width: 8`) i wysokości od 1 do maksymalnie 20 linii skanowania (`height <= 20`).
+   - Każda klatka musi zawierać dokładnie tyle wierszy, ile wynosi `height`, a każdy wiersz musi być 8-znakowym ciągiem zer i jedynek (`"0"` / `"1"`).
+   - Zapisz plik. Uwaga: Sprite Editor (`atari-scene-editor`) ładuje `objects.sprite.json`; dodatkowe pliki w `sprites/` (np. `azatoth.sprite.json`) są ignorowane przez build i traktowane jako ostrzeżenie.
+
+2. **Katalog typów (`scenes/definitions.json`)**:
+   - Dla Wroga: dodaj wpis w sekcji `enemies` z unikalnym `id`, nazwą, kolorem `atari_color` oraz domyślnym `sprite_id`.
+   - Dla Sekretu: dodaj wpis w sekcji `secrets` z unikalnym `id`, nazwą, kolorem, `sprite_id` oraz opcjonalnym `dependency`.
+
+3. **Umieszczenie obiektu w scenie (`scenes/01-forest.json`, itp.)**:
+   - W sekcji `objects` utwórz obiekt z `"type": "enemy"` lub `"type": "secret"`, przypisanym `platform_id`, pozycją `x` oraz `definition_id`.
+   - **Reguła pierwszeństwa `sprite_id`**: Jeśli obiekt w scenie posiada jawne pole `sprite_id`, ma ono pierwszeństwo przed wpisem w `definitions.json`. Jeśli obiekt nie ma `sprite_id`, kompilator pobiera je z katalogu `definitions.json`. Brak obu skutkuje natychmiastowym błędem kompilacji.
+   - **Ograniczenia rozmieszczenia**:
+     - Maksymalnie 3 wrogów w jednej strefie międzyplatformowej (`MAX_ENEMIES_PER_ZONE = 3`).
+     - Maksymalnie 6 wrogów (`MAX_ENEMIES_TOTAL = 6`) oraz 6 sekretów (`MAX_SECRETS_TOTAL = 6`) na scenę.
+     - Tylko jeden sekret z daną zależnością (`dependency`) na dane pasmo platform.
+
+4. **Weryfikacja i budowanie (`make all`)**:
+   - Uruchom `make all`. Potok automatycznie:
+     1. Zbada faktyczne użycie każdego sprite'a we wszystkich scenach z `scenes/scenes.json`:
+        - Użyty tylko jako wróg -> format `player` (1 bpp, bit 7 = lewy piksel).
+        - Użyty tylko jako sekret -> format `missiles` (5. gracz, M0..M3).
+        - Użyty w obu rolach -> błąd `SpriteValidationError` z wykazem konfliktów.
+        - Nieużywany -> domyślny format `missiles` z informacją w logu.
+     2. Wygeneruje manifest `gen/sprites_manifest.json` oraz kod asemblera `gen/sprites_data.asm`.
+     3. Kompilator scen `compile_scenes.py` zweryfikuje spójność: wróg musi wskazywać format `player`, a sekret format `missiles`.
+     4. `check_memory.py` zweryfikuje rezerwę pamięci segmentu `$7A00-$7FFF` przed tilesetem `$8000`.
+
+5. **Znaczenie komunikatów błędów**:
+   - `Błąd w scenie ...: obiekt ... nie ma przypisanego sprite_id`: Obiekt sceny nie ma pola `sprite_id`, a jego typ w `definitions.json` nie posiada domyślnego `sprite_id`.
+   - `Błąd: konflikt ról dla sprite ID ...`: Ten sam sprite został przypisany jednocześnie do wroga (Player) i sekretu (Pociski).
+   - `Błąd: powtórzone ID sprite'a ...`: Dwa sprite'y w plikach wejściowych mają taki sam identyfikator numeryczny.
+   - `Błąd ...: sprite ... ma szerokość ... != 8 lub wysokość ... poza zakresem 1..20`: Naruszenie wymiarów GTIA/PMG (wysokość strefy wynosi 20 linii skanowania).
+   - `Błąd ...: przekroczono limit maksymalnie 3 wrogów w strefie`: Do jednego pasma przypisano 4 lub więcej wrogów (brak wolnych kanałów sprzętowych Players 1-3).
+   - `Błąd ...: wróg ... wskazuje sprite ID ... skompilowany w formacie 'missiles'`: Niezgodność ról manifestu wykryta w kompilatorze scen.
+
+### Wdrożone zmiany techniczne
+
+- **Pojedyncze źródło prawdy (`scripts/sprite_roles.py`)**:
+  - Utworzono moduł implementujący `resolve_object_sprite_id` (priorytet: obiekt sceny > katalog `definitions.json` > `SpriteValidationError`).
+  - Zaimplementowano `determine_sprite_roles_from_scenes` analizującą wszystkie sceny manifestu i wykrywającą konflikty ról między wrogami i sekretami.
+  - Zdefiniowano stałe projektowe: `MAX_ZONE_SPRITE_HEIGHT = 20`, `MAX_ENEMIES_PER_ZONE = 3`, `MAX_ENEMIES_TOTAL = 6`, `MAX_SECRETS_TOTAL = 6`.
+  - Zaimplementowano `validate_sprite_definition_data` (szerokość 8, wysokość 1..20, znaki binarne, spójność klatek) oraz `check_sprite_id_uniqueness`.
+- **Kompilator sprite'ów (`scripts/compile_sprites.py`)**:
+  - Dodano obsługę flag `--scenes` oraz `--manifest-out`.
+  - Generowanie manifestu `gen/sprites_manifest.json` zawierającego metadane, format (`player` / `missiles`), wymiary, klatki i rozmiary buforów.
+  - Wykrywanie nieużywanych plików `*.sprite.json` w `sprites/` (wypisywanie ostrzeżenia bez usuwania).
+  - Pakowanie danych sprite'ów w formacie zależnym od roli wynikającej ze scen.
+- **Kompilator scen (`scripts/compile_scenes.py`)**:
+  - Zastąpiono ad-hoc logikę pobierania sprite'ów wywołaniem `resolve_object_sprite_id`.
+  - Dodano weryfikację formatu sprite'a z manifestu (`player` dla wrogów, `missiles` dla sekretów) jako drugą linię obrony.
+  - Dodano sprawdzanie limitu 3 wrogów na strefę oraz łącznych limitów na scenę.
+- **Potok budowania (`Makefile`)**:
+  - Dodano zależność reguły `$(SPRITES_ASM)` od manifestu scen, plików scen oraz `scripts/sprite_roles.py`.
+  - Przekazano parametry `--scenes $(SCENES_MANIFEST)` i `--manifest-out $(SPRITES_MANIFEST)`.
+- **Walidacja pamięci (`scripts/check_memory.py`)**:
+  - Zdefiniowano `TYPICAL_SPRITE_COST = 44` bajty (20 B/klatkę * 2 klatki + 4 B wskaźniki).
+  - Wypisywanie rezerwy w segmencie `$7A00-$7FFF` przed tilesetem `$8000` (obecnie 50 bajtów wolnych).
+  - Zgłaszanie błędu kompilacji, jeśli rezerwa spadnie poniżej kosztu typowego sprite'a (< 44 B).
+- **Zestaw testów automatycznych (`tests/test_enemy_sprites_bitmap.py`, `tests/test_secret_row_constraints.py`)**:
+  - Rozszerzono `test_enemy_sprites_bitmap.py` o 11 testów: parametryzowana weryfikacja wszystkich scen/obiektów z niezależnym modelem referencyjnym, regresja bajt-w-bajt sekretów, syntetyczne testy przypadków brzegowych (a-h) w `tmp_path`, oraz test zgodności manifestu z kodem ASM.
+  - Zaktualizowano mocki w `test_secret_row_constraints.py` o `sprite_id`.
+  - Wszystkie 497 testów w projekcie przechodzi pomyślnie.
+
 ## [2026-10-21] - Synchronize Test Harnesses with Scene Editor Changes (01-Forest Platforms & Objects)
 
 - **Test Harness Dynamic Synchronization ([tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:

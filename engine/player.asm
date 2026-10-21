@@ -23,15 +23,30 @@ PLAYER_ACCEL        = $10       ; Acceleration: 16/256 = 0.0625 px/frame^2 (reac
 PLAYER_DECEL        = $10       ; Deceleration: 16/256 = 0.0625 px/frame^2 (stops in 8 frames)
 
 ; --- Player Jump Constants & Profile Lengths ---
-JUMP_UP_LEN         = 22        ; Vertical jump: 22 steps, apex 18 lines, net dy=0, dx=0
+JUMP_UP_LEN         = 30        ; Vertical jump: 30 steps (11 ascent, 1 apex, 18 descent at 1 px/frame, net dy=0, dx=0)
 JUMP_SHORT_LEN      = 18        ; Short jump: 18 steps, apex 10 lines, net dy=0, dx=18 px
 JUMP_LONG_LEN       = 22        ; Long jump: 22 steps, apex 18 lines (higher platform at -16), dx=8 px
 
 ; ==============================================================================
 ; JUMP TRAJECTORY TABLES
 ; ==============================================================================
-; 1. Vertical & Long Jump Shared Trajectory (apex 18 lines, 22 steps)
+; 1. Vertical Jump Trajectory (apex 18 lines, 30 steps: 11 ascent, 1 apex, 18 descent at 1 px/frame)
 jump_up_dy
+    .byte -2, -2, -2, -2        ; Steps 0..3: fast ascent (up 8)
+    .byte -2, -2, -2            ; Steps 4..6: mid ascent (up 6 -> up 14)
+    .byte -1, -1, -1, -1        ; Steps 7..10: apex approach (up 4 -> peak 18 lines)
+    .byte  0                    ; Step 11: apex (peak 18 lines)
+    :18 .byte 1                 ; Steps 12..29: descent at 1 px/frame (down 18 lines -> net 0)
+
+jump_up_anim
+    .byte 0, 0, 0, 0, 0, 0, 0, 0; Steps 0..7: Frame 0 (fast ascent)
+    .byte 1, 1, 1, 1            ; Steps 8..11: Frame 1 (apex)
+    :18 .byte 0                 ; Steps 12..29: Fall animation frame 0
+
+jump_up_dx
+    :30 .byte 0
+
+; 2. Long Jump Trajectory (apex 18 lines, 22 steps, dx=8 px)
 jump_long_dy
     .byte -2, -2, -2, -2        ; Steps 0..3: fast ascent (up 8)
     .byte -2, -2, -2            ; Steps 4..6: mid ascent (up 6 -> up 14)
@@ -40,14 +55,10 @@ jump_long_dy
     .byte  1,  1,  1            ; Steps 12..14: initial descent (down 3)
     .byte  2,  2,  2,  2,  2,  2,  3 ; Steps 15..21: fast descent (down 15 -> net 0)
 
-jump_up_anim
 jump_long_anim
     .byte 0, 0, 0, 0, 0, 0, 0, 0; Steps 0..7: Frame 0 (fast ascent)
     .byte 1, 1, 1, 1, 1, 1      ; Steps 8..13: Frame 1 (apex & landing)
     .byte 2, 2, 2, 2, 2, 2, 2, 2; Steps 14..21: Frame 2 (fast descent)
-
-jump_up_dx
-    :22 .byte 0
 
 ; 2. Short Jump (JUMP_TYPE_SHORT = 1): across ~16px gap
 jump_short_dy
@@ -245,17 +256,32 @@ player_jump_anim_table_hi
     cmp #PLAYER_STATE_FALL
     bne @not_fall_sprite
 
-    ; Fall animation: single frame player_anim_fall_frame_0
-    lda #<player_anim_fall_frame_0
+    ; Fall animation: player_anim_fall_frames
+    lda #<player_anim_fall_frames
     sta zp_ptr_src
-    lda #>player_anim_fall_frame_0
+    lda #>player_anim_fall_frames
     sta zp_ptr_src+1
-    jmp @do_draw
+    jmp @resolve_frame
 
 @not_fall_sprite
     cmp #PLAYER_STATE_JUMP
     bne @not_jump_sprite
 
+    ; Check if vertical jump is in descent phase (use fall animation)
+    lda player_jump_type
+    bne @normal_jump_sprite     ; Not JUMP_TYPE_UP -> normal directional jump sprite
+    ldx player_jump_step
+    cpx #13                     ; Post-incremented step: step >= 13 is descent phase (steps 12..29)
+    bcc @normal_jump_sprite
+
+    ; Vertical jump descent: use fall animation!
+    lda #<player_anim_fall_frames
+    sta zp_ptr_src
+    lda #>player_anim_fall_frames
+    sta zp_ptr_src+1
+    jmp @resolve_frame
+
+@normal_jump_sprite
     ; Jump animation: select jump-left or jump-right based on player_dir
     ldy player_dir
     lda player_jump_anim_table_lo,y
