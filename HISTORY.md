@@ -2,6 +2,19 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Rebalance Memory: Relocate Intro Screen Handler Out of the Tight $2000 Block
+
+- **Motivation**: after the victory-hold phase and the PMG-latch fix, the `$2000` CODE block ended at `$23EA`, i.e. only **21 bytes** before the intro font at `$2400` - no room left for further gameplay logic.
+- **Relocation ([main.asm](main.asm))**:
+  - Added `INTRO_CODE_ADDR = $69C0` and moved `icl 'scenes/intro.asm'` out of the `$2000` block into the free PMG headroom between the render lookup tables (`$69BF`) and the active PMG buffer (`$6B00`), an area single-line PMG DMA (`PBASE=$68`, active `$6B00-$6FFF`) never touches.
+  - `$2000` CODE block: `$2000-$23EA` -> `$2000-$2340` (833 bytes); headroom before the font **21 -> 191 bytes**.
+  - Render tables + intro segment now spans `$6800-$6A69` (618 bytes) with 150 bytes free before `$6B00`.
+- **Tooling ([scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Segment labels/descriptions updated for `$6800` (render tables + intro handler) plus a dedicated `$69C0` entry for the relocated handler.
+- **Verification**: full suite 549 tests passing (the intro screen/music harnesses resolve everything through labels, so the relocation is transparent), `check_memory.py` SUCCESS, total user RAM unchanged (39,123 bytes, 1,837 bytes headroom below `$C000`).
+- **Remaining tight spots for future growth**: `$5000` scene data (54 B free), `$6100` DLI engine (13 B), `$6B00` PMG+audio (38 B), `$7A00` render+sprites (386 B), `$2A30` metadata/status/SFX (332 B).
+
+
 ## [2026-10-22] - Fix Full-Height Garbage Bar Behind the Scene Title Card (Stale PMG Latch)
 
 - **Root Cause ([scenes/game.asm](scenes/game.asm))**:

@@ -22,6 +22,7 @@ DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligne
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_ADDR = $6710   ; Game Over / Victory screen handler (~157 bytes: $6710-$67AD)
 RENDER_TABLES = $6800   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) — reclaims $6800-$6AFF (MEM-006)
+INTRO_CODE_ADDR = $69C0 ; Intro screen handler: relocated out of the $2000 CODE block (which was down to 21 B of headroom)
 PMG_ADDR    = $6800     ; Player-Missile Graphics base: 2 KB aligned (PMBASE=$68, active memory $6B00-$6FFF)
 AUDIO_ADDR  = $7000     ; Audio Player & Music Buffers
 RENDER_CODE = $7A00     ; Playfield Blitter Engine & Sprites Data (headroom before $8000 expanded)
@@ -121,9 +122,10 @@ main_loop
     jmp main_loop
 
 ; ==============================================================================
-; SCENE MODULES (Intro, Game)
+; SCENE MODULES (Game)
+; scenes/intro.asm lives at INTRO_CODE_ADDR ($69C0) so this block stays clear of
+; the intro font at $2400 and has room for future gameplay logic.
 ; ==============================================================================
-    icl 'scenes/intro.asm'
     icl 'scenes/game.asm'
 
 ; ==============================================================================
@@ -459,6 +461,16 @@ title_dl_vs_addr
 ; ==============================================================================
     org RENDER_TABLES
     icl 'engine/render_tables.asm'
+
+; ==============================================================================
+; INTRO SCREEN HANDLER SEGMENT ($69C0)
+; Relocated from the $2000 CODE block (which was down to 21 bytes of headroom)
+; into the free PMG headroom between the render lookup tables ($69BF) and the active
+; PMG buffer ($6B00). Single-line PMG DMA (PBASE=$68) only fetches $6B00-$6FFF,
+; so this area is never overwritten by the player/missile graphics hardware.
+; ==============================================================================
+    org INTRO_CODE_ADDR
+    icl 'scenes/intro.asm'
 
 ; ==============================================================================
 ; PLAYER-MISSILE GRAPHICS (PMG) ACTIVE MEMORY SEGMENT ($6B00)

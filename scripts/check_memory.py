@@ -89,7 +89,9 @@ def check_memory(xex_path: Path) -> int:
         elif start == 0x6710:
             seg_type = "Game Over / Victory State Handler"
         elif start == 0x6800:
-            seg_type = "Render Lookup Tables (Flip & Row Pointers)"
+            seg_type = "Render Lookup Tables + Intro Screen Handler"
+        elif start == 0x69C0:
+            seg_type = "Intro Screen Handler (relocated from $2000)"
         elif start == 0x6B00:
             seg_type = "Active PMG (1.25 KB) + Audio Player & Music"
         elif start == 0x7000:

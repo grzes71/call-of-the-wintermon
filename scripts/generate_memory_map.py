@@ -103,7 +103,9 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x6100:
         return "Unified DLI Engine & Buffers", "CODE", COLORS["CODE"], "Double-buffered DLI tables and 3-phase DLI interrupt handler"
     if start == 0x6800:
-        return "Render Lookup Tables", "CODE", COLORS["CODE"], "2bpp horizontal flip table + Playfield row offsets (MEM-006)"
+        return "Render Tables + Intro Handler", "CODE", COLORS["CODE"], "2bpp flip LUT + row offsets (MEM-006) and the relocated Intro screen code"
+    if start == 0x69C0:
+        return "Intro Screen Handler", "CODE", COLORS["CODE"], "Intro text screen init/run (relocated out of the $2000 block)"
     if start == 0x6B00:
         return "Player-Missile & Audio", "PMG", COLORS["PMG"], "1.25 KB active PMG buffer ($6B00) + Audio Player & Music ($7000)"
     if start == 0x7000:
