@@ -229,7 +229,7 @@
       "definition_id": 1,
       "platform_id": "platform-010",
       "x": 120,
-      "speed": "medium",
+      "speed": "slow",
       "movement_strategy": "left_right"
     },
     {

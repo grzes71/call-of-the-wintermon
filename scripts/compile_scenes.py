@@ -201,6 +201,7 @@ class SceneSecretData:
     atari_color: int
     active: bool
     dep_id: int = 0
+    zone_idx: int = 0
 
 
 @dataclass
@@ -1170,6 +1171,7 @@ def parse_scene_json(
             p_base = 32 + (plat_y * 2)
             pmg_y = max(0, p_base - spr_h - 3)
             active = (dep_id == 0)
+            zid = (plat_y - 8) // 16 if plat_y >= 8 else 0
 
             scene_secrets.append(
                 SceneSecretData(
@@ -1185,6 +1187,7 @@ def parse_scene_json(
                     atari_color=color,
                     active=active,
                     dep_id=dep_id,
+                    zone_idx=zid,
                 )
             )
         else:
@@ -1545,6 +1548,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(s.frame_count) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_color")
             lines.append("    .byte " + ", ".join(f"${s.atari_color:02X}" for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_zone")
+            lines.append("    .byte " + ", ".join(str(s.zone_idx) for s in sc.secrets))
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
@@ -1557,6 +1562,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_frame_dur  .byte 0",
                 f"scene_{sym}_secret_frame_count .byte 0",
                 f"scene_{sym}_secret_color      .byte 0",
+                f"scene_{sym}_secret_zone       .byte 0",
             ])
         lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
         if sc.enemies:
@@ -1798,6 +1804,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_color" for sc in scenes),
         "scene_secret_color_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_color" for sc in scenes),
+        "scene_secret_zone_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_zone" for sc in scenes),
+        "scene_secret_zone_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_zone" for sc in scenes),
         "",
         "; --- Enemy Pointer Tables ---",
         "scene_enemy_def_id_lo",

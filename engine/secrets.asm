@@ -25,6 +25,8 @@ secrets_frame_dur   :MAX_SECRETS .byte 0
 secrets_frame_count :MAX_SECRETS .byte 0
 secrets_timer       :MAX_SECRETS .byte 0
 secrets_frame_idx   :MAX_SECRETS .byte 0
+secrets_color       :MAX_SECRETS .byte 0
+secrets_zone        :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; RENDER SECRET FRAME
@@ -99,6 +101,114 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     bpl @clear_loop
 
 @done
+    rts
+.endp
+
+; ==============================================================================
+; UPDATE SECRET HPOS
+; Updates DLI horizontal position (HPOSM0..M3), color (COLPF3), and PRIOR for
+; a secret's zone in both DLI double buffers.
+; Input: X = secret index (0..MAX_SECRETS-1)
+; Preserves: X
+; ==============================================================================
+.proc update_secret_hpos
+    clc
+    lda secrets_x,x
+    adc #48
+    sta zp_temp_a       ; M0 = 48 + X
+
+    lda secrets_zone,x
+    beq @zone_0
+
+    ; Zones 1..6: table offset = zone - 1 (0..5)
+    sec
+    sbc #1
+    tay
+
+    ; Buffer 0 (+0) and Buffer 1 (+8)
+    lda zp_temp_a
+    sta dli_zone_hpos_m0,y
+    sta dli_zone_hpos_m0+8,y
+    clc
+    adc #2
+    sta dli_zone_hpos_m1,y
+    sta dli_zone_hpos_m1+8,y
+    adc #2
+    sta dli_zone_hpos_m2,y
+    sta dli_zone_hpos_m2+8,y
+    adc #2
+    sta dli_zone_hpos_m3,y
+    sta dli_zone_hpos_m3+8,y
+
+    lda secrets_color,x
+    sta dli_zone_secret_col,y
+    sta dli_zone_secret_col+8,y
+    lda #$11
+    sta dli_zone_prior,y
+    sta dli_zone_prior+8,y
+    rts
+
+@zone_0
+    ; Zone 0: Buffer 0 (+0) and Buffer 1 (+1)
+    lda zp_temp_a
+    sta dli_z0_hpos_m0
+    sta dli_z0_hpos_m0+1
+    clc
+    adc #2
+    sta dli_z0_hpos_m1
+    sta dli_z0_hpos_m1+1
+    adc #2
+    sta dli_z0_hpos_m2
+    sta dli_z0_hpos_m2+1
+    adc #2
+    sta dli_z0_hpos_m3
+    sta dli_z0_hpos_m3+1
+
+    lda secrets_color,x
+    sta dli_z0_secret_col
+    sta dli_z0_secret_col+1
+    lda #$11
+    sta dli_z0_prior
+    sta dli_z0_prior+1
+    rts
+.endp
+
+; ==============================================================================
+; CLEAR SECRET HPOS
+; Clears DLI horizontal position (HPOSM0..M3 = $FF) for a secret's zone in both
+; DLI double buffers.
+; Input: X = secret index (0..MAX_SECRETS-1)
+; Preserves: X
+; ==============================================================================
+.proc clear_secret_hpos
+    lda secrets_zone,x
+    beq @zone_0
+
+    sec
+    sbc #1
+    tay
+
+    lda #$FF
+    sta dli_zone_hpos_m0,y
+    sta dli_zone_hpos_m0+8,y
+    sta dli_zone_hpos_m1,y
+    sta dli_zone_hpos_m1+8,y
+    sta dli_zone_hpos_m2,y
+    sta dli_zone_hpos_m2+8,y
+    sta dli_zone_hpos_m3,y
+    sta dli_zone_hpos_m3+8,y
+    rts
+
+@zone_0
+    lda #$FF
+    sta dli_z0_hpos_m0
+    sta dli_z0_hpos_m0+1
+    sta dli_z0_hpos_m1
+    sta dli_z0_hpos_m1+1
+    sta dli_z0_hpos_m2
+    sta dli_z0_hpos_m2+1
+    sta dli_z0_hpos_m3
+    sta dli_z0_hpos_m3+1
     rts
 .endp
 
@@ -264,7 +374,33 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     dey
     bpl @copy_x
 
-    ; 10. Clear secrets_collected array
+    ; 10. Copy colors
+    lda scene_secret_color_lo,x
+    sta zp_ptr_src
+    lda scene_secret_color_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_col
+    lda (zp_ptr_src),y
+    sta secrets_color,y
+    dey
+    bpl @copy_col
+
+    ; 11. Copy zones
+    lda scene_secret_zone_lo,x
+    sta zp_ptr_src
+    lda scene_secret_zone_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_zone
+    lda (zp_ptr_src),y
+    sta secrets_zone,y
+    dey
+    bpl @copy_zone
+
+    ; 12. Clear secrets_collected array
     ldy secrets_count
     dey
     lda #0
@@ -273,7 +409,7 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     dey
     bpl @clr_coll
 
-    ; 11. Clear PMG rows for all scene secrets
+    ; 13. Clear PMG rows for all scene secrets
     ldx #0
 @clear_all_loop
     cpx secrets_count
@@ -287,7 +423,7 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     jmp @clear_all_loop
 
 @start_render
-    ; 12. Render Frame 0 for active secrets
+    ; 14. Render Frame 0 and update DLI positions for active secrets
     ldx #0
 @init_render_loop
     cpx secrets_count
@@ -296,10 +432,11 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
     lda secrets_active,x
     beq @skip_initial
 
-    ; Active: render Frame 0
+    ; Active: render Frame 0 and configure DLI
     txa
     pha
     jsr render_secret_frame
+    jsr update_secret_hpos
     pla
     tax
 

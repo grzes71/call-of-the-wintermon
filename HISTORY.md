@@ -2,6 +2,31 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Fix Secret Positions on Progression via Dynamic DLI Missile Registers
+
+- **Scene Compiler ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `zone_idx` to `SceneSecretData` and computed zone index `(plat_y - 8) // 16` for compiled secrets.
+  - Exported `scene_{sym}_secret_zone` arrays in per-scene ASM blocks and added `scene_secret_zone_lo`/`hi` pointer tables.
+- **Secret Engine ([engine/secrets.asm](engine/secrets.asm))**:
+  - Added SoA arrays `secrets_color` and `secrets_zone`.
+  - Updated `secrets_init` to copy colors and zones from ROM tables and invoke `update_secret_hpos` for initially active secrets.
+  - Implemented `.proc update_secret_hpos` to dynamically update `dli_zone_hpos_m0..3` (`48 + x, +2, +4, +6`), `dli_zone_secret_col`, and `dli_zone_prior` across both DLI double buffers (and Zone 0).
+  - Implemented `.proc clear_secret_hpos` to set `dli_zone_hpos_m0..3 = $FF` when secrets are collected.
+- **Gameplay State ([scenes/game.asm](scenes/game.asm))**:
+  - Added dedicated `secret_unl_count` variable to avoid zero-page register clobbering during the unlock loop.
+  - Updated `secret_collect` to call `clear_secret_hpos` when a secret is touched, and call `update_secret_hpos` for each newly unlocked dependent secret.
+- **Integration Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Added assertions to `test_secret_collection_and_stage_progression_scene0` verifying that collecting initial keys dynamically updates DLI `HPOSM0..3` and `COLPF3` tables to the newly unlocked Skulls' exact defined coordinates across both DLI double-buffer offsets.
+
+## [2026-10-22] - Refactor Enemy Speed Tests to Follow Rule 05 (Asset Agnosticism)
+
+- **Enemy Runtime Tests ([tests/test_enemies_runtime.py](tests/test_enemies_runtime.py))**:
+  - Refactored `test_enemies_init_scene0` to dynamically derive expected enemy count, definition IDs, speeds, movement strategies, and coordinates from `scenes/01-forest.json` instead of asserting hardcoded values per Rule 05.
+  - Refactored `test_enemies_speed_intervals` to explicitly set up fixture speed, timer, and strategy registers on emulated memory rather than relying on mutable production scene data.
+- **Scene Compiler Tests ([tests/test_compile_scenes.py](tests/test_compile_scenes.py))**:
+  - Updated `test_parse_01_forest_scene` to dynamically assert scene dimensions, element counts, platform counts, and enemy speed/strategy codes against `scenes/01-forest.json`.
+
+
 ## [2026-10-22] - Fix Sprite Definitions Wiped Out on Scene Open in Atari Scene Editor
 
 - **Main Window Scene Loading ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:

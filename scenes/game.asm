@@ -299,7 +299,8 @@ SCENE_TITLE_FADE_STEPS = 8
 ; Checks GTIA Player 0 - Missile collisions (M0PL..M3PL), bounding boxes,
 ; erases collected secrets, handles stage unlocking, and scene progression.
 ; ==============================================================================
-secret_coll_def .byte 0
+secret_coll_def  .byte 0
+secret_unl_count .byte 0
 
 .proc secrets_check_player_collision
     ; If hero is in death state, do not collect secrets
@@ -372,10 +373,11 @@ secret_coll_def .byte 0
 .endp
 
 .proc secret_collect
-    ; 1. Erase secret scanlines from PMG_MISSILES memory
+    ; 1. Erase secret scanlines from PMG_MISSILES memory and move offscreen
     txa
     pha
     jsr clear_secret_rows
+    jsr clear_secret_hpos
     pla
     tax
 
@@ -404,7 +406,7 @@ secret_coll_def .byte 0
     ; Unlock dependent secrets where dep_id == secret_coll_def
     ldy #0
     lda #0
-    sta zp_temp_x           ; Unlocked count
+    sta secret_unl_count    ; Unlocked count
 @unl_loop
     cpy secrets_count
     bcs @chk_unlocked
@@ -427,17 +429,18 @@ secret_coll_def .byte 0
     pha
     tax
     jsr render_secret_frame
+    jsr update_secret_hpos
     pla
     tay
 
-    inc zp_temp_x
+    inc secret_unl_count
 
 @next_unl
     iny
     jmp @unl_loop
 
 @chk_unlocked
-    lda zp_temp_x
+    lda secret_unl_count
     bne @done               ; Newly unlocked stage is now active on screen!
 
     ; No dependent secrets unlocked. Check if ALL scene secrets are collected!

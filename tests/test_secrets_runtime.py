@@ -255,6 +255,11 @@ def test_secret_collection_and_stage_progression_scene0():
     # Secret 0 PMG scanlines are now cleared ($00)
     assert all(b == 0 for b in mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
 
+    hpos_m0_addr = labels["DLI_ZONE_HPOS_M0"]
+    # Secret 0 (Gold Key on platform-006, y=56, zone 3 -> table offset 2) is cleared
+    assert mem[hpos_m0_addr + 2] == 0xFF
+    assert mem[hpos_m0_addr + 10] == 0xFF
+
     # Secret 1 is still active; Secrets 2, 3, 4 are STILL inactive
     assert mem[act_addr + 1] == 1
     assert mem[act_addr + 2] == 0
@@ -287,6 +292,14 @@ def test_secret_collection_and_stage_progression_scene0():
     actual_skull_bytes = list(mem[pmg_m + pmg_y2 : pmg_m + pmg_y2 + 15])
     assert actual_skull_bytes == exp_skull_bytes, "Skull sprite Frame 0 not rendered on unlock"
 
+    # Verify DLI horizontal positions updated dynamically for both newly unlocked Skulls
+    # Secret 2 (Skull on platform-011, y=24, zone 1 -> offset 0 in dli_zone tables)
+    assert mem[hpos_m0_addr + 0] == 48 + 68, "Secret 2 DLI HPOS M0 not updated to x=68"
+    assert mem[hpos_m0_addr + 8] == 48 + 68, "Secret 2 DLI HPOS M0 buffer 1 not updated"
+    # Secret 3 (Skull on platform-012, y=56, zone 3 -> offset 2 in dli_zone tables)
+    assert mem[hpos_m0_addr + 2] == 48 + sec_x3, "Secret 3 DLI HPOS M0 not updated to sec_x3"
+    assert mem[hpos_m0_addr + 10] == 48 + sec_x3, "Secret 3 DLI HPOS M0 buffer 1 not updated"
+
     # Scene 0 is not complete yet (skulls still active)
     assert mem[labels["ACTIVE_SCENE_ID"]] == 0
 
@@ -297,6 +310,9 @@ def test_secret_collection_and_stage_progression_scene0():
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
     assert mem[coll_addr + 2] == 1
     assert mem[act_addr + 2] == 0
+    # Secret 2 DLI HPOS cleared offscreen
+    assert mem[hpos_m0_addr + 0] == 0xFF
+    assert mem[hpos_m0_addr + 8] == 0xFF
 
     # Scene 0 still not complete (secret 3 still active, secret 4 still locked)
     assert mem[labels["ACTIVE_SCENE_ID"]] == 0
@@ -309,6 +325,9 @@ def test_secret_collection_and_stage_progression_scene0():
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
     assert mem[coll_addr + 3] == 1
     assert mem[act_addr + 3] == 0
+    # Secret 3 DLI HPOS cleared offscreen
+    assert mem[hpos_m0_addr + 2] == 0xFF
+    assert mem[hpos_m0_addr + 10] == 0xFF
 
     # Skulls collected! Secret 4 (CD, dep 2) is now UNLOCKED!
     assert mem[act_addr + 4] == 1, "CD (Secret 4) must be unlocked after all skulls collected"
@@ -320,6 +339,10 @@ def test_secret_collection_and_stage_progression_scene0():
     actual_cd_bytes = list(mem[pmg_m + pmg_y4 : pmg_m + pmg_y4 + 16])
     assert actual_cd_bytes == exp_cd_bytes, "CD sprite Frame 0 not rendered on unlock"
 
+    # Secret 4 (CD on platform-004, y=72, zone 4 -> offset 3 in dli_zone tables)
+    assert mem[hpos_m0_addr + 3] == 48 + sec_x4, "Secret 4 DLI HPOS M0 not updated to sec_x4"
+    assert mem[hpos_m0_addr + 11] == 48 + sec_x4, "Secret 4 DLI HPOS M0 buffer 1 not updated"
+
     # Scene 0 still not complete (CD still active)
     assert mem[labels["ACTIVE_SCENE_ID"]] == 0
 
@@ -329,7 +352,7 @@ def test_secret_collection_and_stage_progression_scene0():
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
     assert mem[coll_addr + 4] == 1
-    assert mem[act_addr + 4] == 0
+    # Collecting final secret immediately triggers game_next_scene, which stages Scene 1
 
     # All secrets in Scene 0 collected -> game_next_scene automatically triggered!
     # active_scene_id must now be 1 (Scene 1: Be Quick or Be Dead)

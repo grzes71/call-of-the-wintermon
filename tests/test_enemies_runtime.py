@@ -145,12 +145,15 @@ def test_enemies_init_scene0():
     mpu.a = 0
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
-    # Scene 0 (Forest) has 3 enemies:
-    # 0: def 1 (Azathoth, sprite 4) on plat-010 (y=24, zone 1) -> x=110, slow (0), left_right (1), dir=1 (left)
-    # 1: def 2 (Nyarlathotep, sprite 4) on plat-006 (y=56, zone 3) -> x=8, med (1), right_left (2), dir=0 (right)
-    # 2: def 2 (Nyarlathotep, sprite 4) on plat-012 (y=56, zone 3) -> x=116, med (1), stationary (0), dir=0 (right)
+    # Derive expectations dynamically from scenes/01-forest.json per Rule 05
+    with open("scenes/01-forest.json", "r", encoding="utf-8") as f:
+        scene_data = json.load(f)
+    enemies_data = [obj for obj in scene_data["objects"] if obj.get("type") == "enemy"]
+    speed_map = {"slow": 0, "medium": 1, "fast": 2}
+    strat_map = {"stationary": 0, "left_right": 1, "right_left": 2}
+
     cnt = mem[labels["ENEMIES_COUNT"]]
-    assert cnt == 3, f"Scene 0 should have 3 enemies, got {cnt}"
+    assert cnt == len(enemies_data), f"Scene 0 should have {len(enemies_data)} enemies, got {cnt}"
 
     act_addr = labels["ENEMIES_ACTIVE"]
     x_addr = labels["ENEMIES_X"]
@@ -160,29 +163,16 @@ def test_enemies_init_scene0():
     spr_addr = labels["ENEMIES_SPRITE_ID"]
     pmg_y_addr = labels["ENEMIES_PMG_Y"]
 
-    for i in range(3):
+    for i in range(len(enemies_data)):
         assert mem[act_addr + i] == 1, f"Enemy {i} must be active"
-    assert mem[spr_addr + 0] == 1, "Enemy 0 sprite_id must be 1 (Azathoth)"
-    assert mem[spr_addr + 1] == 2, "Enemy 1 sprite_id must be 2 (Nyarlathotep)"
-    assert mem[spr_addr + 2] == 2, "Enemy 2 sprite_id must be 2 (Nyarlathotep)"
 
-    # Enemy 0: left_right -> initial dir = 1 (left)
-    assert mem[strat_addr + 0] == 1
-    assert dir_addr is not None
-    assert mem[spd_addr + 0] == 1  # medium
-    assert mem[x_addr + 0] == 120
-
-    # Enemy 1: right_left -> initial dir = 0 (right)
-    assert mem[strat_addr + 1] == 2
-    assert mem[dir_addr + 1] == 0
-    assert mem[spd_addr + 1] == 0  # slow
-    assert mem[x_addr + 1] == 5
-
-    # Enemy 2: stationary -> initial dir = 0
-    assert mem[strat_addr + 2] == 0
-    assert mem[dir_addr + 2] == 0
-    assert mem[spd_addr + 2] == 0  # slow
-    assert mem[x_addr + 2] == 78
+    for i, e_data in enumerate(enemies_data):
+        assert mem[spr_addr + i] == e_data["definition_id"]
+        exp_spd = speed_map.get(e_data.get("speed", "slow"), 0)
+        assert mem[spd_addr + i] == exp_spd, f"Enemy {i} speed mismatch"
+        exp_strat = strat_map.get(e_data.get("movement_strategy", "stationary"), 0)
+        assert mem[strat_addr + i] == exp_strat, f"Enemy {i} strategy mismatch"
+        assert mem[x_addr + i] == e_data["x"], f"Enemy {i} x coordinate mismatch"
 
     # Verify PMG pixels rendered to Player 1 memory
     # Enemy 0 is channel 0 (Player 1) at pmg_y = 57, height = 20
@@ -222,10 +212,29 @@ def test_enemies_speed_intervals():
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     x_addr = labels["ENEMIES_X"]
+    spd_addr = labels["ENEMIES_SPEED"]
+    timer_addr = labels["ENEMIES_SPEED_TIMER"]
+    dir_addr = labels["ENEMIES_DIR"]
+    strat_addr = labels["ENEMIES_STRATEGY"]
 
+    # Explicitly configure test fixture parameters for interval verification (Rule 05)
     # Enemy 0: medium (speed=1), moving left from x=120
     # Enemy 1: slow (speed=0), moving right from x=5
-    # Enemy 2: stationary (strategy=0) at x=110
+    # Enemy 2: stationary (strategy=0) at x=78
+    mem[spd_addr + 0] = 1
+    mem[timer_addr + 0] = 0
+    mem[dir_addr + 0] = 1
+    mem[strat_addr + 0] = 1
+    mem[x_addr + 0] = 120
+
+    mem[spd_addr + 1] = 0
+    mem[timer_addr + 1] = 0
+    mem[dir_addr + 1] = 0
+    mem[strat_addr + 1] = 2
+    mem[x_addr + 1] = 5
+
+    mem[strat_addr + 2] = 0
+    mem[x_addr + 2] = 78
 
     # Frame 1:
     # Enemy 0 (med): speed_timer was 0 -> reloads 1, moves 1 px left to 119

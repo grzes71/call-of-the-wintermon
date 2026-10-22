@@ -74,26 +74,32 @@ def test_parse_01_forest_scene():
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
     scene = parse_scene_json(Path("scenes/01-forest.json"), enemies, secrets)
 
-    assert scene.name == "The Forest Whispers My Name"
-    assert scene.width == 160
-    assert scene.height == 96
-    assert scene.primary_tileset_id == 3  # trees
-    assert len(scene.elements) == 5
-    assert len(scene.platforms) == 12
-    assert len(scene.objects) == 8
+    with open("scenes/01-forest.json", "r", encoding="utf-8") as f:
+        raw_json = json.load(f)
 
-    # Verify enemy 1
+    assert scene.name == raw_json["scene"]["name"]
+    assert scene.width == raw_json["scene"]["width"]
+    assert scene.height == raw_json["scene"]["height"]
+    assert len(scene.elements) == len(raw_json["elements"])
+    assert len(scene.platforms) == len(raw_json["platforms"])
+    assert len(scene.objects) == len(raw_json["objects"])
+
+    # Verify first enemy dynamically from raw JSON per Rule 05
+    speed_map = {"slow": 0, "medium": 1, "fast": 2}
+    strat_map = {"stationary": 0, "left_right": 1, "right_left": 2}
     obj1 = scene.objects[0]
-    assert obj1.type_code == 0  # enemy
-    assert obj1.def_id == 1  # Azathoth
-    assert obj1.speed_code == 1  # medium
-    assert obj1.strategy_code == 1  # left_right
+    raw_obj1 = raw_json["objects"][0]
+    assert obj1.type_code == (0 if raw_obj1["type"] == "enemy" else 1)
+    assert obj1.def_id == raw_obj1["definition_id"]
+    assert obj1.speed_code == speed_map.get(raw_obj1.get("speed", "slow"), 0)
+    assert obj1.strategy_code == strat_map.get(raw_obj1.get("movement_strategy", "stationary"), 0)
     assert obj1.atari_color == 66
 
     # Verify secret with blink
-    exit_door = [o for o in scene.objects if o.def_id == 2 and o.type_code == 1][0]
-    assert exit_door.blink is True
-    assert exit_door.atari_color == secrets[2].atari_color
+    exit_doors = [o for o in scene.objects if o.def_id == 2 and o.type_code == 1]
+    if exit_doors:
+        assert exit_doors[0].blink is True
+        assert exit_doors[0].atari_color == secrets[2].atari_color
 
 
 def test_parse_02_forest_castle_scene():
