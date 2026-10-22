@@ -36,8 +36,9 @@ from scripts.check_memory import parse_xex_segments
 # past the end of the scanline and slips the whole kernel by one scanline, which
 # makes platform colours appear one scanline late.
 # NOTE: the "~85 cycles remain after the trigger" figure in
-# .agents/skills/atari8bit/hardware/antic/dli-wsync.md §3.9 applies to lines
-# WITHOUT playfield/PMG DMA (e.g. blank lines) - it must not be used here.
+# .agents/skills/atari8bit/hardware/antic/dli-wsync.md §3.9 counts CPU *slots*,
+# not usable cycles. On a Mode D line with SDMCTL = $3E ANTIC steals most of them;
+# see the "Per-scanline CPU budget" table in that section and in dma-timing.md.
 MODE_D_DMA_CYCLE_BUDGET = 57
 
 # Design contract of Faza B iteration 0: the four colour commits (COLPF3 for the

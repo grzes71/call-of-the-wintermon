@@ -2,6 +2,19 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Correct Per-Scanline DMA/CPU Budget in Atari Skills (DLI Timing)
+
+- **Documentation Fix ([.agents/skills/atari8bit/hardware/antic/dli-wsync.md](.agents/skills/atari8bit/hardware/antic/dli-wsync.md))**:
+  - §3.9 previously claimed a DLI leaves "~85 cycles" for the handler; that number counts CPU *slots*, not usable cycles. Replaced it with a DMA-aware accounting rule (`114 - refresh 9 - PMG 5 - DL 1..3 - playfield 0..48`, minus the ~29 slots before the handler starts), a per-scanline budget table, measured evidence from this project (a 55-cycle phase fits, the same phase at 79 cycles slips the kernel one scanline), and a new "phase overrun" gotcha describing the one-line-late colour symptom.
+  - §3.7 practical rules: added rule 3 "budget the phase, not the line" (keep a single DLI phase <= ~55 CPU cycles while playfield + PMG DMA are active).
+- **DMA Reference ([.agents/skills/atari8bit/hardware/antic/dma-timing.md](.agents/skills/atari8bit/hardware/antic/dma-timing.md))**:
+  - Added a "Per-scanline CPU budget (what is left for the 6502)" section: stolen-byte table (refresh 9, PMG 5/10, DL fetch 1..3, playfield 20/40/48, character glyphs) plus a worked Mode D example (`SDMCTL = $3E`, normal width → ~57 usable cycles on a playfield-fetch scanline, ~100 on a repeat scanline).
+- **PMG Multiplexing Rules ([.agents/skills/atari8bit/graphics/display-lists/multi-zone-patterns.md](.agents/skills/atari8bit/graphics/display-lists/multi-zone-patterns.md))**:
+  - §4.3 defensive rules: added rule 4 requiring every DLI phase to fit the per-scanline DMA budget, including the "profile shifted one scanline down" symptom and the measured 55/79 cycle data points.
+- **Test Harness ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Updated the `MODE_D_DMA_CYCLE_BUDGET` comment so it points at the corrected budget tables instead of the misleading "~85 cycles" figure.
+
+
 ## [2026-10-22] - Fix Blinking First Scanline of Missile (5th Player) Platforms
 
 - **Root Cause ([engine/dli.asm](engine/dli.asm))**:

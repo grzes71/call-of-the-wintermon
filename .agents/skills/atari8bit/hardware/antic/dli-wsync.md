@@ -134,7 +134,12 @@ Practical rules:
    the next scan line.
 2. Do not assume one magic resume cycle for every video mode: DMA load and playfield
    width affect how much useful time remains afterward.
-3. If a split is extremely cycle-sensitive, verify it on hardware or Altirra.
+3. **Budget the phase, not the line.** `114` cycles is the *length of the scan line*,
+   not your CPU time. ANTIC steals 9 (refresh) + 5 (PMG) + 1..3 (DL fetch) + 0..48
+   (playfield) bytes out of it, and the handler only gets the remainder of its own
+   trigger scanline. Keep a single DLI phase at **<= ~55 CPU cycles** while playfield
+   + PMG DMA are active (see §3.9 and `dma-timing.md`).
+4. If a split is extremely cycle-sensitive, verify it on hardware or Altirra.
 
 ## 3.8  DLI Positioning — Multiple DLIs on Screen
 
@@ -150,9 +155,36 @@ In multi-scanline modes (e.g. ANTIC Mode D = 2 scanlines/line, Mode 4/5 = 4 scan
 ### Scanline Accounting Rule
 
 Because a DLI always triggers at cycle ~22 of the **last scanline** of the tagged display list instruction:
-1. The CPU enters the DLI handler on that last scanline (leaving ~85 cycles before the end of the line).
-2. The remaining scanlines before the start of the target mode line $2L$ equal:
+1. The CPU enters the DLI handler on that last scanline. The remainder of that line is
+   ~85 **CPU slots** (114 - ~22 trigger offset - ~7 NMI entry) - these are *slots*,
+   **not usable CPU cycles**: ANTIC keeps stealing bus cycles for refresh, PMG and
+   playfield DMA, and the handler only gets what is left of its own trigger scanline.
+2. Usable CPU cycles in that scanline = `114 - (9 refresh + 5 PMG + 1..3 DL fetch + 0..48 playfield)`, minus the ~29 slots spent before the handler starts.
+3. The remaining scanlines before the start of the target mode line $2L$ equal:
    $$\text{Scanlines to wait} = 1 \text{ (remainder of trigger line)} + (N - 1) \times \text{ScanlinesPerModeLine}$$
+
+#### Per-scanline CPU budget (DMA-aware)
+
+| Scanline the phase runs on | Typical stolen bytes | Usable CPU cycles (PAL, 114/line) |
+|---|---|---|
+| Mode-line first scanline (playfield fetch, PMG on) | 9 + 5 + 40 + 3 = 57 | ~57 |
+| Mode-line repeat scanline (no playfield re-fetch, PMG on) | 9 + 5 = 14 | ~100, ~70 after the DLI entry offset |
+| Blank line with PMG DMA off | 9 + 3 = 12 | ~102 |
+
+**Measured evidence** (Mode D 160x96, normal width, `SDMCTL = $3E`, PAL, 114 cycles/line):
+
+| DLI phase | Length | Result |
+|---|---|---|
+| Setup phase on the pre-pas scanline | 55 cycles | aligned, no artifacts |
+| Same phase grown to 79 cycles | 79 cycles | **kernel slipped one scanline** - every platform colour profile appeared one line late (stale enemy/secret colour on the first scanline, `sl0` + `sl1` black pair at the top) |
+| Pas scanline colour/position commit | 48 -> 52 cycles | fits |
+
+**Rule of thumb:** with playfield + PMG DMA active keep a single DLI phase at
+**<= ~55 CPU cycles**, and never size a phase from the "~85 cycles" figure above.
+If a phase needs more, split it onto a DMA-lighter scanline (blank line, repeat
+scanline) or pre-trigger the DLI one mode line earlier ($N+1$ = one extra scanline
+of setup room). Exact budgets depend on mode, width, scrolling and PMG settings -
+verify cycle-sensitive splits on hardware or Altirra (see `dma-timing.md`).
 
 ### Mandatory `STA WSYNC` Sequence
 
@@ -170,4 +202,5 @@ To land cycle-accurately on cycle 0 of scanline 0 of target mode line $2L$:
     ; CPU resumes at cycle 0 of scanline 2L (start of active band)!
     ```
 - **Gotcha:** Using $N$ WSYNCs instead of calculating scanlines (e.g., 2 WSYNCs for $N=2$ mode lines) causes the kernel to start **1 scanline early** (on line $2L-1$ scanline 1) and exit **1 scanline early** (affecting the last scanline of the active zone).
+- **Gotcha (phase overrun):** if the code before the first `STA WSYNC` exceeds the usable cycles of the trigger scanline, that `WSYNC` lands in the *next* scanline and every following `WSYNC` shifts with it - the whole kernel runs one scanline late. Symptom: per-scanline colour profiles appear shifted down by one line (the first scanline shows the previous zone's stale colour, `sl0` shows up on the second scanline).
 
