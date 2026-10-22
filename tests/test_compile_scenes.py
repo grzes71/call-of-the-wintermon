@@ -80,7 +80,7 @@ def test_parse_01_forest_scene():
     assert scene.primary_tileset_id == 3  # trees
     assert len(scene.elements) == 5
     assert len(scene.platforms) == 12
-    assert len(scene.objects) == 7
+    assert len(scene.objects) == 8
 
     # Verify enemy 1
     obj1 = scene.objects[0]
@@ -229,7 +229,7 @@ def test_scene_dli_data_matches_json():
             # In 01-forest pas 1 (y=24): exactly 3 distinct platforms (x=15, 56, 96) -> P1, P2, P3
             if scene_file_name == "01-forest.json" and pas_y == 24:
                 assert dli.hpos_p1[1] == 48 + 15  # $3F (platform-013)
-                assert dli.hpos_p2[1] == 48 + 56  # $68 (platform-011)
+                assert dli.hpos_p2[1] == 48 + 63  # $6F (platform-011)
                 assert dli.hpos_p3[1] == 48 + 96  # $90 (platform-010)
 
             # In 01-forest pas 5 (y=88): 96px sprite (P1..P3) + 32px missile (M0..M3)
@@ -402,9 +402,9 @@ def test_pmg_patterns_match_platform_widths():
     # pas 5: platform-002 is 96px -> P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
     expected_patterns = [
         0xFF, 0xFF, 0xFF,  # pas 0
-        0xFF, 0xFF, 0xFF,  # pas 1
+        0xFF, 0xF0, 0xFF,  # pas 1 (platform-011 16px on P2)
         0xF0, 0xFF, 0xFF,  # pas 2 (platform-008 16px on P1)
-        0xFF, 0xF0, 0xC0,  # pas 3 (platform-006 32px on P1, platform-012 24px on P2+P3)
+        0xFF, 0xFF, 0xFF,  # pas 3 (platform-006 32px on P1, platform-012 32px on P2)
         0xFF, 0xF0, 0xFF,  # pas 4 (platform-004 48px -> P2 has $F0)
         0xFF, 0xFF, 0xFF,  # pas 5 (platform-002 96px)
     ]

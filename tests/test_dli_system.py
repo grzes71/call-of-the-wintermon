@@ -195,8 +195,8 @@ def test_dli_init_execution():
     pmg_m  = labels["PMG_MISSILES"]
 
     expected_p1 = [0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]
-    expected_p2 = [0xFF, 0xFF, 0xFF, 0xF0, 0xF0, 0xFF]
-    expected_p3 = [0xFF, 0xFF, 0xFF, 0xC0, 0xFF, 0xFF]
+    expected_p2 = [0xFF, 0xF0, 0xFF, 0xFF, 0xF0, 0xFF]
+    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
 
     for idx, p_start in enumerate(pas_scanline_starts):
         exp1 = expected_p1[idx]
@@ -485,7 +485,7 @@ def test_pmg_patterns_are_applied_on_scene_change():
     # Pas 4 (176): P2=$F0 (platform-004 is 48px -> P2 is 16px)
     assert mem[pmg_p1 + 48] == 0xFF
     assert mem[pmg_p1 + 112] == 0xF0
-    assert mem[pmg_p2 + 144] == 0xF0
+    assert mem[pmg_p2 + 144] == 0xFF
     assert mem[pmg_p2 + 176] == 0xF0
 
     # 2. Stage Scene 1 (Forest Castle)
@@ -515,7 +515,7 @@ def test_pmg_patterns_are_applied_on_scene_change():
     assert mem[pmg_p1 + 48] == 0xFF
     assert mem[pmg_p1 + 112] == 0xF0
     assert mem[pmg_p1 + 144] == 0xFF
-    assert mem[pmg_p2 + 144] == 0xF0
+    assert mem[pmg_p2 + 144] == 0xFF
     assert mem[pmg_p2 + 176] == 0xF0
     assert mem[pmg_p3 + 176] == 0xFF
 

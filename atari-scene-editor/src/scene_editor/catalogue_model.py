@@ -383,6 +383,7 @@ class ProjectCatalogues:
     enemies_path: Optional[Path] = None
     secrets_path: Optional[Path] = None
     platform_profiles_path: Optional[Path] = None
+    manifest_path: Optional[Path] = None
 
     def load_sprites_from_json(self, path: Path | str) -> int:
         """Load sprite definitions from a Sprite Studio JSON file."""
@@ -1168,6 +1169,96 @@ class ProjectCatalogues:
         enemies_path, secrets_path = cls.find_catalogue_paths(base_dir)
         profiles_path = cls.find_platform_profiles_path(base_dir)
         return cls.load_from_paths(enemies_path, secrets_path, profiles_path)
+
+    @classmethod
+    def find_manifest_path(cls, base_dir: Path | str) -> Optional[Path]:
+        """Locate manifest.json in the specified base directory or current working directory."""
+        base = Path(base_dir).resolve()
+        candidate = base / "manifest.json"
+        if candidate.is_file():
+            return candidate
+        cwd_candidate = Path.cwd() / "manifest.json"
+        if cwd_candidate.is_file():
+            return cwd_candidate.resolve()
+        return None
+
+    @classmethod
+    def load_from_manifest(
+        cls,
+        manifest_path: Path | str,
+        base_dir: Path | str | None = None,
+    ) -> ProjectCatalogues:
+        """Load catalogues and sprites referenced in a manifest.json file."""
+        m_path = Path(manifest_path).resolve()
+        root_dir = Path(base_dir).resolve() if base_dir else m_path.parent
+
+        try:
+            with open(m_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if not content:
+                raise CorruptedCatalogueFileError(f"Manifest file '{m_path.name}' is empty.")
+            data = json.loads(content)
+        except json.JSONDecodeError as err:
+            raise CorruptedCatalogueFileError(f"Invalid JSON in manifest '{m_path.name}': {err}") from err
+
+        if not isinstance(data, dict):
+            raise CorruptedCatalogueFileError(f"Manifest file '{m_path.name}' must contain a JSON object.")
+
+        # Extract scenes['catalogues']
+        cat_rel_path: Optional[str] = None
+        scenes_sec = data.get("scenes")
+        if isinstance(scenes_sec, dict):
+            cat_val = scenes_sec.get("catalogues")
+            if isinstance(cat_val, str):
+                cat_rel_path = cat_val
+            elif isinstance(cat_val, dict):
+                cat_rel_path = cat_val.get("path")
+
+        # Extract graphics['sprites']['objects']
+        spr_rel_path: Optional[str] = None
+        gfx_sec = data.get("graphics")
+        if isinstance(gfx_sec, dict):
+            sprites_sec = gfx_sec.get("sprites")
+            if isinstance(sprites_sec, dict):
+                obj_val = sprites_sec.get("objects")
+                if isinstance(obj_val, str):
+                    spr_rel_path = obj_val
+                elif isinstance(obj_val, dict):
+                    spr_rel_path = obj_val.get("path")
+            elif isinstance(sprites_sec, list):
+                for item in sprites_sec:
+                    if isinstance(item, dict) and item.get("id") == "objects":
+                        spr_rel_path = item.get("path")
+                        break
+
+        # Load catalogues
+        catalogues: Optional[ProjectCatalogues] = None
+        if cat_rel_path:
+            cat_file = Path(cat_rel_path)
+            if not cat_file.is_absolute():
+                cat_file = (root_dir / cat_file).resolve()
+            if cat_file.is_file():
+                catalogues = cls.load_from_paths(definitions_path=cat_file)
+            elif cat_file.is_dir():
+                catalogues = cls.load_from_dir(cat_file)
+
+        if catalogues is None:
+            catalogues = cls.load_from_dir(root_dir)
+
+        catalogues.manifest_path = m_path
+
+        # Load sprites
+        if spr_rel_path:
+            spr_file = Path(spr_rel_path)
+            if not spr_file.is_absolute():
+                spr_file = (root_dir / spr_file).resolve()
+            if spr_file.is_file():
+                try:
+                    catalogues.load_sprites_from_json(spr_file)
+                except Exception:
+                    pass
+
+        return catalogues
 
     def save_to_dir(self, base_dir: Path | str | None = None) -> None:
         """Atomically save all catalogues. If custom individual paths were set, save to those paths; otherwise save to definitions.json."""

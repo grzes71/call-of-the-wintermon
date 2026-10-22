@@ -182,7 +182,7 @@ def test_enemies_init_scene0():
     assert mem[strat_addr + 2] == 0
     assert mem[dir_addr + 2] == 0
     assert mem[spd_addr + 2] == 0  # slow
-    assert mem[x_addr + 2] == 110
+    assert mem[x_addr + 2] == 78
 
     # Verify PMG pixels rendered to Player 1 memory
     # Enemy 0 is channel 0 (Player 1) at pmg_y = 57, height = 20
@@ -234,7 +234,7 @@ def test_enemies_speed_intervals():
     run_subroutine(mpu, labels["ENEMIES_UPDATE"])
     assert mem[x_addr + 0] == 119
     assert mem[x_addr + 1] == 6
-    assert mem[x_addr + 2] == 110
+    assert mem[x_addr + 2] == 78
 
     # Frame 2:
     # Enemy 0 (med): speed_timer=1 -> decrements to 0, does NOT move (stays 119)

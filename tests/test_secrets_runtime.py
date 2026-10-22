@@ -37,19 +37,21 @@ def test_secrets_init_scene0():
     mpu.a = 0
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
-    # In Scene 0 (Forest), there are 4 secrets defined:
+    # In Scene 0 (Forest), there are 5 secrets defined:
     # 0: Gold Key (def 1, sprite 8) on platform-006 (y=56, pas 3) -> dep: None (active!)
     # 1: Gold Key (def 1, sprite 8) on platform-010 (y=24, pas 1) -> dep: None (active!)
     # 2: Skull (def 2, sprite 7) on platform-011 (y=24, pas 1) -> dep: 1 (inactive!)
-    # 3: Skull (def 2, sprite 7) on platform-015 (y=56, pas 3) -> dep: 1 (inactive!)
+    # 3: Skull (def 2, sprite 7) on platform-012 (y=56, pas 3) -> dep: 1 (inactive!)
+    # 4: CD (def 3, sprite 6) on platform-004 (y=72, pas 4) -> dep: 2 (inactive!)
     sec_count = mem[labels["SECRETS_COUNT"]]
-    assert sec_count == 4, f"Scene 0 should have 4 secrets, got {sec_count}"
+    assert sec_count == 5, f"Scene 0 should have 5 secrets, got {sec_count}"
 
     act_addr = labels["SECRETS_ACTIVE"]
     assert mem[act_addr + 0] == 1, "Secret 0 (Gold Key) must be active (no dependency)"
     assert mem[act_addr + 1] == 1, "Secret 1 (Gold Key) must be active (no dependency)"
     assert mem[act_addr + 2] == 0, "Secret 2 (Skull) must be inactive (depends on secret 1)"
     assert mem[act_addr + 3] == 0, "Secret 3 (Skull) must be inactive (depends on secret 1)"
+    assert mem[act_addr + 4] == 0, "Secret 4 (CD) must be inactive (depends on secret 2)"
 
     # Verify PMG scanline positions and margins
     # Platform pas base in PMG: 32 + (plat_y * 2)
@@ -199,15 +201,21 @@ def test_secret_collection_and_stage_progression_scene0():
     m0pl_addr = labels["M0PL"]
 
     # In Scene 0:
-    # Secret 0: Gold Key at x=20, pmg_y=126, height=16 (active)
-    # Secret 1: Gold Key at x=119, pmg_y=62, height=16 (active)
-    # Secret 2: Ladder at x=68, pmg_y=64, height=14 (inactive, dep on 1)
+    # Secret 0: Gold Key at x=18, pmg_y=125, height=16 (active)
+    # Secret 1: Gold Key at x=108, pmg_y=61, height=16 (active)
+    # Secret 2: Skull at x=68, pmg_y=62, height=15 (inactive, dep on 1)
+    # Secret 3: Skull at x=92, pmg_y=126, height=15 (inactive, dep on 1)
+    # Secret 4: CD at x=56, pmg_y=157, height=16 (inactive, dep on 2)
     assert mem[act_addr + 0] == 1
     assert mem[act_addr + 1] == 1
     assert mem[act_addr + 2] == 0
+    assert mem[act_addr + 3] == 0
+    assert mem[act_addr + 4] == 0
     assert mem[coll_addr + 0] == 0
     assert mem[coll_addr + 1] == 0
     assert mem[coll_addr + 2] == 0
+    assert mem[coll_addr + 3] == 0
+    assert mem[coll_addr + 4] == 0
 
     # 1. False positive check: player at x=10, y=188 (on missile platform), touches missile
     mem[labels["PLAYER_X"]] = 10
@@ -220,6 +228,7 @@ def test_secret_collection_and_stage_progression_scene0():
     assert mem[coll_addr + 1] == 0
     assert mem[coll_addr + 2] == 0
     assert mem[coll_addr + 3] == 0
+    assert mem[coll_addr + 4] == 0
     assert mem[act_addr + 0] == 1
 
     x_addr = labels["SECRETS_X"]
@@ -227,10 +236,12 @@ def test_secret_collection_and_stage_progression_scene0():
     sec_x0 = mem[x_addr + 0]
     sec_x1 = mem[x_addr + 1]
     sec_x3 = mem[x_addr + 3]
+    sec_x4 = mem[x_addr + 4]
     pmg_y0 = mem[y_addr + 0]
     pmg_y1 = mem[y_addr + 1]
     pmg_y2 = mem[y_addr + 2]
     pmg_y3 = mem[y_addr + 3]
+    pmg_y4 = mem[y_addr + 4]
 
     # 2. Collect Secret 0: player moves to sec_x0, pmg_y0
     mem[labels["PLAYER_X"]] = sec_x0
@@ -244,10 +255,11 @@ def test_secret_collection_and_stage_progression_scene0():
     # Secret 0 PMG scanlines are now cleared ($00)
     assert all(b == 0 for b in mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
 
-    # Secret 1 is still active; Secrets 2 and 3 are STILL inactive (not all keys collected yet)
+    # Secret 1 is still active; Secrets 2, 3, 4 are STILL inactive
     assert mem[act_addr + 1] == 1
     assert mem[act_addr + 2] == 0
     assert mem[act_addr + 3] == 0
+    assert mem[act_addr + 4] == 0
 
     # 3. Collect Secret 1: player moves to sec_x1, pmg_y1
     mem[labels["PLAYER_X"]] = sec_x1
@@ -267,6 +279,7 @@ def test_secret_collection_and_stage_progression_scene0():
     assert mem[coll_addr + 2] == 0
     assert mem[act_addr + 3] == 1, "Skull (Secret 3) must be unlocked after all keys collected"
     assert mem[coll_addr + 3] == 0
+    assert mem[act_addr + 4] == 0, "CD (Secret 4) remains locked until skulls are collected"
 
     # Verify Skull Frame 0 is rendered into PMG_MISSILES at pmg_y2
     skull_f0 = labels["SPRITE_7_FRAME_0"]
@@ -285,16 +298,38 @@ def test_secret_collection_and_stage_progression_scene0():
     assert mem[coll_addr + 2] == 1
     assert mem[act_addr + 2] == 0
 
-    # Scene 0 still not complete (secret 3 still active)
+    # Scene 0 still not complete (secret 3 still active, secret 4 still locked)
     assert mem[labels["ACTIVE_SCENE_ID"]] == 0
+    assert mem[act_addr + 4] == 0
 
-    # 5. Collect Secret 3 (Skull on platform-015): player moves to sec_x3, pmg_y3
+    # 5. Collect Secret 3 (Skull on platform-012): player moves to sec_x3, pmg_y3
     mem[labels["PLAYER_X"]] = sec_x3
     mem[labels["PLAYER_PMG_Y"]] = pmg_y3
     mem[m0pl_addr] = 1
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
     assert mem[coll_addr + 3] == 1
     assert mem[act_addr + 3] == 0
+
+    # Skulls collected! Secret 4 (CD, dep 2) is now UNLOCKED!
+    assert mem[act_addr + 4] == 1, "CD (Secret 4) must be unlocked after all skulls collected"
+    assert mem[coll_addr + 4] == 0
+
+    # Verify CD Frame 0 is rendered into PMG_MISSILES at pmg_y4
+    cd_f0 = labels["SPRITE_6_FRAME_0"]
+    exp_cd_bytes = list(mem[cd_f0 : cd_f0 + 16])
+    actual_cd_bytes = list(mem[pmg_m + pmg_y4 : pmg_m + pmg_y4 + 16])
+    assert actual_cd_bytes == exp_cd_bytes, "CD sprite Frame 0 not rendered on unlock"
+
+    # Scene 0 still not complete (CD still active)
+    assert mem[labels["ACTIVE_SCENE_ID"]] == 0
+
+    # 6. Collect Secret 4 (CD on platform-004): player moves to sec_x4, pmg_y4
+    mem[labels["PLAYER_X"]] = sec_x4
+    mem[labels["PLAYER_PMG_Y"]] = pmg_y4
+    mem[m0pl_addr] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+    assert mem[coll_addr + 4] == 1
+    assert mem[act_addr + 4] == 0
 
     # All secrets in Scene 0 collected -> game_next_scene automatically triggered!
     # active_scene_id must now be 1 (Scene 1: Be Quick or Be Dead)

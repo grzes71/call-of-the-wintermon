@@ -170,10 +170,10 @@
       "id": "platform-011",
       "type": "sprite",
       "position": {
-        "x": 56,
+        "x": 63,
         "y": 24
       },
-      "width": 32,
+      "width": 16,
       "height": 4,
       "color_profile_id": 3
     },
@@ -181,10 +181,10 @@
       "id": "platform-012",
       "type": "sprite",
       "position": {
-        "x": 104,
+        "x": 73,
         "y": 56
       },
-      "width": 24,
+      "width": 32,
       "height": 4,
       "color_profile_id": 4
     },
@@ -211,13 +211,13 @@
       "color_profile_id": 5
     },
     {
-      "id": "platform-015",
+      "id": "platform-016",
       "type": "missile",
       "position": {
-        "x": 48,
+        "x": 117,
         "y": 56
       },
-      "width": 32,
+      "width": 8,
       "height": 4,
       "color_profile_id": 4
     }
@@ -253,7 +253,7 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 109
+      "x": 108
     },
     {
       "id": 5,
@@ -268,7 +268,7 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-012",
-      "x": 110,
+      "x": 78,
       "speed": "slow",
       "movement_strategy": "stationary"
     },
@@ -276,9 +276,17 @@
       "id": 3,
       "type": "secret",
       "definition_id": 2,
-      "platform_id": "platform-015",
-      "x": 52,
+      "platform_id": "platform-012",
+      "x": 92,
       "dependency": 1
+    },
+    {
+      "id": 8,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-004",
+      "x": 56,
+      "dependency": 2
     }
   ],
   "player_spawn": {

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -241,19 +243,10 @@ class MainWindow(QMainWindow):
         self.base_dir = Path(base_dir).resolve() if base_dir else find_project_root()
         self.asset_manager = AssetManager(self.base_dir)
 
-        # Load project-level catalogues (enemies.json and secrets.json)
-        try:
-            self.catalogues = ProjectCatalogues.load_from_dir(self.base_dir)
-        except CorruptedCatalogueFileError as err:
-            QMessageBox.critical(
-                self,
-                "Corrupted Catalogue",
-                f"Corrupted catalogue file detected:\n{err}\n\n"
-                "The application will start with an empty catalogue in memory to avoid overwriting files.",
-            )
-            self.catalogues = ProjectCatalogues()
-        except Exception:
-            self.catalogues = ProjectCatalogues()
+        self.manifest_path: Optional[Path] = None
+
+        # Load project-level catalogues (or from manifest.json if present)
+        self.catalogues = self._load_initial_catalogues()
 
         self.scene_model = Scene(
             name="level_01",
@@ -283,6 +276,38 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_menus_and_toolbars()
         self._sync_all()
+
+    def _load_initial_catalogues(self) -> ProjectCatalogues:
+        """Load initial catalogues from manifest.json if present in base_dir/cwd, else from base_dir."""
+        manifest_path = ProjectCatalogues.find_manifest_path(self.base_dir)
+        if manifest_path is not None:
+            try:
+                self.manifest_path = manifest_path
+                return ProjectCatalogues.load_from_manifest(manifest_path, base_dir=self.base_dir)
+            except CorruptedCatalogueFileError as err:
+                QMessageBox.critical(
+                    self,
+                    "Corrupted Catalogue",
+                    f"Corrupted catalogue or manifest file detected:\n{err}\n\n"
+                    "The application will start with an empty catalogue in memory to avoid overwriting files.",
+                )
+                return ProjectCatalogues()
+            except Exception:
+                # Fall back to default directory behavior if manifest loading fails
+                pass
+
+        try:
+            return ProjectCatalogues.load_from_dir(self.base_dir)
+        except CorruptedCatalogueFileError as err:
+            QMessageBox.critical(
+                self,
+                "Corrupted Catalogue",
+                f"Corrupted catalogue file detected:\n{err}\n\n"
+                "The application will start with an empty catalogue in memory to avoid overwriting files.",
+            )
+            return ProjectCatalogues()
+        except Exception:
+            return ProjectCatalogues()
 
     # -------------------------------------------------------------------------
     # UI Setup
@@ -347,6 +372,17 @@ class MainWindow(QMainWindow):
         self.scene_view.delete_requested.connect(self.delete_selected_element)
         self.scene_view.flip_requested.connect(self.toggle_flip_selected)
         self.scene_view.cursor_position_changed.connect(self._on_cursor_coords_changed)
+
+    @staticmethod
+    def _create_scrollable_tab(widget: QWidget) -> QScrollArea:
+        """Wrap a property tab container in a borderless, resizable QScrollArea with scrollbars."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(widget)
+        return scroll
 
     def _build_properties_dock(self) -> None:
         self.prop_tabs = QTabWidget()
@@ -455,11 +491,12 @@ class MainWindow(QMainWindow):
         layers_group = QGroupBox("Elements in Draw Order (Bottom to Top)")
         l_layout = QVBoxLayout(layers_group)
         self.layers_list = QListWidget()
+        self.layers_list.setMinimumHeight(120)
         self.layers_list.currentRowChanged.connect(self._on_layer_row_changed)
         l_layout.addWidget(self.layers_list)
         t_layout.addWidget(layers_group, stretch=1)
 
-        self.prop_tabs.addTab(tiles_widget, "Tiles & Elements")
+        self.prop_tabs.addTab(self._create_scrollable_tab(tiles_widget), "Tiles & Elements")
 
         # -------------------------------------------------------------
         # Tab 2: Hardware Platforms (PMG)
@@ -547,11 +584,12 @@ class MainWindow(QMainWindow):
         self.plat_list_group = QGroupBox("Platforms on Scene")
         pl_layout = QVBoxLayout(self.plat_list_group)
         self.platforms_list = QListWidget()
+        self.platforms_list.setMinimumHeight(120)
         self.platforms_list.currentRowChanged.connect(self._on_platform_list_row_changed)
         pl_layout.addWidget(self.platforms_list)
         p_layout.addWidget(self.plat_list_group, stretch=1)
 
-        self.prop_tabs.addTab(plat_widget, "Hardware Platforms")
+        self.prop_tabs.addTab(self._create_scrollable_tab(plat_widget), "Hardware Platforms")
 
         # -------------------------------------------------------------
         # Tab 3: Objects (Enemies & Secrets)
@@ -692,11 +730,12 @@ class MainWindow(QMainWindow):
         self.obj_list_group = QGroupBox("Objects on Scene")
         ol_layout = QVBoxLayout(self.obj_list_group)
         self.objects_list = QListWidget()
+        self.objects_list.setMinimumHeight(120)
         self.objects_list.currentRowChanged.connect(self._on_object_list_row_changed)
         ol_layout.addWidget(self.objects_list)
         o_layout.addWidget(self.obj_list_group, stretch=1)
 
-        self.prop_tabs.addTab(obj_widget, "Objects")
+        self.prop_tabs.addTab(self._create_scrollable_tab(obj_widget), "Objects")
 
         # -------------------------------------------------------------
         # Tab 4: Player Start (Hero PMG)
@@ -791,7 +830,7 @@ class MainWindow(QMainWindow):
         pi_layout.addWidget(lbl_info)
         pl_layout.addWidget(player_info_group, stretch=1)
 
-        self.prop_tabs.addTab(player_widget, "Player Start")
+        self.prop_tabs.addTab(self._create_scrollable_tab(player_widget), "Player Start")
         self.prop_tabs.currentChanged.connect(self._on_prop_tab_changed)
 
         self.right_dock.setWidget(self.prop_tabs)

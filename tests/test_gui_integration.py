@@ -244,3 +244,23 @@ class TestMainWindowIntegration:
         assert window.current_file_path == scene_file.resolve()
         assert window.scene_model.name == "Test Open Dialog"
 
+    def test_properties_dock_tabs_have_scroll_areas(self, test_app):
+        """Verify that property dock tabs are enclosed in QScrollArea with resizable contents."""
+        window, _, _ = test_app
+        from PySide6.QtWidgets import QFrame, QScrollArea
+
+        assert window.prop_tabs.count() == 4
+        expected_titles = ["Tiles & Elements", "Hardware Platforms", "Objects", "Player Start"]
+
+        for idx, title in enumerate(expected_titles):
+            assert window.prop_tabs.tabText(idx) == title
+            tab_widget = window.prop_tabs.widget(idx)
+            assert isinstance(tab_widget, QScrollArea), f"Tab {idx} '{title}' must be a QScrollArea"
+            assert tab_widget.widgetResizable() is True
+            assert tab_widget.frameShape() == QFrame.Shape.NoFrame
+            assert tab_widget.widget() is not None
+
+        assert window.layers_list.minimumHeight() >= 100
+        assert window.platforms_list.minimumHeight() >= 100
+        assert window.objects_list.minimumHeight() >= 100
+

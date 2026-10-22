@@ -2,6 +2,42 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Support Manifest-Driven Auto-Loading in Atari Scene Editor
+
+- **Catalogues Model ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
+  - Added `find_manifest_path(base_dir)` to detect `manifest.json` in `base_dir` or working directory.
+  - Added `load_from_manifest(manifest_path, base_dir)` resolving catalogues from `scenes['catalogues']` and objects sprite definitions from `graphics['sprites']['objects']` (supporting both dict and list schema structures).
+  - Stored `manifest_path` reference in `ProjectCatalogues`.
+- **Main Window Integration ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Implemented `_load_initial_catalogues()` in `MainWindow.__init__`: if `manifest.json` is found in the current folder, automatically loads catalogues and sprites at startup; if absent or invalid, preserves exact previous directory fallback behavior without breaking changes or popups.
+- **Test Suite ([tests/test_scene_editor_manifest.py](tests/test_scene_editor_manifest.py))**:
+  - Added 6 comprehensive unit and integration tests covering path discovery, dictionary/list sprite parsing formats, error handling on corrupted manifests, and `MainWindow` UI sprite combo activation with/without `manifest.json`.
+
+## [2026-10-22] - Add Test Design & Asset Agnosticism Rule (05-tests.md)
+
+- **Agent Rules ([.agents/rules/05-tests.md](.agents/rules/05-tests.md))**:
+  - Added new system rule forbidding hardcoded asset and resource counts (e.g., platforms, enemies, secrets, objects defined in `manifest.yaml` or `scenes/*.json`).
+  - Mandated dynamic derivation of asset metrics from source files or using isolated synthetic fixtures for engine logic verification to prevent brittle test failures during active game design.
+
+## [2026-10-22] - Update Scene 0 Tests for 5-Secret Progression Chain
+
+- **Scene Compilation Tests ([tests/test_compile_scenes.py](tests/test_compile_scenes.py))**:
+  - Updated `test_parse_01_forest_scene` to expect 8 total scene objects (3 enemies and 5 secrets) in `01-forest.json`.
+- **Secrets Runtime Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Updated `test_secrets_init_scene0` to assert 5 secrets in Scene 0 (`SECRETS_COUNT == 5`), verifying initial active states for keys (secrets 0 and 1 active) and inactive states for skulls (secrets 2 and 3) and CD (secret 4, dependent on secret definition 2).
+  - Extended `test_secret_collection_and_stage_progression_scene0` with multi-tier stage progression: collecting skulls unlocks secret 4 (CD on platform-004), rendering its sprite into PMG missiles, followed by collecting the CD before the scene transition to Scene 1 triggers.
+
+## [2026-10-22] - Add Scrollable Containers to Atari Scene Editor Property Tabs
+
+- **Scrollable Containers ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Added helper `_create_scrollable_tab(widget: QWidget) -> QScrollArea` wrapping tab contents in borderless (`QFrame.Shape.NoFrame`), resizable (`widgetResizable=True`) `QScrollArea` containers with automatic vertical and horizontal scrollbars (`ScrollBarAsNeeded`).
+  - Wrapped tabs "Tiles & Elements", "Hardware Platforms", "Objects", and "Player Start" inside scrollable containers so that all form rows, control groups, buttons, and element lists are accessible regardless of dock or window height.
+  - Set a minimum height of 120 px on `self.layers_list`, `self.platforms_list`, and `self.objects_list` to prevent list widgets from collapsing inside the scroll areas while retaining layout expansion (`stretch=1`).
+- **Integration Test Suite ([tests/test_gui_integration.py](tests/test_gui_integration.py))**:
+  - Added `test_properties_dock_tabs_have_scroll_areas` verifying all 4 tabs in `self.prop_tabs` are instances of `QScrollArea`, have `widgetResizable=True`, frame shape `NoFrame`, and that list widgets maintain required minimum heights.
+- **Scene Regression Synchronization ([tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py))**:
+  - Synchronized platform pattern and enemy position test expectations with the latest scene definition updates.
+
 ## [2026-10-22] - Implement POKEY Sound Effects Engine (Walk, Jump, Free Fall, Death)
 
 - **Sound Effects Engine ([engine/sfx.asm](engine/sfx.asm))**:

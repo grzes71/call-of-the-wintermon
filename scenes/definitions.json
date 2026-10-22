@@ -90,13 +90,13 @@
     {
       "id": 3,
       "name": "CD",
-      "blink": false,
+      "blink": true,
       "rgb_color": [
         0,
         255,
         255
       ],
-      "atari_color": 150,
+      "atari_color": 128,
       "sprite_id": 6
     },
     {

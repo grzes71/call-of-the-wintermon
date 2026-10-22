@@ -61,24 +61,6 @@ source_code:
 # 2. Graphics & Visual Assets
 # ------------------------------------------------------------------------------
 graphics:
-  screens:
-    - id: "title"
-      path: "images/title3.png"
-      type: "image/png"
-      target_mode: "ANTIC Mode D (128x96 2bpp Narrow)"
-      description: "Archived title screen background artwork (replaced by procedural 2bpp text generator)"
-    - id: "title_alt"
-      path: "images/title.png"
-      type: "image/png"
-      description: "Alternative / archived title screen artwork"
-    - id: "game_over"
-      path: "images/end.png"
-      type: "image/png"
-      description: "Game over / victory ending illustration"
-    - id: "cover"
-      path: "cover.png"
-      type: "image/png"
-      description: "Game cover art and promotional display"
   tilesets:
     - id: "trees"
       path: "tiles/trees.png"
