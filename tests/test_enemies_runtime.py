@@ -39,6 +39,17 @@ from scripts.compile_scenes import (
     CatalogueItem,
 )
 from scripts.compile_sprites import parse_sprites_json
+from tests.scene_expectations import (
+    dli_enemy_hpos_slots,
+    enemy_frame_bytes,
+    enemy_pmg_rows,
+    expected_pmg_y,
+    expected_speed_code,
+    expected_strategy_code,
+    scene_files,
+    scene_objects,
+    sprite_height,
+)
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
@@ -128,7 +139,15 @@ def test_enemy_invalid_sprite_id_raises_error(tmp_path: Path):
 
 
 def test_enemies_init_scene0():
-    """Verify enemies_init correctly sets up active enemies for Scene 0 (Forest)."""
+    """Verify enemies_init sets up Scene 0 enemies exactly as derived from the scene JSON.
+
+    Everything (count, sprite ids, speeds, strategies, coordinates, PMG rows and DLI
+    positions) is derived from scenes/*.json + definitions.json (Rule 05).
+    """
+    scene_file = scene_files()[0]
+    enemies = scene_objects(scene_file, "enemy")
+    assert enemies, f"{scene_file} must define at least one enemy"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -145,50 +164,46 @@ def test_enemies_init_scene0():
     mpu.a = 0
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
-    # Derive expectations dynamically from scenes/01-forest.json per Rule 05
-    with open("scenes/01-forest.json", "r", encoding="utf-8") as f:
-        scene_data = json.load(f)
-    enemies_data = [obj for obj in scene_data["objects"] if obj.get("type") == "enemy"]
-    speed_map = {"slow": 0, "medium": 1, "fast": 2}
-    strat_map = {"stationary": 0, "left_right": 1, "right_left": 2}
-
-    cnt = mem[labels["ENEMIES_COUNT"]]
-    assert cnt == len(enemies_data), f"Scene 0 should have {len(enemies_data)} enemies, got {cnt}"
+    count = len(enemies)
+    assert mem[labels["ENEMIES_COUNT"]] == count
 
     act_addr = labels["ENEMIES_ACTIVE"]
     x_addr = labels["ENEMIES_X"]
-    dir_addr = labels["ENEMIES_DIR"]
     spd_addr = labels["ENEMIES_SPEED"]
     strat_addr = labels["ENEMIES_STRATEGY"]
     spr_addr = labels["ENEMIES_SPRITE_ID"]
     pmg_y_addr = labels["ENEMIES_PMG_Y"]
+    h_addr = labels["ENEMIES_HEIGHT"]
+    chan_addr = labels["ENEMIES_CHANNEL"]
+    zone_addr = labels["ENEMIES_ZONE"]
 
-    for i in range(len(enemies_data)):
+    for i, enemy in enumerate(enemies):
         assert mem[act_addr + i] == 1, f"Enemy {i} must be active"
+        assert mem[spr_addr + i] == enemy["sprite_id"], f"Enemy {i} sprite id mismatch"
+        assert mem[spd_addr + i] == expected_speed_code(enemy), f"Enemy {i} speed mismatch"
+        assert mem[strat_addr + i] == expected_strategy_code(enemy), f"Enemy {i} strategy mismatch"
+        assert mem[x_addr + i] == enemy["x"], f"Enemy {i} x coordinate mismatch"
+        assert mem[zone_addr + i] == enemy["zone"], f"Enemy {i} zone mismatch"
 
-    for i, e_data in enumerate(enemies_data):
-        assert mem[spr_addr + i] == e_data["definition_id"]
-        exp_spd = speed_map.get(e_data.get("speed", "slow"), 0)
-        assert mem[spd_addr + i] == exp_spd, f"Enemy {i} speed mismatch"
-        exp_strat = strat_map.get(e_data.get("movement_strategy", "stationary"), 0)
-        assert mem[strat_addr + i] == exp_strat, f"Enemy {i} strategy mismatch"
-        assert mem[x_addr + i] == e_data["x"], f"Enemy {i} x coordinate mismatch"
+        height = mem[h_addr + i]
+        assert height == sprite_height(mem, labels, enemy["sprite_id"])
+        assert mem[pmg_y_addr + i] == expected_pmg_y(enemy["platform_y"], height), (
+            f"Enemy {i} pmg_y mismatch"
+        )
+        # Frame 0 must be rendered on the enemy's hardware player channel
+        assert enemy_pmg_rows(mem, labels, i) == enemy_frame_bytes(mem, labels, i), (
+            f"Enemy {i} PMG rows do not match sprite frame 0"
+        )
 
-    # Verify PMG pixels rendered to Player 1 memory
-    # Enemy 0 is channel 0 (Player 1) at pmg_y = 57, height = 20
-    pmg_p1 = labels["PMG_PLAYER1"]
-    pmg_y0 = mem[pmg_y_addr + 0]
-    assert pmg_y0 == 57, f"Enemy 0 pmg_y should be 57, got {pmg_y0}"
-    spr1_frame0 = labels["SPRITE_1_FRAME_0"]
-    exp_bytes = list(mem[spr1_frame0 : spr1_frame0 + 20])
-    actual_bytes = list(mem[pmg_p1 + pmg_y0 : pmg_p1 + pmg_y0 + 20])
-    assert actual_bytes == exp_bytes, "Enemy 0 PMG_PLAYER1 frame 0 bytes do not match sprite 1 frame 0"
-
-    # Verify DLI hardware horizontal position synced
-    # Enemy 0: x=120 -> HPOS = 48 + 120 = 168
-    dli_zone_p1 = labels["DLI_ZONE_HPOS_P1"]
-    # Zone 1 is index 0 of dli_zone_hpos_p1
-    assert mem[dli_zone_p1 + 0] == 168
+    # DLI horizontal positions: the last enemy written per (zone, channel) wins
+    expected_hpos: dict[tuple[int, int], int] = {}
+    for i in range(count):
+        expected_hpos[(mem[zone_addr + i], mem[chan_addr + i])] = 48 + mem[x_addr + i]
+    for (zone, channel), hpos in expected_hpos.items():
+        slots = dli_enemy_hpos_slots(labels, zone, channel)
+        assert all(mem[slot] == hpos for slot in slots), (
+            f"DLI HPOSP{channel + 1} for zone {zone} must be {hpos} in both buffers"
+        )
 
 
 # ==============================================================================
@@ -235,6 +250,11 @@ def test_enemies_speed_intervals():
 
     mem[strat_addr + 2] = 0
     mem[x_addr + 2] = 78
+
+    # Synthetic patrol bounds so the interval check never depends on scene geometry (Rule 05)
+    for i in range(3):
+        mem[labels["ENEMIES_MIN_X"] + i] = 0
+        mem[labels["ENEMIES_MAX_X"] + i] = 152
 
     # Frame 1:
     # Enemy 0 (med): speed_timer was 0 -> reloads 1, moves 1 px left to 119
@@ -310,6 +330,9 @@ def test_strategy_pause_at_boundary():
     mem[dir_addr + 0] = 1    # Moving left
     mem[x_addr + 0] = 98
     mem[pause_addr + 0] = 0
+    # Explicit patrol bounds for the fixture (Rule 05)
+    mem[labels["ENEMIES_MIN_X"] + 0] = 96
+    mem[labels["ENEMIES_MAX_X"] + 0] = 120
 
     # Frame 1: moves left from 98 -> 97
     run_subroutine(mpu, labels["ENEMIES_UPDATE"])
@@ -364,6 +387,9 @@ def test_strategy_without_pause_bounces_immediately():
     mem[strat_addr + 0] = 1  # left_right (no pause)
     mem[dir_addr + 0] = 1    # Moving left
     mem[x_addr + 0] = 97
+    # Explicit patrol bounds for the fixture (Rule 05)
+    mem[labels["ENEMIES_MIN_X"] + 0] = 96
+    mem[labels["ENEMIES_MAX_X"] + 0] = 120
 
     # Hits min_x = 96
     run_subroutine(mpu, labels["ENEMIES_UPDATE"])

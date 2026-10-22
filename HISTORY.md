@@ -2,6 +2,47 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Add Level-Complete Victory Fanfare (Rising Arpeggio, Played Before the Scene Change)
+
+- **Victory Fanfare Module ([engine/sfx_victory.asm](engine/sfx_victory.asm))** (new file):
+  - Rising C major arpeggio `C4 -> E4 -> G4 -> C5` (AUDF `$79, $60, $51, $3C`) on POKEY Channel 1: 4 notes x 16 frames = 64 frames (~1.28 s at 50 Hz PAL) with a per-note crescendo (`AUDC1 = $A4..$A7`, pure tone `$A0`).
+  - `sfx_play_victory` arms the fanfare and silences walk/jump/free-fall sounds; `sfx_victory_tick` is the per-frame driver and returns Z=1/A=0 while inactive, so `sfx_update` can continue with the remaining channels.
+- **SFX Engine Hook ([engine/sfx.asm](engine/sfx.asm))**:
+  - `sfx_update` calls `sfx_victory_tick` right after the death branch (priority: death > victory > fall/jump/walk).
+  - `sfx_stop_all` and `sfx_play_death` clear `sfx_victory_timer`.
+- **Victory Hold Phase ([scenes/game.asm](scenes/game.asm))**:
+  - New `GAME_PHASE_VICTORY = 4` plus `scene_victory_timer`: `secret_collect`'s `@all_cleared` now starts the fanfare and enters the hold instead of switching scenes immediately, so the fanfare is played **in the finished scene** and the transition happens only after it ends.
+  - New `game_victory_update` counts the fanfare down and calls `game_next_scene` exactly `SFX_VICTORY_DURATION` frames later (the final scene now also gets the fanfare, right before `GAME_SUCCESS`).
+  - `game_run` treats `GAME_PHASE_VICTORY` like gameplay for the DLI VBLANK commit and secret animation (the finished playfield stays on screen), and advances `sfx_update` in every phase so the fanfare keeps playing.
+  - `@do_playing` stops the frame right after `secrets_check_player_collision` when the phase has switched, so a same-frame enemy contact can no longer kill the hero during the fanfare (the hero and enemies are frozen for the hold).
+- **Memory Layout ([main.asm](main.asm), [Makefile](Makefile), [manifest.yaml](manifest.yaml))**:
+  - The fanfare module lives in the `TILES_META` segment ($2A30-$2EB3, 332 bytes free before $3000) because the `SCENES_DATA` block ($5000-$5FC9, 54 bytes free) has no headroom left; `engine/sfx.asm` stays in `$5000` and reaches the fanfare through `sfx_victory_tick`.
+  - Registered `engine/sfx_victory.asm` in `ASM_SRCS` and in the resource manifest; updated the segment descriptions in [scripts/check_memory.py](scripts/check_memory.py) and [scripts/generate_memory_map.py](scripts/generate_memory_map.py).
+- **Automated Verification ([tests/test_sfx.py](tests/test_sfx.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), [tests/scene_expectations.py](tests/scene_expectations.py))**:
+  - Added `test_sfx_victory_fanfare_sequence_and_priority`: the note table must be ordered so the pitch rises, the fanfare clears walk/jump/fall, consumes the frame while active (no free-fall wind), walks all four notes with a pure tone, silences Channel 1 at the end, and is cancelled by both death and `sfx_stop_all`.
+  - Added `complete_victory_hold` helper: asserts that collecting the last secret enters the hold with the fanfare armed, that the scene does **not** change before the fanfare ends, and that the transition/`GAME_SUCCESS` happens exactly `SFX_VICTORY_DURATION` frames later.
+  - Full suite: 548 tests passing, `check_memory.py` SUCCESS with 1,850 bytes of headroom below `$C000`.
+
+
+## [2026-10-22] - Make Scene Runtime Tests Asset-Agnostic (Rule 05 Refactor)
+
+- **Shared Test Helpers ([tests/scene_expectations.py](tests/scene_expectations.py))** (new module):
+  - `scene_files`, `load_scene`, `scene_objects(kind)` derive the engine's object order plus resolved `sprite_id`/`atari_color`/`blink`/`dependency`, platform row and DLI zone straight from `scenes/*.json` + `scenes/definitions.json`; speed/strategy codes come from the compiler's own maps (`OBJ_SPEED_MAP`, `OBJ_STRATEGY_MAP`).
+  - Geometry helpers mirror the compiler: `expected_pmg_y(platform_y, height) = max(0, 32 + y*2 - h - 3)`, `zone_index(y)` and `sprite_height(mem, labels, sprite_id)` from the compiled ROM table, plus runtime accessors (`secret_pmg_rows`, `secret_frame_bytes`, `enemy_pmg_rows`, `enemy_frame_bytes`, `dli_*_hpos_slots`, `dli_secret_color_slots`).
+  - `SecretProgressionModel` mirrors `secret_collect` ([scenes/game.asm](scenes/game.asm)): per-step collection, dependency-based stage unlocking and scene-completion detection; `engine_colliding_secrets` reproduces the bounding-box rule; `drive_secret_progression` walks the hero through the whole chain and compares engine vs model after every step.
+- **Enemy Tests ([tests/test_enemies_runtime.py](tests/test_enemies_runtime.py))**:
+  - `test_enemies_init_scene0` now derives count, sprite ids, speeds, strategies, coordinates, zones, PMG scanlines, frame-0 bytes and per-(zone, channel) DLI HPOS from the scene data instead of a partial hardcoded strategy map (which broke as soon as a scene used `right_pause_left`).
+  - Movement/pause fixtures set `ENEMIES_MIN_X`/`ENEMIES_MAX_X` explicitly so they no longer depend on scene geometry.
+- **Secret Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - `test_secrets_init_scene0` / `test_secrets_init_scene1`: count, order, x, zone, sprite id, colour, height, pmg_y, the 3-scanline DLI window and the initial active stage are all derived from the JSON; inactive secrets must stay cleared only where no active sprite shares their scanlines.
+  - `test_secret_collection_and_stage_progression_scene0`: rewritten as a model-driven walk (works for any secret count/stage graph), verifying after every collection the collected/unlocked flags, PMG erasure (excluding scanlines taken over by newly unlocked sprites), DLI HPOS clearing/updating and the final scene transition.
+  - `test_game_success_on_final_scene_completion`: drives the last scene from `scenes/scenes.json` instead of hardcoded key/ladder coordinates.
+  - `test_secrets_animation_progression`: frame-1 comparison uses the sprite id read from the engine table instead of sprite 8.
+  - `test_secrets_blinking_cd_and_skull` -> `test_secrets_blink_cadence_and_static_colors`: blink flags/colours are cross-checked against the catalogue, the pulsed secret is chosen dynamically, and both the cadence contract (`SECRETS_BLINK_STEP_FRAMES`) and static-colour stability are verified across both DLI double buffers.
+- **Verification**:
+  - Red/green validated by mutating `scenes/01-forest.json` (enemy #3 -> `left_right`/`fast`) and `scenes/definitions.json` (CD `blink: false`): the full 547-test suite passes unchanged; the originals were then restored (byte-identical SHA-256) and `make all` passes with 1,985 bytes of headroom below `$C000`.
+
+
 ## [2026-10-22] - Correct Per-Scanline DMA/CPU Budget in Atari Skills (DLI Timing)
 
 - **Documentation Fix ([.agents/skills/atari8bit/hardware/antic/dli-wsync.md](.agents/skills/atari8bit/hardware/antic/dli-wsync.md))**:

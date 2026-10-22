@@ -89,11 +89,15 @@ def test_sfx_symbols_present(emu_env):
         "SFX_PLAY_FALL",
         "SFX_STOP_FALL",
         "SFX_PLAY_DEATH",
+        "SFX_PLAY_VICTORY",
         "SFX_UPDATE",
         "SFX_WALK_TIMER",
         "SFX_JUMP_TIMER",
         "SFX_FALL_ACTIVE",
         "SFX_DEATH_TIMER",
+        "SFX_VICTORY_TIMER",
+        "SFX_VICTORY_NOTES",
+        "SFX_VICTORY_DURATION",
     ]
     for sym in required:
         assert sym in labels, f"Missing required SFX symbol '{sym}'"
@@ -264,3 +268,67 @@ def test_sfx_death_full_sequence_and_priority(emu_env):
     assert mpu.memory[labels["SFX_DEATH_TIMER"]] == 0
     assert mpu.memory[labels["AUDC1"]] == 0
     assert mpu.memory[labels["AUDC2"]] == 0
+
+
+def test_sfx_victory_fanfare_sequence_and_priority(emu_env):
+    """Victory fanfare: rising 4-note arpeggio on Ch 1, preempted only by death."""
+    mpu, labels = emu_env
+
+    run_subroutine(mpu, labels["SFX_INIT"])
+
+    duration = labels["SFX_VICTORY_DURATION"]
+    note_frames = labels["SFX_VICTORY_NOTE_FRAMES"]
+    notes = [mpu.memory[labels["SFX_VICTORY_NOTES"] + i] for i in range(4)]
+
+    # AUDF values must be stored from the lowest to the highest note, so that
+    # walking the table lowers AUDF and therefore raises the pitch.
+    assert notes == sorted(notes, reverse=True), (
+        f"victory notes must be ordered so that the pitch rises, got {[hex(n) for n in notes]}"
+    )
+    assert duration == len(notes) * note_frames
+
+    # Trigger: clears walk/jump/fall and arms the fanfare timer
+    run_subroutine(mpu, labels["SFX_PLAY_VICTORY"])
+    assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == duration
+    assert mpu.memory[labels["SFX_WALK_TIMER"]] == 0
+    assert mpu.memory[labels["SFX_JUMP_TIMER"]] == 0
+    assert mpu.memory[labels["SFX_FALL_ACTIVE"]] == 0
+    assert mpu.memory[labels["AUDC2"]] == 0, "fanfare must silence the free-fall wind"
+
+    # While the fanfare is active it consumes the frame: other channels stay quiet
+    mpu.memory[labels["PLAYER_STATE"]] = labels["PLAYER_STATE_FALL"]
+    run_subroutine(mpu, labels["SFX_UPDATE"])
+    assert mpu.memory[labels["SFX_FALL_ACTIVE"]] == 0
+    assert mpu.memory[labels["AUDC2"]] == 0
+
+    # Step through the remaining fanfare frames (the first frame was consumed above
+    # and the very last frame only silences the channel)
+    played: list[int] = []
+    for _ in range(duration - 2):
+        run_subroutine(mpu, labels["SFX_UPDATE"])
+        assert (mpu.memory[labels["AUDC1"]] & 0xF0) == 0xA0, "fanfare must use a pure tone"
+        audf = mpu.memory[labels["AUDF1"]]
+        if not played or played[-1] != audf:
+            played.append(audf)
+
+    assert played == notes, (
+        f"fanfare must walk the note table in rising pitch order, got {[hex(n) for n in played]}"
+    )
+
+    # Final frame silences Channel 1 and releases the frame for other sounds
+    run_subroutine(mpu, labels["SFX_UPDATE"])
+    assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == 0
+    assert mpu.memory[labels["AUDC1"]] == 0
+    assert mpu.memory[labels["AUDF1"]] == 0
+
+    # Death has the higher priority and cancels a running fanfare
+    run_subroutine(mpu, labels["SFX_PLAY_VICTORY"])
+    assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == duration
+    run_subroutine(mpu, labels["SFX_PLAY_DEATH"])
+    assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == 0
+    assert mpu.memory[labels["SFX_DEATH_TIMER"]] == labels["SFX_DEATH_DURATION"]
+
+    # sfx_stop_all (e.g. entering the title screen) also cancels the fanfare
+    run_subroutine(mpu, labels["SFX_PLAY_VICTORY"])
+    run_subroutine(mpu, labels["SFX_STOP_ALL"])
+    assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == 0

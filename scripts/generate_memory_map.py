@@ -89,7 +89,7 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x2A00:
         return "Intro Display List", "DLIST", COLORS["DLIST"], "10-line ANTIC Mode 2 Display List"
     if start in (0x2A30, 0x2B00):
-        return "Tileset Metadata & Tables", "METADATA", COLORS["METADATA"], "Row offset lookup tables & equates"
+        return "Tileset Metadata, Status Line & SFX", "METADATA", COLORS["METADATA"], "Row offset lookup tables, HUD status line & victory fanfare"
     if start == 0x3000:
         return "Gameplay VRAM & DLISTs", "GRAPHICS", COLORS["GRAPHICS"], "Mode D 160x96 ($3000) + dlist_game & dlist_scene_title"
     if start == 0x3F00:

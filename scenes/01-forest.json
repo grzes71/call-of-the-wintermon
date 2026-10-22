@@ -238,8 +238,8 @@
       "definition_id": 2,
       "platform_id": "platform-006",
       "x": 5,
-      "speed": "slow",
-      "movement_strategy": "right_left"
+      "speed": "medium",
+      "movement_strategy": "right_pause_left"
     },
     {
       "id": 4,
@@ -285,7 +285,15 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-004",
-      "x": 56,
+      "x": 59,
+      "dependency": 2
+    },
+    {
+      "id": 9,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-009",
+      "x": 128,
       "dependency": 2
     }
   ],

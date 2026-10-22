@@ -41,7 +41,9 @@ source_code:
     - path: "engine/status_line.asm"
       description: "In-game HUD status line engine (ANTIC Mode 2, 40 columns)"
     - path: "engine/sfx.asm"
-      description: "POKEY sound effects engine (walk, jump, fall, death)"
+      description: "POKEY sound effects engine (walk, jump, fall, death, victory fanfare hook)"
+    - path: "engine/sfx_victory.asm"
+      description: "Level-complete victory fanfare (rising arpeggio, POKEY Channel 1)"
   scenes:
     - path: "scenes/title.asm"
       description: "Title screen state machine, scroll text raster driver and fade-in/out logic"

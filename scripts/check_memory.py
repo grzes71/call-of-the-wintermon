@@ -73,7 +73,7 @@ def check_memory(xex_path: Path) -> int:
         elif start == 0x2A00:
             seg_type = "Intro Display List"
         elif start in (0x2A30, 0x2B00):
-            seg_type = "Tileset Metadata & Row Tables"
+            seg_type = "Tileset Metadata, Status Line & SFX Engine"
         elif start in (0x5000, 0x2C30, 0x2D00):
             seg_type = "Scene Definitions, Objects & DLI Data"
         elif start == 0x3000:

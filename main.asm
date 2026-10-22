@@ -199,12 +199,13 @@ dlist_intro
     .word dlist_intro
 
 ; ==============================================================================
-; TILESET METADATA & ROW OFFSET TABLES ($2A30)
+; TILESET METADATA, STATUS LINE & SFX ENGINE ($2A30)
 ; ==============================================================================
     org TILES_META
     icl 'gen/tiles_data.asm'
     icl 'gen/player_sprites.asm'
     icl 'engine/status_line.asm'
+    icl 'engine/sfx_victory.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)

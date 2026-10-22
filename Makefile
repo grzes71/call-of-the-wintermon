@@ -59,6 +59,7 @@ SCENES_DLI_ASM     := $(GEN_DIR)/scenes_dli_data.asm
 ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.asm \
                     engine/dli.asm engine/render.asm engine/render_tables.asm engine/secrets.asm \
                     engine/enemies.asm engine/player.asm engine/status_line.asm engine/sfx.asm \
+                    engine/sfx_victory.asm \
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 

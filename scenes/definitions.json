@@ -80,11 +80,11 @@
       "name": "Skull",
       "blink": true,
       "rgb_color": [
+        0,
         255,
-        234,
-        0
+        255
       ],
-      "atari_color": 28,
+      "atari_color": 140,
       "sprite_id": 7
     },
     {
@@ -92,11 +92,11 @@
       "name": "CD",
       "blink": true,
       "rgb_color": [
-        0,
-        255,
-        255
+        85,
+        170,
+        0
       ],
-      "atari_color": 128,
+      "atari_color": 214,
       "sprite_id": 6
     },
     {
@@ -104,11 +104,11 @@
       "name": "Mjolnir",
       "blink": false,
       "rgb_color": [
-        255,
-        255,
-        255
+        162,
+        0,
+        0
       ],
-      "atari_color": 14,
+      "atari_color": 52,
       "sprite_id": 9
     }
   ],

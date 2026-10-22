@@ -7,6 +7,9 @@
 ;   2. Jump       (Jump)   - Ch 1: pure tone upward pitch sweep (14 frames)
 ;   3. Free Fall  (Fall)   - Ch 2: ambient poly17 rushing wind whoosh
 ;   4. Death      (Death)  - Ch 1+2: crash impact + 4-note mournful minor arpeggio (72 frames)
+;   5. Victory    (Level)  - Ch 1: rising 4-note major arpeggio fanfare (64 frames)
+;                            (implemented in engine/sfx_victory.asm, which lives in
+;                             the $2A30 segment to keep the $5000 block from overflowing)
 ;
 ; Public API:
 ;   sfx_init         - Reset POKEY & all SFX state
@@ -16,6 +19,7 @@
 ;   sfx_play_fall    - Start free-fall wind sound (Channel 2)
 ;   sfx_stop_fall    - Stop free-fall wind sound (Channel 2)
 ;   sfx_play_death   - Trigger death sound sequence
+;   sfx_play_victory - Trigger level-complete victory fanfare (engine/sfx_victory.asm)
 ;   sfx_stop_all     - Silence all channels & reset timers
 ; ==============================================================================
 
@@ -25,6 +29,7 @@ sfx_jump_timer      .byte 0     ; Jump pitch sweep countdown (0 = inactive)
 sfx_fall_active     .byte 0     ; Fall sound active flag (1 = active, 0 = inactive)
 sfx_fall_frame      .byte 0     ; Fall wind modulation cycle counter
 sfx_death_timer     .byte 0     ; Death sequence frame countdown (72..0)
+; NOTE: sfx_victory_timer lives in engine/sfx_victory.asm ($2A30 segment)
 
 ; ==============================================================================
 ; SFX DATA TABLES
@@ -60,6 +65,9 @@ sfx_death_notes
     .byte $4E                   ; Note index 2: D4 (AUDF = $4E)
     .byte $42                   ; Note index 3: E4 (AUDF = $42)
 
+; Victory fanfare data (sfx_victory_notes, SFX_VICTORY_DURATION) and its per-frame
+; driver sfx_victory_tick live in engine/sfx_victory.asm ($2A30 segment).
+
 
 ; ==============================================================================
 ; SFX_INIT
@@ -86,6 +94,7 @@ sfx_death_notes
     sta sfx_fall_active
     sta sfx_fall_frame
     sta sfx_death_timer
+    sta sfx_victory_timer
 
     ; Silence channels 1..4
     sta AUDC1
@@ -184,11 +193,12 @@ sfx_death_notes
 ; Highest priority: preempts walk, jump, and fall sounds.
 ; ==============================================================================
 .proc sfx_play_death
-    ; Clear other sounds
+    ; Clear other sounds (death has the highest priority)
     lda #0
     sta sfx_walk_timer
     sta sfx_jump_timer
     sta sfx_fall_active
+    sta sfx_victory_timer
 
     lda #SFX_DEATH_DURATION     ; 72 frames
     sta sfx_death_timer
@@ -222,7 +232,7 @@ sfx_death_notes
     ; 1. DEATH SFX UPDATE
     ; --------------------------------------------------------------------------
     lda sfx_death_timer
-    beq @chk_fall_sfx
+    beq @chk_victory_sfx
 
     dec sfx_death_timer
     beq @death_finished
@@ -288,7 +298,18 @@ sfx_death_notes
     jmp @sfx_exit
 
     ; --------------------------------------------------------------------------
-    ; 2. FREE FALL SFX UPDATE (Channel 2)
+    ; 2. VICTORY FANFARE UPDATE (Channel 1)
+    ; The driver lives in engine/sfx_victory.asm ($2A30 segment) because the
+    ; $5000 block has almost no headroom left. It returns Z=1 (A=0) while the
+    ; fanfare is inactive, so the remaining sounds still get their turn.
+    ; --------------------------------------------------------------------------
+@chk_victory_sfx
+    jsr sfx_victory_tick
+    beq @chk_fall_sfx
+    jmp @sfx_exit
+
+    ; --------------------------------------------------------------------------
+    ; 3. FREE FALL SFX UPDATE (Channel 2)
     ; Checks player state: active when fall animation is shown.
     ; --------------------------------------------------------------------------
 @chk_fall_sfx
@@ -332,7 +353,7 @@ sfx_death_notes
     sta AUDC2
 
     ; --------------------------------------------------------------------------
-    ; 3. JUMP SFX UPDATE (Channel 1)
+    ; 4. JUMP SFX UPDATE (Channel 1)
     ; --------------------------------------------------------------------------
 @chk_jump_sfx
     lda sfx_jump_timer
@@ -359,7 +380,7 @@ sfx_death_notes
     jmp @sfx_exit
 
     ; --------------------------------------------------------------------------
-    ; 4. WALK FOOTSTEP SFX UPDATE (Channel 1)
+    ; 5. WALK FOOTSTEP SFX UPDATE (Channel 1)
     ; --------------------------------------------------------------------------
 @chk_walk_sfx
     lda sfx_walk_timer

@@ -8,6 +8,8 @@ GAME_PHASE_TITLE_IN   = 0   ; Title card fade in (8 steps of 3 frames = 24 frame
 GAME_PHASE_TITLE_HOLD = 1   ; Title card hold (100 frames = 2.0s at 50 Hz PAL)
 GAME_PHASE_TITLE_OUT  = 2   ; Title card fade out (8 steps of 3 frames = 24 frames ~0.48s)
 GAME_PHASE_PLAYING    = 3   ; Active gameplay playfield (ANTIC Mode D)
+GAME_PHASE_VICTORY    = 4   ; Level complete: victory fanfare plays in the finished
+                            ; scene, game_next_scene runs only after it has finished
 
 ; Fade table for scene title card (green hue $C, increasing luminance)
 ; 8 luminance steps: black -> faint green -> bright light green
@@ -115,13 +117,23 @@ SCENE_TITLE_FADE_STEPS = 8
     cmp RTCLOK+2
     beq @sync_vblank
 
-    ; If in active playing phase, perform DLI VBLANK update and secret animation
+    ; DLI VBLANK commit and secret animation run during gameplay and during the
+    ; level-complete victory hold (the finished playfield stays on screen while the
+    ; fanfare plays, and the DLI double buffer must keep being committed)
     lda game_phase
     cmp #GAME_PHASE_PLAYING
+    beq @frame_updates
+    cmp #GAME_PHASE_VICTORY
     bne @skip_dli_vblank
+@frame_updates
     jsr dli_vblank_update
     jsr secrets_update
 @skip_dli_vblank
+
+    ; Advance sound effects once per frame in every phase (gameplay, victory hold and
+    ; the scene title cards) so the victory fanfare plays out fully before the scene
+    ; changes and no effect is dropped between phases.
+    jsr sfx_update
 
     ; Dispatch based on game_phase
     lda game_phase
@@ -136,8 +148,13 @@ SCENE_TITLE_FADE_STEPS = 8
 
 @chk_phase_out
     cmp #GAME_PHASE_TITLE_OUT
-    bne @chk_phase_playing
+    bne @chk_phase_victory
     jmp @do_title_out
+
+@chk_phase_victory
+    cmp #GAME_PHASE_VICTORY
+    bne @chk_phase_playing
+    jmp @do_victory
 
 @chk_phase_playing
     jmp @do_playing
@@ -276,6 +293,15 @@ SCENE_TITLE_FADE_STEPS = 8
     rts
 
 ; ------------------------------------------------------------------------------
+; PHASE 4: Level-Complete Victory Hold
+; The finished playfield stays on screen while the victory fanfare plays; the next
+; scene is loaded only after the whole fanfare has been played.
+; ------------------------------------------------------------------------------
+@do_victory
+    jsr game_victory_update
+    rts
+
+; ------------------------------------------------------------------------------
 ; PHASE 3: Active Gameplay Loop
 ; ------------------------------------------------------------------------------
 @do_playing
@@ -289,8 +315,15 @@ SCENE_TITLE_FADE_STEPS = 8
     jsr player_update
     jsr enemies_update
     jsr secrets_check_player_collision
+
+    ; Collecting the last secret switches to the victory hold: stop this frame here so
+    ; a same-frame enemy contact cannot kill the hero while the fanfare plays.
+    lda game_phase
+    cmp #GAME_PHASE_PLAYING
+    bne @playing_done
+
     jsr enemies_check_player_collision
-    jsr sfx_update
+@playing_done
     rts
 .endp
 
@@ -301,6 +334,7 @@ SCENE_TITLE_FADE_STEPS = 8
 ; ==============================================================================
 secret_coll_def  .byte 0
 secret_unl_count .byte 0
+scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
 
 .proc secrets_check_player_collision
     ; If hero is in death state, do not collect secrets
@@ -454,10 +488,30 @@ secret_unl_count .byte 0
     jmp @chk_all
 
 @all_cleared
-    ; All secrets on level collected: proceed to next scene!
-    jsr game_next_scene
+    ; All secrets on level collected: play the victory fanfare IN this scene and only
+    ; then advance. game_phase = GAME_PHASE_VICTORY makes game_run count the fanfare
+    ; down through game_victory_update before game_next_scene is called.
+    lda #SFX_VICTORY_DURATION
+    sta scene_victory_timer
+    jsr sfx_play_victory
+    lda #GAME_PHASE_VICTORY
+    sta game_phase
 
 @done
+    rts
+.endp
+
+; ==============================================================================
+; GAME_VICTORY_UPDATE
+; Counts down the level-complete victory hold and advances to the next scene (or to
+; GAME_SUCCESS on the final scene) only after the whole fanfare has been played.
+; Called once per frame while game_phase == GAME_PHASE_VICTORY.
+; ==============================================================================
+.proc game_victory_update
+    dec scene_victory_timer
+    bne @hold
+    jsr game_next_scene
+@hold
     rts
 .endp
 

@@ -16,11 +16,34 @@ from pathlib import Path
 import pytest
 from py65.devices.mpu6502 import MPU
 
+from tests.scene_expectations import (
+    SecretProgressionModel,
+    complete_victory_hold,
+    dli_secret_color_slots,
+    dli_secret_hpos_slots,
+    drive_secret_progression,
+    engine_colliding_secrets,
+    expected_pmg_y,
+    scene_files,
+    scene_objects,
+    secret_frame_bytes,
+    secret_pmg_rows,
+    sprite_height,
+)
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
 def test_secrets_init_scene0():
-    """Verify secrets_init correctly sets up active and inactive secrets for Scene 0 (Forest)."""
+    """Verify secrets_init sets up Scene 0 exactly as derived from the scene JSON.
+
+    Count, order, coordinates, zones, colours, sprite ids, heights, PMG scanlines and
+    the initially active stage are all derived from scenes/*.json + definitions.json
+    (Rule 05) - editing the scene must not require touching this test.
+    """
+    scene_file = scene_files()[0]
+    secrets = scene_objects(scene_file, "secret")
+    assert secrets, f"{scene_file} must define at least one secret"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -37,59 +60,59 @@ def test_secrets_init_scene0():
     mpu.a = 0
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
-    # In Scene 0 (Forest), there are 5 secrets defined:
-    # 0: Gold Key (def 1, sprite 8) on platform-006 (y=56, pas 3) -> dep: None (active!)
-    # 1: Gold Key (def 1, sprite 8) on platform-010 (y=24, pas 1) -> dep: None (active!)
-    # 2: Skull (def 2, sprite 7) on platform-011 (y=24, pas 1) -> dep: 1 (inactive!)
-    # 3: Skull (def 2, sprite 7) on platform-012 (y=56, pas 3) -> dep: 1 (inactive!)
-    # 4: CD (def 3, sprite 6) on platform-004 (y=72, pas 4) -> dep: 2 (inactive!)
-    sec_count = mem[labels["SECRETS_COUNT"]]
-    assert sec_count == 5, f"Scene 0 should have 5 secrets, got {sec_count}"
+    count = len(secrets)
+    assert mem[labels["SECRETS_COUNT"]] == count
 
     act_addr = labels["SECRETS_ACTIVE"]
-    assert mem[act_addr + 0] == 1, "Secret 0 (Gold Key) must be active (no dependency)"
-    assert mem[act_addr + 1] == 1, "Secret 1 (Gold Key) must be active (no dependency)"
-    assert mem[act_addr + 2] == 0, "Secret 2 (Skull) must be inactive (depends on secret 1)"
-    assert mem[act_addr + 3] == 0, "Secret 3 (Skull) must be inactive (depends on secret 1)"
-    assert mem[act_addr + 4] == 0, "Secret 4 (CD) must be inactive (depends on secret 2)"
-
-    # Verify PMG scanline positions and margins
-    # Platform pas base in PMG: 32 + (plat_y * 2)
-    # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
-    # Secrets end at p_base - 4, leaving a 3-scanline transition gap.
-    # Pas 3: 32 + 56 * 2 = 144. Sprite 8 height = 16. PMG Y = 144 - 16 - 3 = 125.
-    # Pas 1: 32 + 24 * 2 = 80. Sprite 8 height = 16. PMG Y = 80 - 16 - 3 = 61.
+    x_addr = labels["SECRETS_X"]
     y_addr = labels["SECRETS_PMG_Y"]
     h_addr = labels["SECRETS_HEIGHT"]
-    pmg_y0 = mem[y_addr + 0]
-    h0 = mem[h_addr + 0]
-    assert pmg_y0 == 125
-    assert h0 == 16
-    # Margin check from platform surface (scanline 144): 144 - (125 + 16) = 3 scanlines (DLI window)
-    assert 144 - (pmg_y0 + h0) >= 3
+    spr_addr = labels["SECRETS_SPRITE_ID"]
+    zone_addr = labels["SECRETS_ZONE"]
+    col_addr = labels["SECRETS_COLOR"]
 
-    pmg_y1 = mem[y_addr + 1]
-    h1 = mem[h_addr + 1]
-    assert pmg_y1 == 61
-    assert h1 == 16
-    # Margin check from platform surface (scanline 80): 80 - (61 + 16) = 3 scanlines (DLI window)
-    assert 80 - (pmg_y1 + h1) >= 3
+    for i, secret in enumerate(secrets):
+        # Only dependency-free secrets belong to the initial stage
+        assert mem[act_addr + i] == int(not secret.get("dependency")), (
+            f"secret {i} ({secret['id']}) active flag must follow its dependency"
+        )
+        assert mem[x_addr + i] == secret["x"], f"secret {i} x coordinate mismatch"
+        assert mem[zone_addr + i] == secret["zone"], f"secret {i} zone mismatch"
+        assert mem[spr_addr + i] == secret["sprite_id"], f"secret {i} sprite id mismatch"
+        assert mem[col_addr + i] == secret["atari_color"], f"secret {i} colour mismatch"
 
-    # Verify initial frame 0 bytes in PMG_MISSILES
-    pmg_m = labels["PMG_MISSILES"]
-    frame0_addr = labels["SPRITE_8_FRAME_0"]
-    exp_f0_bytes = list(mem[frame0_addr : frame0_addr + 16])
+        height = mem[h_addr + i]
+        assert height == sprite_height(mem, labels, secret["sprite_id"])
+        assert mem[y_addr + i] == expected_pmg_y(secret["platform_y"], height), (
+            f"secret {i} pmg_y mismatch"
+        )
+        # A 3-scanline DLI transition window must stay free above the platform pas
+        pas_base = 32 + secret["platform_y"] * 2
+        assert pas_base - (mem[y_addr + i] + height) >= 3, (
+            f"secret {i} must leave a clean DLI window above its platform"
+        )
 
-    # Secret 0 scanlines 125..140 must match sprite 8 frame 0
-    actual_s0 = list(mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
-    assert actual_s0 == exp_f0_bytes, f"Secret 0 in PMG_MISSILES does not match Frame 0"
+        if mem[act_addr + i]:
+            assert secret_pmg_rows(mem, labels, i) == secret_frame_bytes(mem, labels, i), (
+                f"active secret {i} must render sprite frame 0 into PMG_MISSILES"
+            )
 
-    # Secret 1 scanlines 61..76 must match sprite 8 frame 0
-    actual_s1 = list(mem[pmg_m + pmg_y1 : pmg_m + pmg_y1 + 16])
-    assert actual_s1 == exp_f0_bytes, f"Secret 1 in PMG_MISSILES does not match Frame 0"
-
-    # Inactive Secret 2 at scanlines 64..77: verify not solid
-    # Notice secret 1 is at 62..77, but secret 2 is inactive
+    # Inactive secrets whose PMG rows are not shared with an active secret stay cleared
+    for i, secret in enumerate(secrets):
+        if mem[act_addr + i]:
+            continue
+        top = mem[y_addr + i]
+        height = mem[h_addr + i]
+        shared = any(
+            mem[act_addr + j]
+            and top < mem[y_addr + j] + mem[h_addr + j]
+            and mem[y_addr + j] < top + height
+            for j in range(count)
+        )
+        if not shared:
+            assert secret_pmg_rows(mem, labels, i) == [0] * height, (
+                f"inactive secret {i} must not render into PMG_MISSILES"
+            )
 
 
 def test_secrets_animation_progression():
@@ -134,12 +157,10 @@ def test_secrets_animation_progression():
     assert mem[timer_addr + 0] == key_dur
     assert mem[frame_addr + 0] == 1
 
-    # PMG_MISSILES rows must now match sprite 8 frame 1!
-    pmg_y0 = mem[labels["SECRETS_PMG_Y"] + 0]
-    f1_addr = labels["SPRITE_8_FRAME_1"]
-    exp_f1_bytes = list(mem[f1_addr : f1_addr + 16])
-    actual_s0_f1 = list(mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
-    assert actual_s0_f1 == exp_f1_bytes, f"PMG_MISSILES rows do not match Frame 1 after {key_dur} ticks"
+    # PMG_MISSILES rows must now match the sprite's frame 1 (sprite id read at runtime)
+    assert secret_pmg_rows(mem, labels, 0) == secret_frame_bytes(mem, labels, 0, frame=1), (
+        f"PMG_MISSILES rows do not match Frame 1 after {key_dur} ticks"
+    )
 
     # Step through remaining frames (frames 2 .. key_frame_count - 1)
     for f in range(2, key_frame_count):
@@ -154,7 +175,11 @@ def test_secrets_animation_progression():
 
 
 def test_secrets_init_scene1():
-    """Verify secrets_init correctly sets up secrets for Scene 1 (Forest Castle)."""
+    """Verify secrets_init sets up the second scene exactly as derived from its JSON."""
+    scene_file = scene_files()[1]
+    secrets = scene_objects(scene_file, "secret")
+    assert secrets, f"{scene_file} must define at least one secret"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -168,17 +193,30 @@ def test_secrets_init_scene1():
     mpu.a = 1
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
-    sec_count = mem[labels["SECRETS_COUNT"]]
-    assert sec_count == 3
+    assert mem[labels["SECRETS_COUNT"]] == len(secrets)
 
     act_addr = labels["SECRETS_ACTIVE"]
-    assert mem[act_addr + 0] == 1, "Secret 0 (Gold Key on platform-003) must be active"
-    assert mem[act_addr + 1] == 1, "Secret 1 (Gold Key on platform-004) must be active"
-    assert mem[act_addr + 2] == 0, "Secret 2 (Ladder on platform-016) must be inactive"
+    x_addr = labels["SECRETS_X"]
+    spr_addr = labels["SECRETS_SPRITE_ID"]
+    for i, secret in enumerate(secrets):
+        assert mem[act_addr + i] == int(not secret.get("dependency")), (
+            f"secret {i} ({secret['id']}) active flag must follow its dependency"
+        )
+        assert mem[x_addr + i] == secret["x"]
+        assert mem[spr_addr + i] == secret["sprite_id"]
 
 
 def test_secret_collection_and_stage_progression_scene0():
-    """Verify hardware collision triggers secret collection, clearing PMG rows and unlocking dependent stages."""
+    """Drive the first scene through its full secret chain against a model of the engine.
+
+    The scene layout, secret count and dependency graph are derived from the scene JSON
+    and definitions.json (Rule 05); the expected progression comes from
+    SecretProgressionModel, a mirror of `secret_collect` in scenes/game.asm.
+    """
+    scene_file = scene_files()[0]
+    secrets = scene_objects(scene_file, "secret")
+    assert secrets, f"{scene_file} must define at least one secret"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -194,238 +232,175 @@ def test_secret_collection_and_stage_progression_scene0():
     run_subroutine(mpu, labels["SECRETS_INIT"])
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
+    run_subroutine(mpu, labels["STATUS_LINE_RESET"])  # engine-defined starting HUD state
 
+    count = len(secrets)
     act_addr = labels["SECRETS_ACTIVE"]
     coll_addr = labels["SECRETS_COLLECTED"]
-    pmg_m = labels["PMG_MISSILES"]
-    m0pl_addr = labels["M0PL"]
-
-    # In Scene 0:
-    # Secret 0: Gold Key at x=18, pmg_y=125, height=16 (active)
-    # Secret 1: Gold Key at x=108, pmg_y=61, height=16 (active)
-    # Secret 2: Skull at x=68, pmg_y=62, height=15 (inactive, dep on 1)
-    # Secret 3: Skull at x=92, pmg_y=126, height=15 (inactive, dep on 1)
-    # Secret 4: CD at x=56, pmg_y=157, height=16 (inactive, dep on 2)
-    assert mem[act_addr + 0] == 1
-    assert mem[act_addr + 1] == 1
-    assert mem[act_addr + 2] == 0
-    assert mem[act_addr + 3] == 0
-    assert mem[act_addr + 4] == 0
-    assert mem[coll_addr + 0] == 0
-    assert mem[coll_addr + 1] == 0
-    assert mem[coll_addr + 2] == 0
-    assert mem[coll_addr + 3] == 0
-    assert mem[coll_addr + 4] == 0
-
-    # 1. False positive check: player at x=10, y=188 (on missile platform), touches missile
-    mem[labels["PLAYER_X"]] = 10
-    mem[labels["PLAYER_PMG_Y"]] = 188
-    mem[m0pl_addr] = 1  # Hardware collision with missile platform
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-
-    # No secret should be collected
-    assert mem[coll_addr + 0] == 0
-    assert mem[coll_addr + 1] == 0
-    assert mem[coll_addr + 2] == 0
-    assert mem[coll_addr + 3] == 0
-    assert mem[coll_addr + 4] == 0
-    assert mem[act_addr + 0] == 1
-
     x_addr = labels["SECRETS_X"]
     y_addr = labels["SECRETS_PMG_Y"]
-    sec_x0 = mem[x_addr + 0]
-    sec_x1 = mem[x_addr + 1]
-    sec_x3 = mem[x_addr + 3]
-    sec_x4 = mem[x_addr + 4]
-    pmg_y0 = mem[y_addr + 0]
-    pmg_y1 = mem[y_addr + 1]
-    pmg_y2 = mem[y_addr + 2]
-    pmg_y3 = mem[y_addr + 3]
-    pmg_y4 = mem[y_addr + 4]
+    h_addr = labels["SECRETS_HEIGHT"]
+    zone_addr = labels["SECRETS_ZONE"]
+    m0pl_addr = labels["M0PL"]
+    initial_lives = mem[labels["PLAYER_LIVES"]]
 
-    # 2. Collect Secret 0: player moves to sec_x0, pmg_y0
-    mem[labels["PLAYER_X"]] = sec_x0
-    mem[labels["PLAYER_PMG_Y"]] = pmg_y0
-    mem[m0pl_addr] = 1  # Hardware collision
+    # 1. Hardware false-positive guard: a bare missile-platform touch must not collect.
+    #    The hero is placed horizontally on a secret but vertically clear of every one.
+    topmost = min(mem[y_addr + i] for i in range(count))
+    mem[labels["PLAYER_X"]] = mem[x_addr + 0]
+    mem[labels["PLAYER_PMG_Y"]] = max(0, topmost - 21)
+    mem[m0pl_addr] = 1  # Hardware collision with a missile platform
     run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+    assert all(mem[coll_addr + i] == 0 for i in range(count)), (
+        "bounding-box check must reject a missile-platform-only hardware hit"
+    )
 
-    # Secret 0 is collected and inactive
-    assert mem[coll_addr + 0] == 1
-    assert mem[act_addr + 0] == 0
-    # Secret 0 PMG scanlines are now cleared ($00)
-    assert all(b == 0 for b in mem[pmg_m + pmg_y0 : pmg_m + pmg_y0 + 16])
+    # 2. Walk the whole secret chain: after every collection the engine tables must
+    #    match SecretProgressionModel (mirror of secret_collect in scenes/game.asm)
+    model = SecretProgressionModel(secrets)
+    steps = 0
+    while model.pending:
+        target = model.pending[0]
+        hero_x = mem[x_addr + target]
+        hero_y = mem[y_addr + target]
+        hits = engine_colliding_secrets(mem, labels, hero_x, hero_y)
+        assert hits, f"hero placed on secret {target} must overlap it"
+        expected = min(hits)  # engine scans from index 0 and collects the first match
 
-    hpos_m0_addr = labels["DLI_ZONE_HPOS_M0"]
-    # Secret 0 (Gold Key on platform-006, y=56, zone 3 -> table offset 2) is cleared
-    assert mem[hpos_m0_addr + 2] == 0xFF
-    assert mem[hpos_m0_addr + 10] == 0xFF
+        mem[labels["PLAYER_X"]] = hero_x
+        mem[labels["PLAYER_PMG_Y"]] = hero_y
+        mem[m0pl_addr] = 1
+        run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
 
-    # Secret 1 is still active; Secrets 2, 3, 4 are STILL inactive
-    assert mem[act_addr + 1] == 1
-    assert mem[act_addr + 2] == 0
-    assert mem[act_addr + 3] == 0
-    assert mem[act_addr + 4] == 0
+        collected = [i for i in range(count) if mem[coll_addr + i] and not model.collected[i]]
+        assert collected == [expected], (
+            f"step {steps}: engine collected {collected}, model expected [{expected}]"
+        )
+        unlocked = model.collect(expected)
 
-    # 3. Collect Secret 1: player moves to sec_x1, pmg_y1
-    mem[labels["PLAYER_X"]] = sec_x1
-    mem[labels["PLAYER_PMG_Y"]] = pmg_y1
-    mem[m0pl_addr] = 1  # Hardware collision
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+        # Collected secret: PMG rows erased (except rows taken over by newly unlocked
+        # secrets, whose sprites may overlap the collected one), DLI positions cleared
+        unlocked_rows: set[int] = set()
+        for j in unlocked:
+            top_j = mem[y_addr + j]
+            unlocked_rows.update(range(top_j, top_j + mem[h_addr + j]))
+        top = mem[y_addr + expected]
+        for row in range(top, top + mem[h_addr + expected]):
+            if row in unlocked_rows:
+                continue
+            assert mem[labels["PMG_MISSILES"] + row] == 0, (
+                f"step {steps}: collected secret {expected} must leave PMG row {row} cleared"
+            )
+        zone = mem[zone_addr + expected]
+        if not any(mem[act_addr + i] and mem[zone_addr + i] == zone for i in range(count)):
+            for channel in range(4):
+                for slot in dli_secret_hpos_slots(labels, zone, channel):
+                    assert mem[slot] == 0xFF, (
+                        f"step {steps}: HPOSM{channel} of collected secret {expected} must be $FF"
+                    )
 
-    # Secret 1 is collected and inactive
-    assert mem[coll_addr + 1] == 1
-    assert mem[act_addr + 1] == 0
-    # Secret 1 was cleared, and in the same step Skull (secret 2) was unlocked and rendered at pmg_y2!
-    assert mem[pmg_m + pmg_y1] == 0
-    assert pmg_y2 == pmg_y1 + 1
+        # Newly unlocked secrets: activated, frame 0 rendered, DLI positions updated
+        for j in unlocked:
+            assert secret_pmg_rows(mem, labels, j) == secret_frame_bytes(mem, labels, j), (
+                f"step {steps}: unlocked secret {j} must render sprite frame 0"
+            )
+            zone_j = mem[zone_addr + j]
+            owners = [i for i in range(count) if mem[act_addr + i] and mem[zone_addr + i] == zone_j]
+            if owners != [j]:
+                continue  # shared zone: the last writer of that zone wins
+            base = 48 + mem[x_addr + j]
+            for channel in range(4):
+                for slot in dli_secret_hpos_slots(labels, zone_j, channel):
+                    assert mem[slot] == base + channel * 2, (
+                        f"step {steps}: HPOSM{channel} of unlocked secret {j} must be {base + channel * 2}"
+                    )
+        steps += 1
 
-    # Now ALL keys (def 1) are collected! Both Skulls (secret 2 and 3, dep 1) must be UNLOCKED!
-    assert mem[act_addr + 2] == 1, "Skull (Secret 2) must be unlocked after all keys collected"
-    assert mem[coll_addr + 2] == 0
-    assert mem[act_addr + 3] == 1, "Skull (Secret 3) must be unlocked after all keys collected"
-    assert mem[coll_addr + 3] == 0
-    assert mem[act_addr + 4] == 0, "CD (Secret 4) remains locked until skulls are collected"
+    assert steps == count, "every secret must be collected exactly once"
+    assert model.scene_advanced, "the model must detect scene completion"
 
-    # Verify Skull Frame 0 is rendered into PMG_MISSILES at pmg_y2
-    skull_f0 = labels["SPRITE_7_FRAME_0"]
-    exp_skull_bytes = list(mem[skull_f0 : skull_f0 + 15])
-    actual_skull_bytes = list(mem[pmg_m + pmg_y2 : pmg_m + pmg_y2 + 15])
-    assert actual_skull_bytes == exp_skull_bytes, "Skull sprite Frame 0 not rendered on unlock"
+    # 3. Level complete: the victory fanfare plays IN the finished scene and the engine
+    #    advances only after it has finished (see complete_victory_hold)
+    scene_index = 0
+    assert mem[labels["ACTIVE_SCENE_ID"]] == scene_index, (
+        "the scene must not change while the victory fanfare is playing"
+    )
+    complete_victory_hold(mpu, mem, labels, run_subroutine)
 
-    # Verify DLI horizontal positions updated dynamically for both newly unlocked Skulls
-    # Secret 2 (Skull on platform-011, y=24, zone 1 -> offset 0 in dli_zone tables)
-    assert mem[hpos_m0_addr + 0] == 48 + 68, "Secret 2 DLI HPOS M0 not updated to x=68"
-    assert mem[hpos_m0_addr + 8] == 48 + 68, "Secret 2 DLI HPOS M0 buffer 1 not updated"
-    # Secret 3 (Skull on platform-012, y=56, zone 3 -> offset 2 in dli_zone tables)
-    assert mem[hpos_m0_addr + 2] == 48 + sec_x3, "Secret 3 DLI HPOS M0 not updated to sec_x3"
-    assert mem[hpos_m0_addr + 10] == 48 + sec_x3, "Secret 3 DLI HPOS M0 buffer 1 not updated"
-
-    # Scene 0 is not complete yet (skulls still active)
-    assert mem[labels["ACTIVE_SCENE_ID"]] == 0
-
-    # 4. Collect Secret 2 (Skull): player moves to x=68, pmg_y2
-    mem[labels["PLAYER_X"]] = 68
-    mem[labels["PLAYER_PMG_Y"]] = pmg_y2
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-    assert mem[coll_addr + 2] == 1
-    assert mem[act_addr + 2] == 0
-    # Secret 2 DLI HPOS cleared offscreen
-    assert mem[hpos_m0_addr + 0] == 0xFF
-    assert mem[hpos_m0_addr + 8] == 0xFF
-
-    # Scene 0 still not complete (secret 3 still active, secret 4 still locked)
-    assert mem[labels["ACTIVE_SCENE_ID"]] == 0
-    assert mem[act_addr + 4] == 0
-
-    # 5. Collect Secret 3 (Skull on platform-012): player moves to sec_x3, pmg_y3
-    mem[labels["PLAYER_X"]] = sec_x3
-    mem[labels["PLAYER_PMG_Y"]] = pmg_y3
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-    assert mem[coll_addr + 3] == 1
-    assert mem[act_addr + 3] == 0
-    # Secret 3 DLI HPOS cleared offscreen
-    assert mem[hpos_m0_addr + 2] == 0xFF
-    assert mem[hpos_m0_addr + 10] == 0xFF
-
-    # Skulls collected! Secret 4 (CD, dep 2) is now UNLOCKED!
-    assert mem[act_addr + 4] == 1, "CD (Secret 4) must be unlocked after all skulls collected"
-    assert mem[coll_addr + 4] == 0
-
-    # Verify CD Frame 0 is rendered into PMG_MISSILES at pmg_y4
-    cd_f0 = labels["SPRITE_6_FRAME_0"]
-    exp_cd_bytes = list(mem[cd_f0 : cd_f0 + 16])
-    actual_cd_bytes = list(mem[pmg_m + pmg_y4 : pmg_m + pmg_y4 + 16])
-    assert actual_cd_bytes == exp_cd_bytes, "CD sprite Frame 0 not rendered on unlock"
-
-    # Secret 4 (CD on platform-004, y=72, zone 4 -> offset 3 in dli_zone tables)
-    assert mem[hpos_m0_addr + 3] == 48 + sec_x4, "Secret 4 DLI HPOS M0 not updated to sec_x4"
-    assert mem[hpos_m0_addr + 11] == 48 + sec_x4, "Secret 4 DLI HPOS M0 buffer 1 not updated"
-
-    # Scene 0 still not complete (CD still active)
-    assert mem[labels["ACTIVE_SCENE_ID"]] == 0
-
-    # 6. Collect Secret 4 (CD on platform-004): player moves to sec_x4, pmg_y4
-    mem[labels["PLAYER_X"]] = sec_x4
-    mem[labels["PLAYER_PMG_Y"]] = pmg_y4
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-    assert mem[coll_addr + 4] == 1
-    # Collecting final secret immediately triggers game_next_scene, which stages Scene 1
-
-    # All secrets in Scene 0 collected -> game_next_scene automatically triggered!
-    # active_scene_id must now be 1 (Scene 1: Be Quick or Be Dead)
-    assert mem[labels["ACTIVE_SCENE_ID"]] == 1
-    # game_phase reset to GAME_PHASE_TITLE_IN for new scene title card
-    assert mem[labels["GAME_PHASE"]] == 0
-    # Lives (3) preserved across scenes
-    assert mem[labels["PLAYER_LIVES"]] == 3
-    # Scene 1 secrets initialized fresh (Keys active, Ladder inactive, collected all 0)
-    assert mem[act_addr + 0] == 1
-    assert mem[act_addr + 1] == 1
-    assert mem[act_addr + 2] == 0
-    assert mem[coll_addr + 0] == 0
+    if scene_index + 1 < labels["SCENE_COUNT"]:
+        assert mem[labels["ACTIVE_SCENE_ID"]] == scene_index + 1
+        assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_TITLE_IN"]
+        assert mem[labels["PLAYER_LIVES"]] == initial_lives, "lives must survive scene change"
+        next_secrets = scene_objects(scene_files()[scene_index + 1], "secret")
+        assert mem[labels["SECRETS_COUNT"]] == len(next_secrets)
+        for i, secret in enumerate(next_secrets):
+            assert mem[act_addr + i] == int(not secret.get("dependency")), (
+                "next scene secrets must be initialized fresh from their own JSON"
+            )
+            assert mem[coll_addr + i] == 0
+    else:
+        assert mem[labels["GAME_RESULT"]] == labels["GAME_SUCCESS"]
+        assert mem[labels["GAME_STATE"]] == labels["STATE_OVER"]
 
 
 def test_game_success_on_final_scene_completion():
-    """Verify that collecting all secrets in the final scene sets GAME_SUCCESS and STATE_OVER."""
+    """Collecting every secret of the final scene must set GAME_SUCCESS / STATE_OVER.
+
+    The final scene, its secret count and the unlock chain are derived from
+    scenes/scenes.json + the scene JSON (Rule 05).
+    """
+    scene_list = scene_files()
+    final_index = len(scene_list) - 1
+    secrets = scene_objects(scene_list[final_index], "secret")
+    assert secrets, f"{scene_list[final_index]} must define at least one secret"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Start directly on Scene 1 (Forest Castle, final scene)
-    mem[labels["ACTIVE_SCENE_ID"]] = 1
+    # Start directly on the final scene
+    mem[labels["ACTIVE_SCENE_ID"]] = final_index
     run_subroutine(mpu, labels["DLI_INIT"])
-    mpu.a = 1
+    mpu.a = final_index
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 1
+    mpu.a = final_index
     run_subroutine(mpu, labels["SECRETS_INIT"])
-    mpu.a = 1
+    mpu.a = final_index
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    m0pl_addr = labels["M0PL"]
+    model = SecretProgressionModel(secrets)
+    drive_secret_progression(mpu, mem, labels, model, run_subroutine)
 
-    # Scene 1 secrets:
-    y_addr = labels["SECRETS_PMG_Y"]
-    # Collect Key 0
-    mem[labels["PLAYER_X"]] = 8
-    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 0]
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-
-    # Collect Key 1
-    mem[labels["PLAYER_X"]] = 129
-    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 1]
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-
-    # Ladder (secret 2) unlocked
-    act_addr = labels["SECRETS_ACTIVE"]
-    assert mem[act_addr + 2] == 1
-
-    # Collect Ladder 2
-    mem[labels["PLAYER_X"]] = 96
-    mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + 2]
-    mem[m0pl_addr] = 1
-    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
-
-    # All scenes finished! Must set GAME_SUCCESS (2) and STATE_OVER (3)
-    assert mem[labels["GAME_RESULT"]] == 2  # GAME_SUCCESS = 2
-    assert mem[labels["GAME_STATE"]] == 3   # STATE_OVER = 3
+    assert model.scene_advanced, "the last secret must complete the final scene"
+    # The fanfare plays in the finished scene first; GAME_SUCCESS follows afterwards
+    complete_victory_hold(mpu, mem, labels, run_subroutine)
+    assert mem[labels["GAME_RESULT"]] == labels["GAME_SUCCESS"]
+    assert mem[labels["GAME_STATE"]] == labels["STATE_OVER"]
 
 
-def test_secrets_blinking_cd_and_skull():
-    """Verify blinking secrets hold each luminance step for SECRETS_BLINK_STEP_FRAMES frames (half-speed pulse)."""
+def test_secrets_blink_cadence_and_static_colors():
+    """Blinking secrets must pulse their luminance while static secrets keep one colour.
+
+    Which secrets blink, their base colours and their zones are derived from the scene
+    JSON + definitions.json and cross-checked against the engine tables (Rule 05).
+    Cadence contract: each luminance step is held for SECRETS_BLINK_STEP_FRAMES frames.
+    """
+    scene_file = scene_files()[0]
+    secrets = scene_objects(scene_file, "secret")
+    blinking = [i for i, secret in enumerate(secrets) if secret["blink"]]
+    static = [i for i, secret in enumerate(secrets) if not secret["blink"]]
+    assert blinking, f"{scene_file} must contain at least one blinking secret"
+    assert static, f"{scene_file} must contain at least one static secret"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Initialize DLI and Secrets for Scene 0 (Forest)
+    # Initialize DLI and Secrets for Scene 0
     run_subroutine(mpu, labels["DLI_INIT"])
     mem[labels["ACTIVE_SCENE_ID"]] = 0
     mpu.a = 0
@@ -433,62 +408,61 @@ def test_secrets_blinking_cd_and_skull():
     mpu.a = 0
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
-    # Verify secrets_blink array populated from compiled scene definition
-    blink_addr = labels["SECRETS_BLINK"]
-    assert mem[blink_addr + 0] == 0, "Secret 0 (Gold Key) must NOT blink"
-    assert mem[blink_addr + 1] == 0, "Secret 1 (Gold Key) must NOT blink"
-    assert mem[blink_addr + 2] == 1, "Secret 2 (Skull) MUST blink"
-    assert mem[blink_addr + 3] == 1, "Secret 3 (Skull) MUST blink"
-    assert mem[blink_addr + 4] == 1, "Secret 4 (CD) MUST blink"
-
-    # Secret 4 (CD) has atari_color $80 (hue $80, base lum $00)
-    col_addr = labels["SECRETS_COLOR"]
-    assert mem[col_addr + 4] == 0x80
-
-    # Activate CD (secret 4)
+    count = len(secrets)
     act_addr = labels["SECRETS_ACTIVE"]
-    mem[act_addr + 4] = 1
+    col_addr = labels["SECRETS_COLOR"]
+    zone_addr = labels["SECRETS_ZONE"]
+    blink_addr = labels["SECRETS_BLINK"]
 
-    cd_zone = mem[labels["SECRETS_ZONE"] + 4]
-    cd_offset = cd_zone - 1 if cd_zone > 0 else 0
-    dli_col_buf0 = labels["DLI_ZONE_SECRET_COL"] + cd_offset
-    dli_col_buf1 = labels["DLI_ZONE_SECRET_COL"] + 8 + cd_offset
+    # 1. Engine blink flags and colours must match the catalogue definitions
+    for i, secret in enumerate(secrets):
+        assert mem[blink_addr + i] == int(secret["blink"]), f"secret {i} blink flag mismatch"
+        assert mem[col_addr + i] == secret["atari_color"], f"secret {i} colour mismatch"
 
-    # Initial zero-page luminance offset must be $00
+    # 2. Pick a blinking secret that is the last writer of its zone
+    blink_idx = next(
+        i for i in blinking if not any(j != i and mem[zone_addr + j] == mem[zone_addr + i] for j in blinking)
+    )
+    mem[act_addr + blink_idx] = 1  # ensure the pulse phase updates its DLI colour
+    base_color = mem[col_addr + blink_idx]
+    slots = dli_secret_color_slots(labels, mem[zone_addr + blink_idx])
+
     lum_addr = labels["SECRETS_BLINK_LUM"]
+    timer_addr = labels["SECRETS_BLINK_TIMER"]
+    step_frames = labels["SECRETS_BLINK_STEP_FRAMES"]
+    assert step_frames == 2, "blink pulse must stay 2x slower than per-frame stepping"
+    assert mem[timer_addr] == step_frames, "frame divider must be armed by secrets_init"
     assert mem[lum_addr] == 0x00
 
-    # Blink rate contract: every luminance step is held for SECRETS_BLINK_STEP_FRAMES frames.
-    # 2 frames per step == 2x slower pulse than the original per-frame stepping.
-    step_frames = labels["SECRETS_BLINK_STEP_FRAMES"]
-    timer_addr = labels["SECRETS_BLINK_TIMER"]
-    assert step_frames == 2, "Blink pulse must be slowed down 2x (2 frames per luminance step)"
-    assert mem[timer_addr] == step_frames, "Frame divider must be armed by secrets_init"
-
     lum_steps = 8                             # $00, $02, ... $0E
-    cycle_frames = lum_steps * step_frames    # Full pulse cycle: 16 frames
+    cycle_frames = lum_steps * step_frames    # full pulse cycle (16 frames at step = 2)
 
-    # Step through two full pulse cycles, one frame at a time:
-    # Colors for CD ($80 hue) must cycle $80, $80, $82, $82, ... $8E, $8E, then wrap to $80, $80...
+    # 3. Each luminance step is held for `step_frames` frames in both DLI buffers
     for frame in range(1, 2 * cycle_frames + 1):
         run_subroutine(mpu, labels["SECRETS_UPDATE"])
 
-        expected_col = 0x80 | ((2 * ((frame - 1) // step_frames)) & 0x0E)
-        assert mem[dli_col_buf0] == expected_col, (
-            f"Frame {frame}: expected CD color ${expected_col:02X} in Buffer 0, got ${mem[dli_col_buf0]:02X}"
-        )
-        assert mem[dli_col_buf1] == expected_col, (
-            f"Frame {frame}: expected CD color ${expected_col:02X} in Buffer 1, got ${mem[dli_col_buf1]:02X}"
-        )
+        expected_color = (base_color & 0xF0) | ((2 * ((frame - 1) // step_frames)) & 0x0E)
+        for slot in slots:
+            assert mem[slot] == expected_color, (
+                f"frame {frame}: expected colour ${expected_color:02X}, got ${mem[slot]:02X}"
+            )
 
         # Luminance counter advances only once per SECRETS_BLINK_STEP_FRAMES frames
         expected_lum = (2 * (frame // step_frames)) & 0x0E
         assert mem[lum_addr] == expected_lum, (
-            f"Frame {frame}: expected SECRETS_BLINK_LUM ${expected_lum:02X}, got ${mem[lum_addr]:02X}"
+            f"frame {frame}: expected SECRETS_BLINK_LUM ${expected_lum:02X}, got ${mem[lum_addr]:02X}"
         )
 
-    # Static secret 0 (Gold Key, zone 3, offset 2) must remain $1A throughout
-    s0_zone = mem[labels["SECRETS_ZONE"] + 0]
-    s0_offset = s0_zone - 1 if s0_zone > 0 else 0
-    s0_col_buf0 = labels["DLI_ZONE_SECRET_COL"] + s0_offset
-    assert mem[s0_col_buf0] == 0x1A
+    # 4. Static secrets that exclusively own their zone must keep a constant colour
+    checked = 0
+    for i in static:
+        if not mem[act_addr + i]:
+            continue
+        zone = mem[zone_addr + i]
+        owners = [j for j in range(count) if mem[act_addr + j] and mem[zone_addr + j] == zone]
+        if owners != [i]:
+            continue  # shared zone: the last writer of that zone wins
+        for slot in dli_secret_color_slots(labels, zone):
+            assert mem[slot] == mem[col_addr + i], f"static secret {i} colour must not change"
+        checked += 1
+    assert checked, "at least one static secret must be verifiable in this scene"
