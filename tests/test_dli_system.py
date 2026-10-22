@@ -7,12 +7,17 @@ Validates:
 4. dli_stage_scene: Double-buffered scene staging into inactive buffer without affecting active buffer.
 5. dli_vblank_update: Atomic buffer swap, Zone 0 initialization, upper background palette in hardware & shadows.
 6. dli_handler: 3-phase execution across all 6 pas:
-   - Faza A: PMG platform sizes (x4), positions (HPOSP1..3, HPOSM1..3), PRIOR ($01).
-   - Faza B: 8 scanlines platform color profiles (COLPM1..3).
+   - Faza A (pre-pas scanline, ~57 cycle Mode D DMA budget): PMG platform sizes (x4),
+     missile widths and player positions (HPOSP1..3).
+   - Faza B: 8 scanlines platform color profiles committed to BOTH COLPM1..3 (player
+     platforms) and COLPF3 (5th player / missile platforms); iteration 0 also commits
+     the platform missile positions HPOSM0..3.
    - Faza C: Background palette (COLPF0..2), lower palette switch at Pas 40, upper palette restore at Pas 88;
      enemy/secret PMG setup in guard line (x1 sizes, HPOSP1..3, COLPM1..3, HPOSM0..3, COLPF3, PRIOR bit 4).
 7. Strict hardware invariants: Hero P0 (HPOSP0, SIZEP0, COLPM0) never touched; COLBK strictly black ($00).
 8. Zero stack usage during DLI, registers preserved in Zero Page ($B8-$BA).
+9. Row colour profile completeness: scanline 0 of every pas reaches every colour channel
+   (COLPM1..3 + COLPF3), so missile platforms honour the same row profile as players.
 """
 
 from __future__ import annotations
@@ -20,8 +25,25 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 from py65.devices.mpu6502 import MPU
+from py65.memory import ObservableMemory
 
 from scripts.check_memory import parse_xex_segments
+
+# Per-scanline CPU budget on a Mode D line with SDMCTL = $3E (full playfield +
+# single-line PMG DMA): ANTIC steals 3 (DL fetch) + 40 (playfield) + 5 (PMG) +
+# 9 (refresh) = 57 of the 114 CPU slots, leaving ~57 cycles for the CPU.
+# Exceeding this inside Faza A (or Faza B iteration 0) pushes the next STA WSYNC
+# past the end of the scanline and slips the whole kernel by one scanline, which
+# makes platform colours appear one scanline late.
+# NOTE: the "~85 cycles remain after the trigger" figure in
+# .agents/skills/atari8bit/hardware/antic/dli-wsync.md §3.9 applies to lines
+# WITHOUT playfield/PMG DMA (e.g. blank lines) - it must not be used here.
+MODE_D_DMA_CYCLE_BUDGET = 57
+
+# Design contract of Faza B iteration 0: the four colour commits (COLPF3 for the
+# 5th player / missile platforms and COLPM1..3 for player platforms) come first
+# and complete within 20 CPU cycles of scanline 2L, before any missile position.
+COLOR_COMMIT_CYCLES = 20
 
 
 def load_xex_and_symbols() -> tuple[bytearray, dict[str, int]]:
@@ -546,18 +568,16 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
     mpu.pc = dli_addr
     mpu.x = 0x42  # Distinct value to ensure X preservation
 
-    # Step through Faza A until first WSYNC write (STA WSYNC = opcode 0x8D)
-    faza_a_cycles = 0
-    while mpu.pc != wsync_addr:
-        pc_before = mpu.pc
-        opcode = mem[pc_before]
-        if opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr:
-            break
+    # --- Faza A cycle budget (pre-pas scanline) -------------------------------
+    faza_a_start = mpu.processorCycles
+    while not (mem[mpu.pc] == 0x8D and (mem[mpu.pc + 1] | (mem[mpu.pc + 2] << 8)) == wsync_addr):
         mpu.step()
-        faza_a_cycles += 1
+    faza_a_cycles = mpu.processorCycles - faza_a_start
 
-    # Faza A must execute and reach STA WSYNC in <= 60 cycles (~55 cycles)
-    assert faza_a_cycles <= 60, f"Faza A took {faza_a_cycles} instructions/cycles; must be <= 60 to prevent scanline slip"
+    assert faza_a_cycles <= MODE_D_DMA_CYCLE_BUDGET, (
+        f"Faza A took {faza_a_cycles} cycles; it must fit the ~{MODE_D_DMA_CYCLE_BUDGET} cycle "
+        f"Mode D DMA budget to prevent a one-scanline kernel slip"
+    )
 
     # Step over 1st STA WSYNC (end of line 2L-2 scanline 1)
     mpu.step()
@@ -576,20 +596,19 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
 
     # We are now in Faza B Iteration 0 (scanline 2L)
     # Step through until the next STA WSYNC (end of scanline 0 of the pas)
-    iter0_cycles = 0
-    while True:
-        pc_before = mpu.pc
-        opcode = mem[pc_before]
-        if opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr:
-            break
+    iter0_start = mpu.processorCycles
+    while not (mem[mpu.pc] == 0x8D and (mem[mpu.pc + 1] | (mem[mpu.pc + 2] << 8)) == wsync_addr):
         mpu.step()
-        iter0_cycles += 1
+    iter0_cycles = mpu.processorCycles - iter0_start
 
     # Step over STA WSYNC of scanline 0
     mpu.step()
 
-    # Verify iteration 0 executed in <= 70 cycles (~64 cycles)
-    assert iter0_cycles <= 70, f"Iteration 0 took {iter0_cycles} instructions/cycles; must be <= 70"
+    # Iteration 0 must commit every register inside the single scanline it owns
+    assert iter0_cycles <= MODE_D_DMA_CYCLE_BUDGET, (
+        f"Iteration 0 took {iter0_cycles} cycles; it must fit the "
+        f"~{MODE_D_DMA_CYCLE_BUDGET} cycle Mode D DMA budget of one scanline"
+    )
 
     # In Scene 0 Pas 0: no missile platform, so SIZEM is 0
     assert mem[labels["SIZEM"]] == 0x00
@@ -607,4 +626,132 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
 
     # Verify X register was never modified
     assert mpu.x == 0x42, f"X register must be preserved across Faza A and B, got ${mpu.x:02X}"
+
+
+# ==============================================================================
+# TEST 10: Row Colour Profile Reaches Both Colour Channels (Player & Missile)
+# ==============================================================================
+def test_dli_missile_platform_first_scanline_color():
+    """Scanline 0 of every pas must commit the row colour to COLPM1..3 AND COLPF3.
+
+    Player platforms are coloured by COLPM1..3, while missile platforms are the GTIA
+    5th player coloured by COLPF3. Faza C of the previous pas leaves COLPF3 holding
+    the *zone secret* colour, so without an explicit commit on scanline 2L the first
+    scanline of a missile platform renders that foreign colour - and it pulses
+    whenever that secret carries the blink flag (row colour profiles were only
+    honoured from scanline 1 onwards).
+    """
+    missile_rows: set[tuple[int, int]] = set()
+
+    for scene_id in (0, 1):
+        mem, labels = load_xex_and_symbols()
+        events: list[tuple[str, int, int]] = []
+
+        observed = ObservableMemory(subject=mem)
+        mpu = MPU(memory=observed)
+        mpu.sp = 0xFD
+        mem[0x01FE] = 0x1F
+        mem[0x01FF] = 0x00
+
+        def recorder(name: str):
+            def callback(address: int, value: int) -> None:
+                events.append((name, value, mpu.processorCycles))
+
+            return callback
+
+        watched = [
+            "COLPF3", "COLPM1", "COLPM2", "COLPM3",
+            "HPOSM0", "HPOSM1", "HPOSM2", "HPOSM3", "WSYNC",
+        ]
+        for name in watched:
+            observed.subscribe_to_write([labels[name]], recorder(name))
+
+        run_subroutine(mpu, labels["DLI_INIT"])
+        mem[labels["ACTIVE_SCENE_ID"]] = scene_id
+        mpu.a = scene_id
+        run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+        run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+
+        offset = mem[labels["DLI_ACTIVE_OFFSET"]]
+        assert mem[labels["DLI_PAS_IDX"]] == offset
+
+        for pas in range(6):
+            idx = offset + pas
+            row_colors = [mem[labels[f"DLI_PAS_COLOR_SL{sl}"] + idx] for sl in range(8)]
+            zone_secret_col = mem[labels["DLI_ZONE_SECRET_COL"] + idx]
+
+            events.clear()
+            invoke_dli(mpu, labels["DLI_HANDLER"])
+
+            # 1. COLPF3 (5th player / missile platform) must receive the complete row
+            #    profile starting at scanline 0, followed by the zone-secret colour in
+            #    Faza C. Previously the sequence started at scanline 1 (sl1), leaving
+            #    scanline 0 with the stale blinking zone-secret colour.
+            colpf3_commits = [value for name, value, _ in events if name == "COLPF3"]
+            assert colpf3_commits == row_colors + [zone_secret_col], (
+                f"Scene {scene_id} pas {pas}: COLPF3 commits "
+                f"{[f'${v:02X}' for v in colpf3_commits]} must equal the full row profile "
+                f"{[f'${v:02X}' for v in row_colors]} + zone secret ${zone_secret_col:02X}"
+            )
+
+            wsync_cycles = [cycle for name, _, cycle in events if name == "WSYNC"]
+            assert len(wsync_cycles) == 11, "Faza A must perform 3 WSYNCs and Faza B 8 (11 total)"
+
+            # 2. The four colour channels must be committed FIRST and complete within
+            #    COLOR_COMMIT_CYCLES of scanline 2L (which starts right after the 3rd
+            #    WSYNC), i.e. before any missile position write.
+            scanline2L = wsync_cycles[2]
+            colour_names = ("COLPF3", "COLPM1", "COLPM2", "COLPM3")
+            first_commits: dict[str, tuple[int, int]] = {}
+            for name, value, cycle in events:
+                if name in colour_names and name not in first_commits:
+                    first_commits[name] = (value, cycle - scanline2L)
+
+            assert list(first_commits) == list(colour_names), (
+                f"Scene {scene_id} pas {pas}: scanline 2L colour commit order "
+                f"{list(first_commits)} must be {list(colour_names)}"
+            )
+            for name, (value, completion) in first_commits.items():
+                assert value == row_colors[0], (
+                    f"Scene {scene_id} pas {pas}: {name} scanline 0 colour "
+                    f"${value:02X} must equal the row profile entry ${row_colors[0]:02X}"
+                )
+                assert completion <= COLOR_COMMIT_CYCLES, (
+                    f"Scene {scene_id} pas {pas}: {name} committed at cycle {completion} of "
+                    f"scanline 2L; must be <= {COLOR_COMMIT_CYCLES}"
+                )
+
+            # 3. Missile platform positions M0..M3 follow the colour commits on the
+            #    same scanline (Faza B iteration 0).
+            first_missile_cycle = min(
+                cycle for name, _, cycle in events if name.startswith("HPOSM")
+            )
+            assert first_missile_cycle > scanline2L + COLOR_COMMIT_CYCLES - 4, (
+                f"Scene {scene_id} pas {pas}: missile positions must be committed after "
+                f"the colour commits on scanline 2L"
+            )
+            for channel in range(4):
+                name = f"HPOSM{channel}"
+                commits = [(value, cycle) for ev_name, value, cycle in events if ev_name == name]
+                assert len(commits) == 2, (
+                    f"{name} must be committed for the platform and for the zone secret"
+                )
+                platform_value, platform_cycle = commits[0]
+                assert platform_value == mem[labels[f"DLI_HPOS_M{channel}"] + idx]
+                assert wsync_cycles[2] < platform_cycle < wsync_cycles[3], (
+                    f"Scene {scene_id} pas {pas}: {name} platform position must be committed "
+                    f"during scanline 2L (Faza B iteration 0)"
+                )
+                assert commits[1][1] > wsync_cycles[10], (
+                    f"{name} zone-secret position belongs to Faza C"
+                )
+
+            if mem[labels["DLI_SIZEM"] + idx] != 0:
+                missile_rows.add((scene_id, pas))
+
+    # The test must not be vacuous: every tested scene must realise at least one
+    # platform as missiles (5th player), which is exactly the reported case.
+    assert {scene for scene, _ in missile_rows} == {0, 1}, (
+        f"Expected missile platforms in both scenes, found {sorted(missile_rows)}"
+    )
 

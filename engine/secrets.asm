@@ -10,6 +10,7 @@
 ; ==============================================================================
 
 MAX_SECRETS = 6
+SECRETS_BLINK_STEP_FRAMES = 2   ; Frames each luminance step is held (2 = 2x slower blink pulse)
 
 ; --- Active Scene Secrets State (Structure-of-Arrays) ---
 secrets_count       .byte 0
@@ -243,9 +244,11 @@ secrets_blink       :MAX_SECRETS .byte 0
 @valid_id
     sta active_scene_id
 
-    ; Initialize blinking luminance counter
+    ; Initialize blinking luminance counter and its frame divider
     lda #0
     sta secrets_blink_lum
+    lda #SECRETS_BLINK_STEP_FRAMES
+    sta secrets_blink_timer
 
     ; 0. Clear PMG rows for any previous active secrets and reset active flags
     ldx #0
@@ -536,12 +539,22 @@ secrets_blink       :MAX_SECRETS .byte 0
     jmp @blink_loop
 
 @advance_blink_lum
-    ; Advance luminance offset for next frame: $00 -> $02 -> ... -> $0E -> $00
+    ; Hold each luminance step for SECRETS_BLINK_STEP_FRAMES frames
+    ; (frame divider -> half-speed blinking pulse)
+    dec secrets_blink_timer
+    bne @blink_anim
+
+    lda #SECRETS_BLINK_STEP_FRAMES
+    sta secrets_blink_timer
+
+    ; Advance luminance offset: $00 -> $02 -> ... -> $0E -> $00
     clc
     lda secrets_blink_lum
     adc #2
     and #$0E
     sta secrets_blink_lum
+
+@blink_anim
 
     ; --------------------------------------------------------------------------
     ; 2. Secret Animation Frames Update

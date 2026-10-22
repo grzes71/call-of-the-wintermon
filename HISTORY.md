@@ -2,6 +2,33 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Fix Blinking First Scanline of Missile (5th Player) Platforms
+
+- **Root Cause ([engine/dli.asm](engine/dli.asm))**:
+  - Faza B iteration 0 (scanline 0 of every platform pas) committed the row colour only to `COLPM1..3` (player platforms), never to `COLPF3`. Missile platforms are rendered as the GTIA 5th player, which is coloured by `COLPF3`, so their first scanline kept the value left by Faza C of the previous pas (`dli_zone_secret_col` = the zone-secret colour). With a blinking secret in that zone (Skull/CD) the stale colour pulsed, so the first line of the missile platform blinked while all other platforms on the row shared the correct profile.
+- **Per-Scanline CPU Budget Correction ([.agents/skills/atari8bit/hardware/antic/dli-wsync.md](.agents/skills/atari8bit/hardware/antic/dli-wsync.md))**:
+  - The "~85 cycles remain after a DLI trigger" figure in §3.9 applies to lines *without* playfield/PMG DMA. On a Mode D line with `SDMCTL = $3E` ANTIC steals 3 (DL fetch) + 40 (playfield) + 5 (PMG) + 9 (refresh) = 57 of the 114 CPU slots, leaving only ~57 cycles for the CPU per scanline.
+  - An intermediate implementation moved the platform missile position commits (`HPOSM0..HPOSM2`) into Faza A (55 → 79 cycles). That overran the real budget, pushing the first `WSYNC` past the end of the trigger scanline and slipping the whole kernel by one scanline (platform profiles then appeared one line late: stale enemy/secret colour on top, `sl0`+`sl1` black pair). It was reverted.
+- **DLI Engine Fix ([engine/dli.asm](engine/dli.asm))**:
+  - Faza A is unchanged at 55 cycles and now documents the ~57-cycle DMA budget so it is not extended again.
+  - Iteration 0 commits `COLPF3 = dli_pas_color_sl0,y` (the row scanline 0 colour for 5th-player missile platforms) first, followed by `COLPM1..3` and the four platform missile positions `HPOSM0..M3`: 48 → 52 cycles, still inside the ~57-cycle budget, with all four colour commits completed by cycle 20.
+- **Automated Verification ([tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Added `test_dli_missile_platform_first_scanline_color` using py65 `ObservableMemory` write tracing: for both scenes and all 6 pas it asserts that the `COLPF3` commit sequence equals the full 8-entry row profile followed by the zone-secret colour, that `COLPF3`/`COLPM1..3` are committed first on scanline `2L` (in that order, within 20 cycles) carrying the row's `sl0` value, and that `HPOSM0..M3` follow on the same scanline.
+  - Reworked `test_dli_faza_a_cycle_budget_and_faza_b_iter0` to measure real CPU cycles (`mpu.processorCycles`) against `MODE_D_DMA_CYCLE_BUDGET = 57` (Faza A = 55 cycles, iteration 0 = 52 cycles).
+  - Verified red/green: removing the `COLPF3` commit makes the new test fail on the stale-colour commit sequence.
+
+
+## [2026-10-22] - Halve Secret Blink Pulse Rate (2-Frame Luminance Hold)
+
+- **Zero Page Allocation ([zeropage.asm](zeropage.asm))**:
+  - Allocated `secrets_blink_timer = $E5` as a dedicated frame divider holding each blink luminance step.
+- **Secret Engine ([engine/secrets.asm](engine/secrets.asm))**:
+  - Added design constant `SECRETS_BLINK_STEP_FRAMES = 2` (frames each luminance step is held; 2 = 2x slower pulse).
+  - In `secrets_init`: armed the divider with `SECRETS_BLINK_STEP_FRAMES` next to the `secrets_blink_lum = 0` reset.
+  - In `secrets_update` (`@advance_blink_lum`): replaced the per-frame `secrets_blink_lum += 2` increment with a `dec secrets_blink_timer` / `bne @blink_anim` down-counter that advances luminance only once every `SECRETS_BLINK_STEP_FRAMES` frames, extending the full luminance cycle (`$00..$0E`) from 8 to 16 frames (0.32 s at 50 Hz PAL).
+- **Integration Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Updated `test_secrets_blinking_cd_and_skull` to assert the slowed cadence: the CD ($80 hue) color now holds each luminance for two frames (`$80, $80, $82, $82, ... $8E, $8E -> $80, $80`) across two full 16-frame cycles, `SECRETS_BLINK_TIMER` is armed with `SECRETS_BLINK_STEP_FRAMES == 2`, and `SECRETS_BLINK_LUM` advances only every other frame.
+
 ## [2026-10-22] - Implement Pulsing Color Blinking for Secrets (CD & Skull)
 
 - **Zero Page Allocations ([zeropage.asm](zeropage.asm))**:

@@ -418,7 +418,7 @@ def test_game_success_on_final_scene_completion():
 
 
 def test_secrets_blinking_cd_and_skull():
-    """Verify secrets with blink=True cycle luminance $00..$0E stepping by 2, while static secrets remain unchanged."""
+    """Verify blinking secrets hold each luminance step for SECRETS_BLINK_STEP_FRAMES frames (half-speed pulse)."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -458,19 +458,33 @@ def test_secrets_blinking_cd_and_skull():
     lum_addr = labels["SECRETS_BLINK_LUM"]
     assert mem[lum_addr] == 0x00
 
-    # Step through 10 frames of secrets_update:
-    # Colors for CD ($80 hue) must cycle: $80, $82, $84, $86, $88, $8A, $8C, $8E, then wrap to $80, $82...
-    expected_cd_colors = [
-        0x80, 0x82, 0x84, 0x86, 0x88, 0x8A, 0x8C, 0x8E, 0x80, 0x82
-    ]
+    # Blink rate contract: every luminance step is held for SECRETS_BLINK_STEP_FRAMES frames.
+    # 2 frames per step == 2x slower pulse than the original per-frame stepping.
+    step_frames = labels["SECRETS_BLINK_STEP_FRAMES"]
+    timer_addr = labels["SECRETS_BLINK_TIMER"]
+    assert step_frames == 2, "Blink pulse must be slowed down 2x (2 frames per luminance step)"
+    assert mem[timer_addr] == step_frames, "Frame divider must be armed by secrets_init"
 
-    for expected_col in expected_cd_colors:
+    lum_steps = 8                             # $00, $02, ... $0E
+    cycle_frames = lum_steps * step_frames    # Full pulse cycle: 16 frames
+
+    # Step through two full pulse cycles, one frame at a time:
+    # Colors for CD ($80 hue) must cycle $80, $80, $82, $82, ... $8E, $8E, then wrap to $80, $80...
+    for frame in range(1, 2 * cycle_frames + 1):
         run_subroutine(mpu, labels["SECRETS_UPDATE"])
+
+        expected_col = 0x80 | ((2 * ((frame - 1) // step_frames)) & 0x0E)
         assert mem[dli_col_buf0] == expected_col, (
-            f"Expected CD color ${expected_col:02X} in Buffer 0, got ${mem[dli_col_buf0]:02X}"
+            f"Frame {frame}: expected CD color ${expected_col:02X} in Buffer 0, got ${mem[dli_col_buf0]:02X}"
         )
         assert mem[dli_col_buf1] == expected_col, (
-            f"Expected CD color ${expected_col:02X} in Buffer 1, got ${mem[dli_col_buf1]:02X}"
+            f"Frame {frame}: expected CD color ${expected_col:02X} in Buffer 1, got ${mem[dli_col_buf1]:02X}"
+        )
+
+        # Luminance counter advances only once per SECRETS_BLINK_STEP_FRAMES frames
+        expected_lum = (2 * (frame // step_frames)) & 0x0E
+        assert mem[lum_addr] == expected_lum, (
+            f"Frame {frame}: expected SECRETS_BLINK_LUM ${expected_lum:02X}, got ${mem[lum_addr]:02X}"
         )
 
     # Static secret 0 (Gold Key, zone 3, offset 2) must remain $1A throughout

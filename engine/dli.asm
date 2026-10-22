@@ -452,6 +452,15 @@ dli_table_ptrs_hi
     ; --------------------------------------------------------------------------
     ; FAZA A: Executed during pre-pas line (2 scanlines before pas)
     ; Set PMG player widths (x4), missile widths from table, and positions.
+    ;
+    ; BUDGET (hard limit ~57 cycles): a DLI fires at cycle ~22 of the last
+    ; scanline of the tagged line, but on a Mode D line with SDMCTL = $3E ANTIC
+    ; steals ~57 of the 114 CPU slots per scanline (DL 3 + playfield 40 + PMG 5
+    ; + refresh 9). This phase uses 55 cycles and must stay at or below ~57:
+    ; adding even 24 more cycles (e.g. moving the missile position commits here)
+    ; pushes the first WSYNC past the end of the trigger scanline, which slips
+    ; the whole kernel by one scanline (platform colours then appear one line
+    ; late: stale enemy/secret colour on top, row profile shifted down).
     ; --------------------------------------------------------------------------
     lda #3                ; [2] Quad width (32px) for platform players
     sta SIZEP1            ; [4]
@@ -480,10 +489,20 @@ dli_table_ptrs_hi
     ; --------------------------------------------------------------------------
     ; FAZA B: 8 scanlines of platform color profiles
     ; Scanline 0 starts exactly on scanline 2L!
-    ; Updates COLPM1..3, COLPF3, and HPOSM0..3
+    ; Iteration 0 commits the row scanline 0 colour to COLPM1..3 + COLPF3 and the
+    ; platform missile positions HPOSM0..3; iterations 1..7 commit COLPM1..3 +
+    ; COLPF3 for each following scanline.
     ; --------------------------------------------------------------------------
     ; --- Iteracja 0 (scanline 2L) ---
+    ; The row's first-scanline colour must reach BOTH colour channels:
+    ; COLPM1..3 (player platforms) AND COLPF3 (5th player / missile platforms).
+    ; Omitting COLPF3 left the first scanline of a missile platform with the stale
+    ; zone-secret colour written by the previous Faza C - which pulses whenever that
+    ; secret blinks (row colour profiles were honoured only from scanline 1 on).
+    ; This iteration must also fit the ~57 cycle Mode D DMA budget, so the commit
+    ; order is: colours first (all four by cycle 20), missile positions after.
     lda dli_pas_color_sl0,y ; [4]
+    sta COLPF3             ; [4] 5th player (missile platform) colour
     sta COLPM1             ; [4]
     sta COLPM2             ; [4]
     sta COLPM3             ; [4]
