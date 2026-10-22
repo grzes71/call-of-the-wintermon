@@ -2,6 +2,28 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Implement Hero Death Animation Sequence with Bottom Edge Emergence
+
+- **Zero Page Equates ([zeropage.asm](zeropage.asm))**:
+  - Added `PLAYER_STATE_DEATH = 4` and `PLAYER_STATE_EMERGE = 5` to hero state machine constants.
+- **Sprite Compiler ([scripts/compile_sprites.py](scripts/compile_sprites.py))**:
+  - Emitted `PLAYER_ANIM_DEATH_COUNT` (3 frames), `PLAYER_ANIM_DEATH_DUR` (10 frames), and `PLAYER_ANIM_DEATH_HOLD` (60 frames: 10 animation ticks + 50 ticks for 1-second PAL hold) into [gen/player_sprites.asm](gen/player_sprites.asm).
+  - Emitted `player_anim_death_frames` containing the 3-frame 8x20 death animation bitmap sequence.
+- **Player State Machine & Renderer ([engine/player.asm](engine/player.asm))**:
+  - Added constants `PLAYER_VISIBLE_DEATH_Y = 68` and `PLAYER_VISIBLE_DEATH_PMG_Y = 188` (matching lowest platform row height at `plat_y = 88`), and `PLAYER_EMERGE_START_PMG_Y = 224`.
+  - Updated `player_render_frame` to bind `player_anim_death_frames` for `PLAYER_STATE_DEATH` and `player_anim_fall_frames` for `PLAYER_STATE_EMERGE`.
+  - Added `player_emerge_update`: smoothly slides hero sprite upwards from below status line edge (`PMG Y = 224` to `188`, 36 frames at 1 scanline / frame) up to the lowest platform height using the fall frame ("fall") before transitioning to `PLAYER_STATE_DEATH`.
+  - Added `player_death_update`: advances through death frames 0 -> 1 -> 2 at 10 ticks per frame, holds frame 2 for an additional 50 ticks (1 second on PAL), clears PMG Player 0 buffer upon expiration, and either respawns hero (`player_init`) or transitions to Game Over (`GAME_FAILED`, `STATE_OVER`).
+  - Refactored `player_handle_death`: guards against redundant triggers, decrements `player_lives` (if > 0), refreshes status line HUD, and zeros speed. If dying off-screen (`player_y > PLAYER_VISIBLE_DEATH_Y`), initiates 36-frame emergence up to lowest platform height (`PLAYER_STATE_EMERGE`); otherwise starts death animation in place (`PLAYER_STATE_DEATH`).
+  - Updated `player_update` to dispatch to `player_emerge_update` or `player_death_update`.
+- **Collision Invariants ([engine/enemies.asm](engine/enemies.asm), [scenes/game.asm](scenes/game.asm))**:
+  - Suppressed enemy-player and secret-player collision evaluations while in `PLAYER_STATE_DEATH` or `PLAYER_STATE_EMERGE`.
+- **Test Suite Updates ([tests/test_compile_sprites.py](tests/test_compile_sprites.py), [tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added assertions for death equates and labels in `test_generate_player_sprites_asm`.
+  - Updated fall death and game over tests to step through 36 frames of smooth emergence to lowest platform height (`y=68`, `pmg_y=188`) followed by 80 frames of death animation sequence before asserting respawn and game over.
+  - Added `test_player_death_animation_sequence` validating frame progression (0 -> 1 -> 2), PMG bitmap match, 1-second hold timing, and subsequent respawn.
+
+
 ## [2026-10-22] - Synchronize Platform Widths with Atari Hardware & Engine Limits
 
 - **Scene Model Platform Width Constraints ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:

@@ -298,6 +298,11 @@ SCENE_TITLE_FADE_STEPS = 8
 secret_coll_def .byte 0
 
 .proc secrets_check_player_collision
+    ; If hero is in death state, do not collect secrets
+    lda player_state
+    cmp #PLAYER_STATE_DEATH
+    bcs @clear_hit
+
     ; 1. Check GTIA hardware collision between Player 0 and any Missile (M0..M3)
     lda M0PL
     ora M1PL

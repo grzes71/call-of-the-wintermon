@@ -476,6 +476,32 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
     assert mem[status_vram + 1] == 64  # Heart 2
     assert mem[status_vram + 2] == 0   # Space (lost life)
 
+    # Hero enters EMERGE state starting below status line edge (pmg_y = 224)
+    assert mem[labels["PLAYER_STATE"]] == 5  # PLAYER_STATE_EMERGE
+    assert mem[labels["PLAYER_PMG_Y"]] == 224
+
+    # Advance 36 frames of emergence: moves up 1 scanline per frame to lowest platform height (pmg_y = 188)
+    fall_f0 = labels["PLAYER_ANIM_FALL_FRAME_0"]
+    for i in range(1, 37):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        expected_pmg_y = 224 - i
+        assert mem[labels["PLAYER_PMG_Y"]] == expected_pmg_y
+        if i < 36:
+            assert mem[labels["PLAYER_STATE"]] == 5  # Still emerging
+            # Verify fall frame top line is at expected_pmg_y
+            assert mem[pmg_p0 + expected_pmg_y] == mem[fall_f0]
+        else:
+            # On 36th frame: reached target (188), transitioned to PLAYER_STATE_DEATH
+            assert mem[labels["PLAYER_STATE"]] == 4  # PLAYER_STATE_DEATH
+            assert mem[labels["PLAYER_Y"]] == 68
+            assert mem[labels["PLAYER_PMG_Y"]] == 188
+            death_f0 = labels["PLAYER_ANIM_DEATH_FRAME_0"]
+            assert mem[pmg_p0 + 188] == mem[death_f0]
+
+    # Advance through death sequence: 10 + 10 + 60 = 80 frames
+    for _ in range(80):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
     # Hero respawned at start coordinates of Scene 0 (x=96, y=68)
     assert mem[labels["PLAYER_X"]] == 96
     assert mem[labels["PLAYER_Y"]] == 68
@@ -484,7 +510,7 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
 
 
 def test_player_fall_death_game_over_when_zero_lives():
-    """Verify falling off bottom with 1 life remaining triggers Game Over with GAME_FAILED status."""
+    """Verify falling off bottom with 1 life remaining triggers Game Over with GAME_FAILED status after emergence and death animation."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -506,7 +532,7 @@ def test_player_fall_death_game_over_when_zero_lives():
     mem[labels["PLAYER_STATE"]] = 2  # FALL
     mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
 
-    # 1 frame: y reaches 94 -> Death!
+    # 1 frame: y reaches 94 -> Emergence triggered!
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     # Lives decremented to 0
@@ -518,9 +544,96 @@ def test_player_fall_death_game_over_when_zero_lives():
     assert mem[status_vram + 1] == 0
     assert mem[status_vram + 2] == 0
 
+    # Player is in EMERGE state (5)
+    assert mem[labels["PLAYER_STATE"]] == 5
+
+    # 36 frames of emergence -> transitions to DEATH state (4) at lowest platform height
+    for _ in range(36):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 4
+    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_PMG_Y"]] == 188
+
+
+    # Advance death sequence (80 frames)
+    for _ in range(80):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
     # Game over defeat status set
     assert mem[labels["GAME_RESULT"]] == 1      # GAME_FAILED
     assert mem[labels["GAME_STATE"]] == 3       # STATE_OVER
+
+
+def test_player_death_animation_sequence():
+    """Verify full 3-frame death animation (frames 0, 1) and 1-second hold on frame 2 before respawn."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mem[labels["PLAYER_LIVES"]] = 2
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.a = 0
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # Trigger death explicitly
+    run_subroutine(mpu, labels["PLAYER_HANDLE_DEATH"])
+
+    # Lives decremented to 1
+    assert mem[labels["PLAYER_LIVES"]] == 1
+    assert mem[labels["PLAYER_STATE"]] == 4     # PLAYER_STATE_DEATH
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 0 # Frame 0
+    assert mem[labels["PLAYER_FRAME_TIMER"]] == 10
+
+    # Verify frame 0 bitmap matches player_anim_death_frame_0 in PMG
+    pmg_p0 = labels["PMG_PLAYER0"]
+    pmg_y = mem[labels["PLAYER_PMG_Y"]]
+    death_f0 = labels["PLAYER_ANIM_DEATH_FRAME_0"]
+    assert mem[pmg_p0 + pmg_y] == mem[death_f0]
+
+    # Advance 10 frames: should transition to frame 1 with timer 10
+    for _ in range(10):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_STATE"]] == 4
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 1
+    assert mem[labels["PLAYER_FRAME_TIMER"]] == 10
+
+    # Verify frame 1 bitmap matches in PMG
+    death_f1 = labels["PLAYER_ANIM_DEATH_FRAME_1"]
+    assert mem[pmg_p0 + pmg_y] == mem[death_f1]
+
+    # Advance 10 frames: should transition to frame 2 with timer 60 (10 dur + 50 hold = 60)
+    for _ in range(10):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_STATE"]] == 4
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 2
+    assert mem[labels["PLAYER_FRAME_TIMER"]] == 60
+
+    # Verify frame 2 bitmap matches in PMG
+    death_f2 = labels["PLAYER_ANIM_DEATH_FRAME_2"]
+    assert mem[pmg_p0 + pmg_y] == mem[death_f2]
+
+    # Advance 59 frames of hold: should still be in death state holding frame 2!
+    for _ in range(59):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_STATE"]] == 4
+    assert mem[labels["PLAYER_FRAME_IDX"]] == 2
+    assert mem[labels["PLAYER_FRAME_TIMER"]] == 1
+
+    # 60th frame (80th frame overall): hold expires, hero respawns!
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_STATE"]] == 0     # PLAYER_STATE_IDLE
+    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_LIVES"]] == 1     # Still 1 life
+
 
 
 def test_player_jump_up_vertical():

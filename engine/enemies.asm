@@ -599,9 +599,13 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 ; If Hero touches an enemy, triggers player_handle_death.
 ; ==============================================================================
 .proc enemies_check_player_collision
-    ; Collision is active only while playing and alive
+    ; Collision is active only while playing, alive, and not dying
     lda player_lives
     beq @done
+
+    lda player_state
+    cmp #PLAYER_STATE_DEATH
+    bcs @done
 
     ldx #0
 @loop

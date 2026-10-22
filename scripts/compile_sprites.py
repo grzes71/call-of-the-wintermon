@@ -273,6 +273,12 @@ def generate_player_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
     lines.append(f"PLAYER_SPRITE_HEIGHT = {spr_h}")
     lines.append(f"PLAYER_FRAME_COUNT   = {spr_cnt}")
     lines.append(f"PLAYER_FRAME_DUR     = {spr_dur}")
+
+    death_spr = next((s for s in sprites.values() if s.description.lower().strip() == "death"), None)
+    if death_spr:
+        lines.append(f"PLAYER_ANIM_DEATH_COUNT = {len(death_spr.frames)}")
+        lines.append(f"PLAYER_ANIM_DEATH_DUR   = {death_spr.frame_duration}")
+        lines.append(f"PLAYER_ANIM_DEATH_HOLD  = {death_spr.frame_duration + 50}")
     lines.append("")
 
     anim_symbols: dict[str, str] = {}

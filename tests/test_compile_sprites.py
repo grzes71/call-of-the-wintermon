@@ -123,10 +123,15 @@ def test_generate_player_sprites_asm():
     assert "PLAYER_SPRITE_WIDTH  = 8" in asm_text
     assert "PLAYER_SPRITE_HEIGHT = 20" in asm_text
     assert "PLAYER_FRAME_COUNT   = 5" in asm_text
+    assert "PLAYER_ANIM_DEATH_COUNT = 3" in asm_text
+    assert "PLAYER_ANIM_DEATH_DUR   = 10" in asm_text
+    assert "PLAYER_ANIM_DEATH_HOLD  = 60" in asm_text
     assert "player_anim_right_frame_0" in asm_text
     assert "player_anim_right_frames" in asm_text
     assert "player_anim_left_frame_0" in asm_text
     assert "player_anim_left_frames" in asm_text
+    assert "player_anim_death_frame_0" in asm_text
+    assert "player_anim_death_frames" in asm_text
     assert "player_anim_table_lo" in asm_text
     assert "player_anim_table_hi" in asm_text
 

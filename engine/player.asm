@@ -16,6 +16,9 @@ PLAYER_HPOS_OFFSET  = 48        ; Normal playfield starts at HPOS 48 ($30)
 PLAYER_DEFAULT_COLOR = $98      ; Royal cyan/blue default for Player 0 (COLPM0 / PCOLR0)
 PLAYER_FALL_SPEED   = 1         ; 1 canvas line per frame
 PLAYER_DEATH_Y      = 94        ; Death threshold: entire frame past bottom of status line (y=94 -> pmg_y=240)
+PLAYER_VISIBLE_DEATH_Y = 68     ; Height of player on lowest platform (plat_y=88, y=88-20=68)
+PLAYER_VISIBLE_DEATH_PMG_Y = 188 ; PMG scanline at lowest platform height: (68*2)+52 = 188
+PLAYER_EMERGE_START_PMG_Y = 224 ; Emergence start: top of sprite at scanline 224 (fully below visible playfield)
 
 ; --- Player Inertia & Speed Constants ---
 PLAYER_MAX_SPEED    = $80       ; Maximum speed: 128/256 = 0.5 pixels/frame
@@ -253,9 +256,23 @@ player_jump_anim_table_hi
 
     ; 2. Select animation frame source pointer
     lda player_state
+    cmp #PLAYER_STATE_DEATH
+    bne @not_death_sprite
+
+    ; Death animation: player_anim_death_frames
+    lda #<player_anim_death_frames
+    sta zp_ptr_src
+    lda #>player_anim_death_frames
+    sta zp_ptr_src+1
+    jmp @resolve_frame
+
+@not_death_sprite
+    cmp #PLAYER_STATE_EMERGE
+    beq @use_fall_sprite
     cmp #PLAYER_STATE_FALL
     bne @not_fall_sprite
 
+@use_fall_sprite
     ; Fall animation: player_anim_fall_frames
     lda #<player_anim_fall_frames
     sta zp_ptr_src
@@ -347,6 +364,19 @@ player_jump_anim_table_hi
 ; and updates PMG buffer.
 ; ==============================================================================
 .proc player_update
+    ; 0a. If currently emerging from bottom edge, run emergence update routine
+    lda player_state
+    cmp #PLAYER_STATE_EMERGE
+    bne @not_emerging
+    jmp player_emerge_update
+
+@not_emerging
+    ; 0b. If currently in death animation/hold, run death update routine
+    cmp #PLAYER_STATE_DEATH
+    bne @not_dying
+    jmp player_death_update
+
+@not_dying
     ; 1. If currently jumping, run jump update routine
     lda player_state
     cmp #PLAYER_STATE_JUMP
@@ -1122,12 +1152,154 @@ player_jump_anim_table_hi
 
 ; ==============================================================================
 ; PLAYER_HANDLE_DEATH
-; Erases PMG Player 0 buffer, decrements lives, updates status line HUD.
-; If lives remain (> 0), respawns hero at active scene start position.
-; If no lives remain (= 0), sets game_result = GAME_FAILED and transitions to STATE_OVER.
+; Initiates Hero death sequence:
+; Sets player_state = PLAYER_STATE_DEATH, resets speed, decrements remaining lives,
+; updates status line HUD, and renders initial death animation frame.
 ; ==============================================================================
 .proc player_handle_death
-    ; 1. Clear entire PMG Player 0 buffer ($6C00-$6CFF, 256 bytes)
+    ; If already dying or emerging, ignore redundant triggers
+    lda player_state
+    cmp #PLAYER_STATE_DEATH
+    bcs @ignore
+    jmp @start_death
+@ignore
+    rts
+
+@start_death
+    ; 1. Decrement remaining lives (protect against underflow if already 0)
+    lda player_lives
+    beq @no_dec
+    dec player_lives
+@no_dec
+
+    ; 2. Update hearts display on status line
+    jsr status_line_refresh_lives
+
+    ; 3. Stop all horizontal movement
+    lda #0
+    sta player_speed
+    sta player_x_sub
+
+    ; 4. Check if hero died from falling below lowest platform
+    lda player_y
+    bmi @regular_death      ; Negative player_y ($80..$FF) is in upper sky
+    cmp #PLAYER_VISIBLE_DEATH_Y + 1
+    bcc @regular_death
+
+    ; Hero fell below visible screen: initiate emergence sequence!
+    ; Start at scanline 224 (fully hidden below status line edge, 0 scanlines visible)
+    lda #PLAYER_EMERGE_START_PMG_Y
+    sta player_pmg_y
+    lda #PLAYER_STATE_EMERGE
+    sta player_state
+    lda #0
+    sta player_frame_idx
+    jsr player_render_frame
+    rts
+
+@regular_death
+    ; In-place death (e.g. enemy collision on platform)
+    lda #PLAYER_STATE_DEATH
+    sta player_state
+    lda #0
+    sta player_frame_idx
+    lda #PLAYER_ANIM_DEATH_DUR
+    sta player_frame_timer
+
+    ; Render initial death frame
+    jsr player_render_frame
+    rts
+.endp
+
+; ==============================================================================
+; PLAYER_EMERGE_UPDATE
+; Called once per frame when player_state == PLAYER_STATE_EMERGE.
+; Smoothly slides hero sprite upwards from below the bottom edge (scanline 224)
+; to PLAYER_VISIBLE_DEATH_PMG_Y (scanline 188, lowest platform height) at 1 scanline / frame.
+; Uses fall animation frame ("fall") during emergence.
+; Once fully emerged, transitions to PLAYER_STATE_DEATH.
+; ==============================================================================
+.proc player_emerge_update
+    ; 1. Move up by 1 scanline towards lowest platform height
+    dec player_pmg_y
+
+    ; 2. Check if reached target visible PMG Y (188)
+    lda player_pmg_y
+    cmp #PLAYER_VISIBLE_DEATH_PMG_Y
+    beq @reached_target
+    bcc @reached_target
+
+    ; 3. Still emerging: update HPOSP0 and render fall frame
+    lda player_x
+    clc
+    adc #PLAYER_HPOS_OFFSET
+    sta HPOSP0
+
+    jsr player_render_frame
+    rts
+
+@reached_target
+    ; Fully emerged: lock to target coordinates at lowest platform height
+    lda #PLAYER_VISIBLE_DEATH_PMG_Y     ; 188
+    sta player_pmg_y
+    lda #PLAYER_VISIBLE_DEATH_Y         ; 68
+    sta player_y
+
+    ; Transition to death animation
+    lda #PLAYER_STATE_DEATH
+    sta player_state
+    lda #0
+    sta player_frame_idx
+    lda #PLAYER_ANIM_DEATH_DUR          ; 10
+    sta player_frame_timer
+
+    ; Update HPOSP0 and render first death frame
+    lda player_x
+    clc
+    adc #PLAYER_HPOS_OFFSET
+    sta HPOSP0
+
+    jsr player_render_frame
+    rts
+.endp
+
+; ==============================================================================
+; PLAYER_DEATH_UPDATE
+; Called once per frame when player_state == PLAYER_STATE_DEATH.
+; Advances death animation frames (0 -> 1 -> 2).
+; Holds last frame (frame 2) for an additional 1 second (50 PAL frames, total 60 frames).
+; Once hold expires, clears PMG Player 0 and either respawns or triggers Game Over.
+; ==============================================================================
+.proc player_death_update
+    ; 1. Count down frame timer
+    dec player_frame_timer
+    bne @do_render
+
+    ; Frame timer expired: advance frame sequence
+    lda player_frame_idx
+    cmp #0
+    bne @check_frame_1
+
+    ; Transition Frame 0 -> Frame 1
+    lda #1
+    sta player_frame_idx
+    lda #PLAYER_ANIM_DEATH_DUR
+    sta player_frame_timer
+    jmp @do_render
+
+@check_frame_1
+    cmp #1
+    bne @finish_death
+
+    ; Transition Frame 1 -> Frame 2 (last frame, hold for 10 dur + 50 hold = 60 frames)
+    lda #2
+    sta player_frame_idx
+    lda #PLAYER_ANIM_DEATH_HOLD
+    sta player_frame_timer
+    jmp @do_render
+
+@finish_death
+    ; 2. Death sequence complete: Clear entire PMG Player 0 buffer ($6C00-$6CFF)
     lda #0
     tax
 @clr_pmg
@@ -1138,13 +1310,7 @@ player_jump_anim_table_hi
     sta HPOSP0
     sta GRAFP0
 
-    ; 2. Decrement remaining lives
-    dec player_lives
-
-    ; 3. Update hearts display on status line
-    jsr status_line_refresh_lives
-
-    ; 4. Check if any lives remain
+    ; 3. Check if any lives remain
     lda player_lives
     bne @respawn
 
@@ -1156,8 +1322,18 @@ player_jump_anim_table_hi
     rts
 
 @respawn
-    ; Respawn hero on current scene
+    ; Respawn hero on current scene at initial position
     lda active_scene_id
     jsr player_init
+    rts
+
+@do_render
+    ; Update HPOSP0 and render active death frame
+    lda player_x
+    clc
+    adc #PLAYER_HPOS_OFFSET
+    sta HPOSP0
+
+    jsr player_render_frame
     rts
 .endp
