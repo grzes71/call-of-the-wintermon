@@ -149,3 +149,119 @@ def test_main_window_startup_with_manifest(qapp, monkeypatch, tmp_path: Path):
     assert len(win.catalogues.sprites) == 1
     # Sprites combo must be enabled because sprites were auto-loaded on startup
     assert win.new_obj_sprite_combo.isEnabled()
+
+
+def test_main_window_startup_with_yaml_manifest(qapp, monkeypatch, tmp_path: Path):
+    """When manifest.yaml is present, MainWindow auto-loads catalogues and sprites."""
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    defs_file = tmp_path / "definitions.json"
+    defs_data = {
+        "version": 1,
+        "enemies": [{"id": 30, "name": "Ghoul", "rgb_color": [0, 255, 0], "atari_color": 60}],
+        "secrets": [{"id": 40, "name": "Amulet", "rgb_color": [255, 200, 0], "atari_color": 30}],
+    }
+    defs_file.write_text(json.dumps(defs_data), encoding="utf-8")
+
+    sprites_file = tmp_path / "objects.sprite.json"
+    sprites_data = {
+        "sprites": [
+            {"id": 1, "description": "AmuletSprite"},
+        ]
+    }
+    sprites_file.write_text(json.dumps(sprites_data), encoding="utf-8")
+
+    yaml_manifest = tmp_path / "manifest.yaml"
+    yaml_content = (
+        "graphics:\n"
+        "  sprites:\n"
+        "    - id: \"objects\"\n"
+        "      path: \"objects.sprite.json\"\n"
+        "scenes:\n"
+        "  catalogues: \"definitions.json\"\n"
+    )
+    yaml_manifest.write_text(yaml_content, encoding="utf-8")
+
+    win = MainWindow(base_dir=tmp_path)
+
+    assert win.manifest_path == yaml_manifest.resolve()
+    assert 30 in win.catalogues.enemies
+    assert 40 in win.catalogues.secrets
+    assert len(win.catalogues.sprites) == 1
+    assert win.new_obj_sprite_combo.isEnabled()
+
+
+def test_cli_log_level_argument(monkeypatch):
+    """Test --log-level argument configuration in scene_editor app."""
+    from scene_editor.app import main
+    import logging
+
+    # Test help exit
+    with pytest.raises(SystemExit) as exc:
+        main(["atari-scene-editor", "--help"])
+    assert exc.value.code == 0
+
+    # Test debug log level
+    monkeypatch.setattr("scene_editor.app.MainWindow", lambda: type("DummyWindow", (), {"show": lambda self: None, "open_scene": lambda self, p: None})())
+    monkeypatch.setattr("scene_editor.app.QApplication.exec", lambda self: 0)
+
+    code = main(["atari-scene-editor", "--log-level", "DEBUG"])
+    assert code == 0
+    assert logging.getLogger().level == logging.DEBUG
+
+    code_info = main(["atari-scene-editor", "--log-level", "WARNING"])
+    assert code_info == 0
+    assert logging.getLogger().level == logging.WARNING
+
+
+def test_open_scene_preserves_sprites_and_manifest(qapp, monkeypatch, tmp_path: Path):
+    """Opening a scene must preserve manifest-loaded sprites and not wipe out catalogues."""
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    defs_file = tmp_path / "definitions.json"
+    defs_data = {
+        "version": 1,
+        "enemies": [{"id": 1, "name": "Beast", "rgb_color": [255, 0, 0], "atari_color": 40, "sprite_id": 1}],
+        "secrets": [],
+    }
+    defs_file.write_text(json.dumps(defs_data), encoding="utf-8")
+
+    sprites_file = tmp_path / "objects.sprite.json"
+    sprites_data = {
+        "sprites": [
+            {"id": 1, "description": "BeastSprite"},
+        ]
+    }
+    sprites_file.write_text(json.dumps(sprites_data), encoding="utf-8")
+
+    manifest_file = tmp_path / "manifest.json"
+    manifest_data = {
+        "scenes": {"catalogues": "definitions.json"},
+        "graphics": {"sprites": {"objects": "objects.sprite.json"}},
+    }
+    manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    scene_file = tmp_path / "test_scene.json"
+    scene_data = {
+        "schema_version": 1,
+        "scene": {"name": "test_scene", "width": 160, "height": 96},
+        "elements": [],
+        "platforms": [],
+        "objects": [
+            {"id": 1, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 10}
+        ],
+    }
+    scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+
+    win = MainWindow(base_dir=tmp_path)
+    assert len(win.catalogues.sprites) == 1
+    assert win.new_obj_sprite_combo.isEnabled()
+
+    win.open_scene(scene_file)
+    assert len(win.catalogues.sprites) == 1
+    assert win.new_obj_sprite_combo.isEnabled()
+    assert "definicje nie załadowane" not in win.new_obj_sprite_combo.itemText(0)
+    assert "definicje nie załadowane" not in win.obj_prop_sprite_combo.itemText(0)
+
+

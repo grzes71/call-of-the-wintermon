@@ -1,7 +1,5 @@
-"""Application bootstrap for Atari 8-bit Scene Editor."""
-
-from __future__ import annotations
-
+import argparse
+import logging
 import os
 from pathlib import Path
 import sys
@@ -12,25 +10,43 @@ from PySide6.QtWidgets import QApplication
 
 from .main_window import MainWindow
 
+logger = logging.getLogger("scene_editor.app")
+
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Atari 8-bit Scene Editor desktop application."""
     if argv is None:
         argv = sys.argv
 
-    if any(arg in ("--help", "-h") for arg in argv[1:]):
-        print(
-            "Usage: atari-scene-editor [scene_file.json]\n"
-            "   or: python atari-scene-editor/main.py [scene_file.json]\n\n"
-            "Atari 8-bit Scene Editor (PySide6)\n"
-            "Desktop application for designing 160x96 pixel platformer screens."
-        )
-        return 0
+    parser = argparse.ArgumentParser(
+        prog="atari-scene-editor",
+        description="Atari 8-bit Scene Editor (PySide6)\nDesktop application for designing 160x96 pixel platformer screens.",
+    )
+    parser.add_argument("scene_file", nargs="?", help="Optional scene JSON file to load on start.")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        type=str.upper,
+        help="Set logging verbosity level (e.g. DEBUG, INFO, WARNING, ERROR).",
+    )
+
+    args, qt_args = parser.parse_known_args(argv[1:])
+
+    numeric_level = getattr(logging, args.log_level, logging.INFO)
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        force=True,
+    )
+    logger.debug("Logger initialized with level: %s", args.log_level)
 
     # Ensure consistent styling across platforms
     app = QApplication.instance()
     if app is None:
-        app = QApplication(argv)
+        qt_argv = [argv[0]] + qt_args
+        app = QApplication(qt_argv)
 
     app.setApplicationName("atari-scene-editor")
     app.setApplicationDisplayName("Atari 8-bit Scene Editor")
@@ -144,6 +160,14 @@ def main(argv: list[str] | None = None) -> int:
     app.setStyleSheet(dark_stylesheet)
 
     window = MainWindow()
+    if args.scene_file:
+        sf = Path(args.scene_file)
+        if sf.is_file():
+            logger.info("Opening specified scene file: %s", sf)
+            window.open_scene(sf)
+        else:
+            logger.warning("Specified scene file does not exist: %s", sf)
+
     window.show()
 
     return app.exec()

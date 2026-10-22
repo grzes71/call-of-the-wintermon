@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("scene_editor.main_window")
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import (
@@ -278,13 +281,20 @@ class MainWindow(QMainWindow):
         self._sync_all()
 
     def _load_initial_catalogues(self) -> ProjectCatalogues:
-        """Load initial catalogues from manifest.json if present in base_dir/cwd, else from base_dir."""
+        """Load initial catalogues from manifest (JSON or YAML) if present in base_dir/cwd, else from base_dir."""
+        logger.debug("Resolving initial catalogues for base directory '%s'...", self.base_dir)
         manifest_path = ProjectCatalogues.find_manifest_path(self.base_dir)
         if manifest_path is not None:
             try:
                 self.manifest_path = manifest_path
-                return ProjectCatalogues.load_from_manifest(manifest_path, base_dir=self.base_dir)
+                cats = ProjectCatalogues.load_from_manifest(manifest_path, base_dir=self.base_dir)
+                if cats.sprites:
+                    logger.info("Sprites successfully loaded on startup: %d sprite(s) active.", len(cats.sprites))
+                else:
+                    logger.warning("No sprites loaded from manifest '%s'. Sprites dropdown will be disabled.", manifest_path.name)
+                return cats
             except CorruptedCatalogueFileError as err:
+                logger.error("Corrupted catalogue or manifest file '%s': %s", manifest_path, err)
                 QMessageBox.critical(
                     self,
                     "Corrupted Catalogue",
@@ -292,13 +302,16 @@ class MainWindow(QMainWindow):
                     "The application will start with an empty catalogue in memory to avoid overwriting files.",
                 )
                 return ProjectCatalogues()
-            except Exception:
-                # Fall back to default directory behavior if manifest loading fails
-                pass
+            except Exception as err:
+                logger.warning("Failed to load from manifest '%s': %s. Falling back to directory search.", manifest_path, err)
 
         try:
-            return ProjectCatalogues.load_from_dir(self.base_dir)
+            cats = ProjectCatalogues.load_from_dir(self.base_dir)
+            logger.info("Loaded catalogues from directory '%s' (%d enemies, %d secrets)", self.base_dir, len(cats.enemies), len(cats.secrets))
+            logger.warning("No sprite definitions loaded. Sprites dropdown will be disabled.")
+            return cats
         except CorruptedCatalogueFileError as err:
+            logger.error("Corrupted catalogue in '%s': %s", self.base_dir, err)
             QMessageBox.critical(
                 self,
                 "Corrupted Catalogue",
@@ -306,7 +319,8 @@ class MainWindow(QMainWindow):
                 "The application will start with an empty catalogue in memory to avoid overwriting files.",
             )
             return ProjectCatalogues()
-        except Exception:
+        except Exception as err:
+            logger.warning("Failed to load catalogues from '%s': %s", self.base_dir, err)
             return ProjectCatalogues()
 
     # -------------------------------------------------------------------------
@@ -1109,6 +1123,7 @@ class MainWindow(QMainWindow):
                 target_path,
                 base_dir=self.base_dir,
                 validate_source_exists=False,
+                catalogues=self.catalogues,
             )
         except UnsupportedSchemaVersionError as err:
             QMessageBox.critical(self, "Unsupported Schema", f"Cannot load file: {err}")
@@ -1136,11 +1151,14 @@ class MainWindow(QMainWindow):
                 + "\n\nElements referencing these graphics will be rendered as placeholders until the files are restored.",
             )
 
-        # Refresh project catalogues
+        # Refresh project catalogues while preserving manifest/sprites
         try:
-            self.catalogues = ProjectCatalogues.load_from_dir(self.base_dir)
-        except Exception:
-            pass
+            old_sprites = dict(self.catalogues.sprites) if self.catalogues else {}
+            self.catalogues = self._load_initial_catalogues()
+            if not self.catalogues.sprites and old_sprites:
+                self.catalogues.sprites = old_sprites
+        except Exception as err:
+            logger.warning("Failed to refresh catalogues in open_scene: %s", err)
 
         # Check if objects reference missing definitions
         missing_defs = []
@@ -2293,7 +2311,17 @@ class MainWindow(QMainWindow):
         combo.setToolTip("Wybierz sprite ze Sprite Studio do zmapowania z tym obiektem.")
         if allow_default:
             if effective_defn is not None:
-                combo.addItem(f"Default ({effective_defn})", None)
+                default_label = f"Default ({effective_defn})"
+                match_id = None
+                if isinstance(effective_defn, int):
+                    match_id = effective_defn
+                elif str(effective_defn).strip().isdigit():
+                    match_id = int(str(effective_defn).strip())
+                if match_id is not None and match_id in self.catalogues.sprites:
+                    s_obj = self.catalogues.sprites[match_id]
+                    s_desc = getattr(s_obj, "description", "")
+                    default_label = f"Default ({s_obj.id}: {s_desc})" if s_desc else f"Default ({s_obj.id})"
+                combo.addItem(default_label, None)
             else:
                 combo.addItem("Default / None (Brak)", None)
         else:

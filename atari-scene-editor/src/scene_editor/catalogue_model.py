@@ -5,9 +5,13 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 import json
+import logging
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Optional
+
+logger = logging.getLogger("scene_editor.catalogues")
 
 from .atari_palette import (
     atari_color_to_hex_rgb,
@@ -1162,7 +1166,13 @@ class ProjectCatalogues:
 
     @classmethod
     def load_from_dir(cls, base_dir: Path | str) -> ProjectCatalogues:
-        """Load catalogues from directory, preferring definitions.json."""
+        """Load catalogues from directory, preferring manifest (JSON or YAML) then definitions.json."""
+        manifest_path = cls.find_manifest_path(base_dir)
+        if manifest_path is not None:
+            try:
+                return cls.load_from_manifest(manifest_path, base_dir=base_dir)
+            except Exception as err:
+                logger.warning("Failed to load from manifest in load_from_dir: %s. Falling back to direct files.", err)
         def_path = cls.find_definitions_path(base_dir)
         if def_path.is_file():
             return cls.load_from_paths(definitions_path=def_path)
@@ -1171,15 +1181,26 @@ class ProjectCatalogues:
         return cls.load_from_paths(enemies_path, secrets_path, profiles_path)
 
     @classmethod
-    def find_manifest_path(cls, base_dir: Path | str) -> Optional[Path]:
-        """Locate manifest.json in the specified base directory or current working directory."""
-        base = Path(base_dir).resolve()
-        candidate = base / "manifest.json"
-        if candidate.is_file():
-            return candidate
-        cwd_candidate = Path.cwd() / "manifest.json"
-        if cwd_candidate.is_file():
-            return cwd_candidate.resolve()
+    def find_manifest_path(cls, base_dir: Path | str | None = None) -> Optional[Path]:
+        """Locate manifest.json (or manifest.yaml) in the specified base directory or current working directory."""
+        target_dirs: list[Path] = []
+        if base_dir is not None:
+            target_dirs.append(Path(base_dir).resolve())
+        else:
+            target_dirs.append(Path.cwd().resolve())
+
+        for b_dir in target_dirs:
+            logger.debug("Searching for manifest in directory '%s'...", b_dir)
+            for name in ("manifest.json", "manifest.yaml", "manifest.yml"):
+                candidate = b_dir / name
+                if candidate.is_file():
+                    logger.info("Found project manifest: '%s'", candidate)
+                    return candidate
+
+        logger.warning(
+            "No manifest.json (or manifest.yaml) found in %s.",
+            ", ".join(f"'{d}'" for d in target_dirs),
+        )
         return None
 
     @classmethod
@@ -1188,48 +1209,69 @@ class ProjectCatalogues:
         manifest_path: Path | str,
         base_dir: Path | str | None = None,
     ) -> ProjectCatalogues:
-        """Load catalogues and sprites referenced in a manifest.json file."""
+        """Load catalogues and sprites referenced in a manifest file (JSON or YAML)."""
         m_path = Path(manifest_path).resolve()
         root_dir = Path(base_dir).resolve() if base_dir else m_path.parent
+        logger.info("Loading project manifest from '%s'...", m_path)
 
         try:
             with open(m_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if not content:
+                logger.error("Manifest file '%s' is empty.", m_path)
                 raise CorruptedCatalogueFileError(f"Manifest file '{m_path.name}' is empty.")
-            data = json.loads(content)
-        except json.JSONDecodeError as err:
-            raise CorruptedCatalogueFileError(f"Invalid JSON in manifest '{m_path.name}': {err}") from err
+        except Exception as err:
+            logger.error("Failed to read manifest file '%s': %s", m_path, err)
+            raise CorruptedCatalogueFileError(f"Cannot read manifest file '{m_path.name}': {err}") from err
 
-        if not isinstance(data, dict):
-            raise CorruptedCatalogueFileError(f"Manifest file '{m_path.name}' must contain a JSON object.")
-
-        # Extract scenes['catalogues']
         cat_rel_path: Optional[str] = None
-        scenes_sec = data.get("scenes")
-        if isinstance(scenes_sec, dict):
-            cat_val = scenes_sec.get("catalogues")
-            if isinstance(cat_val, str):
-                cat_rel_path = cat_val
-            elif isinstance(cat_val, dict):
-                cat_rel_path = cat_val.get("path")
-
-        # Extract graphics['sprites']['objects']
         spr_rel_path: Optional[str] = None
-        gfx_sec = data.get("graphics")
-        if isinstance(gfx_sec, dict):
-            sprites_sec = gfx_sec.get("sprites")
-            if isinstance(sprites_sec, dict):
-                obj_val = sprites_sec.get("objects")
-                if isinstance(obj_val, str):
-                    spr_rel_path = obj_val
-                elif isinstance(obj_val, dict):
-                    spr_rel_path = obj_val.get("path")
-            elif isinstance(sprites_sec, list):
-                for item in sprites_sec:
-                    if isinstance(item, dict) and item.get("id") == "objects":
-                        spr_rel_path = item.get("path")
-                        break
+
+        if m_path.suffix.lower() in (".yaml", ".yml"):
+            logger.debug("Parsing YAML manifest '%s'...", m_path.name)
+            cat_m = re.search(r'catalogues:\s*["\']?([^"\'\r\n]+)', content)
+            if cat_m:
+                cat_rel_path = cat_m.group(1).strip()
+            spr_m = re.search(r'id:\s*["\']objects["\']\s*\r?\n\s*path:\s*["\']?([^"\'\r\n]+)', content)
+            if not spr_m:
+                spr_m = re.search(r'path:\s*["\']?([^"\'\r\n]+)\s*\r?\n\s*id:\s*["\']objects["\']', content)
+            if spr_m:
+                spr_rel_path = spr_m.group(1).strip()
+        else:
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as err:
+                logger.error("JSON decode error in manifest '%s': %s", m_path.name, err)
+                raise CorruptedCatalogueFileError(f"Invalid JSON in manifest '{m_path.name}': {err}") from err
+
+            if not isinstance(data, dict):
+                logger.error("Manifest file '%s' must contain a JSON object.", m_path.name)
+                raise CorruptedCatalogueFileError(f"Manifest file '{m_path.name}' must contain a JSON object.")
+
+            # Extract scenes['catalogues']
+            scenes_sec = data.get("scenes")
+            if isinstance(scenes_sec, dict):
+                cat_val = scenes_sec.get("catalogues")
+                if isinstance(cat_val, str):
+                    cat_rel_path = cat_val
+                elif isinstance(cat_val, dict):
+                    cat_rel_path = cat_val.get("path")
+
+            # Extract graphics['sprites']['objects']
+            gfx_sec = data.get("graphics")
+            if isinstance(gfx_sec, dict):
+                sprites_sec = gfx_sec.get("sprites")
+                if isinstance(sprites_sec, dict):
+                    obj_val = sprites_sec.get("objects")
+                    if isinstance(obj_val, str):
+                        spr_rel_path = obj_val
+                    elif isinstance(obj_val, dict):
+                        spr_rel_path = obj_val.get("path")
+                elif isinstance(sprites_sec, list):
+                    for item in sprites_sec:
+                        if isinstance(item, dict) and item.get("id") == "objects":
+                            spr_rel_path = item.get("path")
+                            break
 
         # Load catalogues
         catalogues: Optional[ProjectCatalogues] = None
@@ -1238,11 +1280,24 @@ class ProjectCatalogues:
             if not cat_file.is_absolute():
                 cat_file = (root_dir / cat_file).resolve()
             if cat_file.is_file():
+                logger.info("Loading catalogue definitions from '%s'...", cat_file)
                 catalogues = cls.load_from_paths(definitions_path=cat_file)
+                logger.info(
+                    "Catalogues loaded successfully: %d enemies, %d secrets, %d platform profiles.",
+                    len(catalogues.enemies),
+                    len(catalogues.secrets),
+                    len(catalogues.platform_profiles),
+                )
             elif cat_file.is_dir():
+                logger.info("Loading catalogue definitions from directory '%s'...", cat_file)
                 catalogues = cls.load_from_dir(cat_file)
+            else:
+                logger.warning("Manifest specified catalogue path '%s', but file was not found!", cat_file)
+        else:
+            logger.warning("No 'scenes[catalogues]' path specified in manifest '%s'.", m_path.name)
 
         if catalogues is None:
+            logger.info("Falling back to loading catalogues from directory '%s'...", root_dir)
             catalogues = cls.load_from_dir(root_dir)
 
         catalogues.manifest_path = m_path
@@ -1253,10 +1308,16 @@ class ProjectCatalogues:
             if not spr_file.is_absolute():
                 spr_file = (root_dir / spr_file).resolve()
             if spr_file.is_file():
+                logger.info("Loading object sprites from '%s'...", spr_file)
                 try:
-                    catalogues.load_sprites_from_json(spr_file)
-                except Exception:
-                    pass
+                    count = catalogues.load_sprites_from_json(spr_file)
+                    logger.info("Successfully loaded %d sprite(s) from '%s'.", count, spr_file)
+                except Exception as err:
+                    logger.warning("Failed to load sprites from '%s': %s", spr_file, err)
+            else:
+                logger.warning("Manifest specified sprite path '%s', but file was not found!", spr_file)
+        else:
+            logger.warning("No 'graphics[sprites][objects]' path specified in manifest '%s'.", m_path.name)
 
         return catalogues
 

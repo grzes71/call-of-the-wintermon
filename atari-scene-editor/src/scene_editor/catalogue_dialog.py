@@ -105,6 +105,18 @@ class CataloguesDialog(QDialog):
         self.scene = scene
         self.base_dir = Path(base_dir).resolve() if base_dir else None
 
+        if (not self.catalogues or not self.catalogues.sprites) and self.base_dir:
+            m_path = ProjectCatalogues.find_manifest_path(self.base_dir)
+            if m_path:
+                try:
+                    m_cats = ProjectCatalogues.load_from_manifest(m_path, base_dir=self.base_dir)
+                    if m_cats.sprites and self.catalogues:
+                        self.catalogues.sprites = m_cats.sprites
+                        if hasattr(m_cats, "sprites_by_name"):
+                            self.catalogues.sprites_by_name = m_cats.sprites_by_name
+                except Exception:
+                    pass
+
         self._build_ui()
         if initial_tab in ("secrets", "secret"):
             self.tabs.setCurrentIndex(1)

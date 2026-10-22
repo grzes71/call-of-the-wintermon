@@ -2,6 +2,36 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Fix Sprite Definitions Wiped Out on Scene Open in Atari Scene Editor
+
+- **Main Window Scene Loading ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Fixed bug in `open_scene()` where calling `ProjectCatalogues.load_from_dir()` on opening a scene replaced startup manifest catalogues with a blank sprite catalogue, disabling the sprite combobox with `[definicje nie załadowane]`.
+  - Updated `open_scene()` to refresh catalogues via `_load_initial_catalogues()` and preserve existing sprites.
+  - Enhanced `_populate_sprite_combo()` so default option labels display matching sprite name/description (e.g. `Default (1: Azathoth)` instead of raw `Default (1)`).
+- **Catalogue Model ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
+  - Updated `load_from_dir()` to check for project manifests (`manifest.json`, `manifest.yaml`, `manifest.yml`) before falling back to individual catalogue files, preventing any callers from discarding sprite definitions.
+- **Catalogue Dialog ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py))**:
+  - Added fallback check in `CataloguesDialog.__init__` to load sprites from manifest if not already populated.
+- **Test Suite ([tests/test_scene_editor_manifest.py](tests/test_scene_editor_manifest.py))**:
+  - Added `test_open_scene_preserves_sprites_and_manifest` verifying that opening a scene file preserves all manifest-loaded sprites and keeps the sprite selector dropdown active and correctly populated.
+
+
+## [2026-10-22] - Add CLI Logging Flag and YAML Manifest Fallback in Atari Scene Editor
+
+- **CLI Logging Option ([atari-scene-editor/src/scene_editor/app.py](atari-scene-editor/src/scene_editor/app.py))**:
+  - Added CLI argument parser supporting `--log-level` (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`), defaulting to `INFO`.
+  - Configured root logger format (`%(asctime)s [%(levelname)s] %(name)s: %(message)s`) and numeric level before launching the Qt application.
+- **YAML Manifest Support & Logging ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
+  - Added fallback search for `manifest.yaml` and `manifest.yml` when `manifest.json` is not present, resolving the issue where sprite definitions were not auto-loaded in projects utilizing YAML manifests.
+  - Implemented lightweight regex-based YAML parsing fallback (`_parse_manifest_yaml_fallback`) to extract `scenes.catalogues` and `graphics.sprites.objects` without external PyYAML dependencies.
+  - Added explicit `DEBUG`, `INFO`, and `WARNING` logs covering manifest discovery, catalogue/sprite file resolution, sprite counts loaded, and warnings when files or sections are missing.
+- **Main Window Logging ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Added debug and info logs to `_load_initial_catalogues()`, logging successful sprite load count or issuing warnings if sprites are absent and the dropdown is disabled.
+- **Test Suite ([tests/test_scene_editor_manifest.py](tests/test_scene_editor_manifest.py))**:
+  - Added `test_main_window_startup_with_yaml_manifest` testing auto-loading from `manifest.yaml`.
+  - Added `test_cli_log_level_argument` asserting CLI argument handling, exit codes, and logger level configuration for `--help`, `DEBUG`, and `WARNING`.
+
+
 ## [2026-10-22] - Support Manifest-Driven Auto-Loading in Atari Scene Editor
 
 - **Catalogues Model ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py))**:
