@@ -1062,3 +1062,49 @@ def test_player_jump_on_row_1_full_height():
     assert mem[labels["PLAYER_PLAT_IDX"]] == 6  # Platform 6
     assert mem[labels["PLAYER_Y"]] == 4         # Exactly returned to starting Y
 
+
+def test_player_jump_short_from_platform_016_to_012_under_platform_010():
+    """Verify Hero jumping left from platform-016 (y=56) to platform-012 (y=56)
+    does not hit ceiling of platform-010 (y=24, 32px above) and lands cleanly."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # In Scene 0:
+    # platform-016 is at x=117..125, y=56. Standing head: y = 56 - 20 = 36
+    # platform-012 is at x=73..105, y=56.
+    # platform-010 is at x=96..128, y=24 (32px above platform-016).
+    mem[labels["PLAYER_X"]] = 118
+    mem[labels["PLAYER_Y"]] = 36
+    mem[labels["PLAYER_PLAT_IDX"]] = 9
+
+    # Trigger jump left (STICK0 bit 2=0 left -> 0x0B)
+    mem[labels["PLAYER_FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 0
+    mem[labels["STICK0"]] = 0x0B  # Left active -> JUMP_TYPE_SHORT
+
+    # Frame 1: Jump triggers
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+    assert mem[labels["PLAYER_STATE"]] == 3  # JUMP
+    assert mem[labels["PLAYER_JUMP_TYPE"]] == 1  # JUMP_TYPE_SHORT
+    assert mem[labels["PLAYER_DIR"]] == 1  # Left
+
+    # Release fire and step through the jump (18 steps total)
+    mem[labels["STRIG0"]] = 1
+    for step in range(2, 19):
+        run_subroutine(mpu, labels["PLAYER_UPDATE"])
+        # Crucial invariant: Hero must NEVER transition to FALL state during ascent!
+        assert mem[labels["PLAYER_STATE"]] != 2, f"Bounced off false ceiling on step {step}!"
+        if mem[labels["PLAYER_STATE"]] == 0:
+            break
+
+    # Jump must complete and land on platform-012 at y=36 (feet at 56)
+    assert mem[labels["PLAYER_STATE"]] == 0, "Hero must land in IDLE state"
+    assert mem[labels["PLAYER_Y"]] == 36, "Hero must land at platform surface y=36"
+    assert 73 <= mem[labels["PLAYER_X"]] <= 105, "Hero must be within platform-012 x bounds"
+

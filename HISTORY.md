@@ -2,6 +2,32 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Implement Pulsing Color Blinking for Secrets (CD & Skull)
+
+- **Zero Page Allocations ([zeropage.asm](zeropage.asm))**:
+  - Allocated `secrets_blink_lum = $E4` as a dedicated zero-page counter for secret blinking luminance cycling.
+- **Scene Compiler Tooling ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `blink: bool = False` to `SceneSecretData` and propagated `blink` flag from secret catalogue definitions (`scenes/definitions.json`).
+  - Emitted per-scene `scene_{sym}_secret_blink` tables and master index tables `scene_secret_blink_lo` / `scene_secret_blink_hi`.
+- **Secret Engine ([engine/secrets.asm](engine/secrets.asm))**:
+  - Added SoA table `secrets_blink :MAX_SECRETS .byte 0`.
+  - In `secrets_init`: initialized `secrets_blink_lum = 0` and copied `scene_secret_blink_lo/hi` into `secrets_blink`.
+  - In `update_secret_hpos`: configured initial color based on `(secrets_color & $F0) | secrets_blink_lum` when secret has `blink == 1`.
+  - In `secrets_update`: added color pulse phase that calculates `(secrets_color,x & $F0) | secrets_blink_lum` for all active blinking secrets and updates DLI color registers (`dli_zone_secret_col` in both double buffers, and `dli_z0_secret_col`/`COLPF3` for Zone 0); then increments `secrets_blink_lum` by 2 (wrapping `$00..$0E` via `AND #$0E`).
+- **Memory Map Layout ([main.asm](main.asm))**:
+  - Moved `engine/status_line.asm` into `TILES_META` segment ($2A30-$2E62) to prevent `SCENES_DATA` ($5000) from overflowing into Title Display List at $6000, maintaining memory map continuity and headroom.
+- **Integration Tests ([tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Added `test_secrets_blinking_cd_and_skull` verifying that active CD ($80 hue) cycles through luminances `$80, $82, $84, $86, $88, $8A, $8C, $8E -> $80, $82...` across consecutive frames while static secrets (Gold Key) maintain constant color.
+
+## [2026-10-22] - Fix False Ceiling Collision During Horizontal Leaps Under 2-Tier Platforms
+
+- **Hero Jump Engine ([engine/player.asm](engine/player.asm))**:
+  - Added `player_jump_start_y` variable and recorded standing `player_y` at jump initiation in `@setup_jump_state`.
+  - In `player_jump_update` (`@ceil_loop`), filtered out platforms 2+ tiers above the starting floor (`plat_y + 8 <= player_jump_start_y`), eliminating false ceiling collision detection during horizontal leaps (`JUMP_TYPE_SHORT`).
+  - Resolved bug where jumping left from `platform-016` (y=56) to `platform-012` (y=56) bounced into `PLAYER_STATE_FALL` on frame 4 due to false ceiling detection against `platform-010` (y=24).
+- **Integration Tests ([tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Added `test_player_jump_short_from_platform_016_to_012_under_platform_010` verifying that Hero jumping left from `platform-016` under `platform-010` does not bounce into fall state and cleanly lands on `platform-012`.
+
 ## [2026-10-22] - Fix Secret Positions on Progression via Dynamic DLI Missile Registers
 
 - **Scene Compiler ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:

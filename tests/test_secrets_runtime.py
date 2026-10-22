@@ -415,3 +415,66 @@ def test_game_success_on_final_scene_completion():
     # All scenes finished! Must set GAME_SUCCESS (2) and STATE_OVER (3)
     assert mem[labels["GAME_RESULT"]] == 2  # GAME_SUCCESS = 2
     assert mem[labels["GAME_STATE"]] == 3   # STATE_OVER = 3
+
+
+def test_secrets_blinking_cd_and_skull():
+    """Verify secrets with blink=True cycle luminance $00..$0E stepping by 2, while static secrets remain unchanged."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Initialize DLI and Secrets for Scene 0 (Forest)
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.a = 0
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+
+    # Verify secrets_blink array populated from compiled scene definition
+    blink_addr = labels["SECRETS_BLINK"]
+    assert mem[blink_addr + 0] == 0, "Secret 0 (Gold Key) must NOT blink"
+    assert mem[blink_addr + 1] == 0, "Secret 1 (Gold Key) must NOT blink"
+    assert mem[blink_addr + 2] == 1, "Secret 2 (Skull) MUST blink"
+    assert mem[blink_addr + 3] == 1, "Secret 3 (Skull) MUST blink"
+    assert mem[blink_addr + 4] == 1, "Secret 4 (CD) MUST blink"
+
+    # Secret 4 (CD) has atari_color $80 (hue $80, base lum $00)
+    col_addr = labels["SECRETS_COLOR"]
+    assert mem[col_addr + 4] == 0x80
+
+    # Activate CD (secret 4)
+    act_addr = labels["SECRETS_ACTIVE"]
+    mem[act_addr + 4] = 1
+
+    cd_zone = mem[labels["SECRETS_ZONE"] + 4]
+    cd_offset = cd_zone - 1 if cd_zone > 0 else 0
+    dli_col_buf0 = labels["DLI_ZONE_SECRET_COL"] + cd_offset
+    dli_col_buf1 = labels["DLI_ZONE_SECRET_COL"] + 8 + cd_offset
+
+    # Initial zero-page luminance offset must be $00
+    lum_addr = labels["SECRETS_BLINK_LUM"]
+    assert mem[lum_addr] == 0x00
+
+    # Step through 10 frames of secrets_update:
+    # Colors for CD ($80 hue) must cycle: $80, $82, $84, $86, $88, $8A, $8C, $8E, then wrap to $80, $82...
+    expected_cd_colors = [
+        0x80, 0x82, 0x84, 0x86, 0x88, 0x8A, 0x8C, 0x8E, 0x80, 0x82
+    ]
+
+    for expected_col in expected_cd_colors:
+        run_subroutine(mpu, labels["SECRETS_UPDATE"])
+        assert mem[dli_col_buf0] == expected_col, (
+            f"Expected CD color ${expected_col:02X} in Buffer 0, got ${mem[dli_col_buf0]:02X}"
+        )
+        assert mem[dli_col_buf1] == expected_col, (
+            f"Expected CD color ${expected_col:02X} in Buffer 1, got ${mem[dli_col_buf1]:02X}"
+        )
+
+    # Static secret 0 (Gold Key, zone 3, offset 2) must remain $1A throughout
+    s0_zone = mem[labels["SECRETS_ZONE"] + 0]
+    s0_offset = s0_zone - 1 if s0_zone > 0 else 0
+    s0_col_buf0 = labels["DLI_ZONE_SECRET_COL"] + s0_offset
+    assert mem[s0_col_buf0] == 0x1A

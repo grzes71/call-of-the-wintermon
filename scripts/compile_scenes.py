@@ -202,6 +202,7 @@ class SceneSecretData:
     active: bool
     dep_id: int = 0
     zone_idx: int = 0
+    blink: bool = False
 
 
 @dataclass
@@ -1188,6 +1189,7 @@ def parse_scene_json(
                     active=active,
                     dep_id=dep_id,
                     zone_idx=zid,
+                    blink=blink,
                 )
             )
         else:
@@ -1550,6 +1552,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(f"${s.atari_color:02X}" for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_zone")
             lines.append("    .byte " + ", ".join(str(s.zone_idx) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_blink")
+            lines.append("    .byte " + ", ".join(str(1 if s.blink else 0) for s in sc.secrets))
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
@@ -1563,6 +1567,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_frame_count .byte 0",
                 f"scene_{sym}_secret_color      .byte 0",
                 f"scene_{sym}_secret_zone       .byte 0",
+                f"scene_{sym}_secret_blink      .byte 0",
             ])
         lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
         if sc.enemies:
@@ -1808,6 +1813,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_zone" for sc in scenes),
         "scene_secret_zone_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_zone" for sc in scenes),
+        "scene_secret_blink_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_blink" for sc in scenes),
+        "scene_secret_blink_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_blink" for sc in scenes),
         "",
         "; --- Enemy Pointer Tables ---",
         "scene_enemy_def_id_lo",

@@ -89,6 +89,8 @@ player_jump_anim_table_lo
 player_jump_anim_table_hi
     .byte >player_anim_jump_right_frames, >player_anim_jump_left_frames
 
+player_jump_start_y .byte 0
+
 
 ; ==============================================================================
 ; PLAYER_INIT
@@ -131,6 +133,7 @@ player_jump_anim_table_hi
     sta player_jump_len
     sta player_fire_released
     sta player_prev_y
+    sta player_jump_start_y
     sta SIZEP0                  ; Normal width 1x (8 color clocks)
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
@@ -776,6 +779,8 @@ player_jump_anim_table_hi
 @setup_jump_state
     lda #PLAYER_STATE_JUMP
     sta player_state
+    lda player_y
+    sta player_jump_start_y
     lda #0
     sta player_jump_step
     sta player_speed
@@ -938,6 +943,14 @@ player_jump_anim_table_hi
     beq @next_ceil
 
     ; X is within bounds!
+    ; Platforms 2+ tiers above (plat_y + 8 <= player_jump_start_y) have 32+ px clearance and are never ceilings
+    lda (zp_plat_ptr_y),y
+    clc
+    adc #8
+    cmp player_jump_start_y
+    bcc @next_ceil
+    beq @next_ceil
+
     ; Check if Hero's head bumped platform from below:
     ; 1. Hero's head reached or penetrated bottom of platform: player_y <= plat_y + 4
     lda (zp_plat_ptr_y),y

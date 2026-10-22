@@ -119,3 +119,7 @@ title_gen_dst       = $E0   ; 2 bytes ($E0-$E1): Pointer to destination VRAM buf
 title_gen_len       = $E2   ; 1 byte: Text length in characters (1..20)
 title_gen_x         = $E3   ; 1 byte: Horizontal offset in bytes from row start (0..38)
 
+; --- Secret Animation & Blinking Zero Page ($E4) ---
+secrets_blink_lum   = $E4   ; Secret blinking luminance counter ($00-$0E, step 2)
+
+

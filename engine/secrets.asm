@@ -27,6 +27,7 @@ secrets_timer       :MAX_SECRETS .byte 0
 secrets_frame_idx   :MAX_SECRETS .byte 0
 secrets_color       :MAX_SECRETS .byte 0
 secrets_zone        :MAX_SECRETS .byte 0
+secrets_blink       :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; RENDER SECRET FRAME
@@ -140,7 +141,15 @@ secrets_zone        :MAX_SECRETS .byte 0
     sta dli_zone_hpos_m3,y
     sta dli_zone_hpos_m3+8,y
 
+    lda secrets_blink,x
+    beq @solid_color
     lda secrets_color,x
+    and #$F0
+    ora secrets_blink_lum
+    jmp @apply_color
+@solid_color
+    lda secrets_color,x
+@apply_color
     sta dli_zone_secret_col,y
     sta dli_zone_secret_col+8,y
     lda #$11
@@ -164,9 +173,18 @@ secrets_zone        :MAX_SECRETS .byte 0
     sta dli_z0_hpos_m3
     sta dli_z0_hpos_m3+1
 
+    lda secrets_blink,x
+    beq @solid_color_z0
     lda secrets_color,x
+    and #$F0
+    ora secrets_blink_lum
+    jmp @apply_color_z0
+@solid_color_z0
+    lda secrets_color,x
+@apply_color_z0
     sta dli_z0_secret_col
     sta dli_z0_secret_col+1
+    sta COLPF3
     lda #$11
     sta dli_z0_prior
     sta dli_z0_prior+1
@@ -224,6 +242,10 @@ secrets_zone        :MAX_SECRETS .byte 0
 
 @valid_id
     sta active_scene_id
+
+    ; Initialize blinking luminance counter
+    lda #0
+    sta secrets_blink_lum
 
     ; 0. Clear PMG rows for any previous active secrets and reset active flags
     ldx #0
@@ -400,7 +422,20 @@ secrets_zone        :MAX_SECRETS .byte 0
     dey
     bpl @copy_zone
 
-    ; 12. Clear secrets_collected array
+    ; 12. Copy blink flags
+    lda scene_secret_blink_lo,x
+    sta zp_ptr_src
+    lda scene_secret_blink_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_blk
+    lda (zp_ptr_src),y
+    sta secrets_blink,y
+    dey
+    bpl @copy_blk
+
+    ; 13. Clear secrets_collected array
     ldy secrets_count
     dey
     lda #0
@@ -409,7 +444,7 @@ secrets_zone        :MAX_SECRETS .byte 0
     dey
     bpl @clr_coll
 
-    ; 13. Clear PMG rows for all scene secrets
+    ; 14. Clear PMG rows for all scene secrets
     ldx #0
 @clear_all_loop
     cpx secrets_count
@@ -423,7 +458,7 @@ secrets_zone        :MAX_SECRETS .byte 0
     jmp @clear_all_loop
 
 @start_render
-    ; 14. Render Frame 0 and update DLI positions for active secrets
+    ; 15. Render Frame 0 and update DLI positions for active secrets
     ldx #0
 @init_render_loop
     cpx secrets_count
@@ -459,18 +494,70 @@ secrets_zone        :MAX_SECRETS .byte 0
     rts
 
 @has_secrets
+    ; --------------------------------------------------------------------------
+    ; 1. Blink Luminance Pulse for Active Blinking Secrets
+    ; Pulsed color = (secrets_color,x & $F0) | secrets_blink_lum
+    ; Applied to dli_zone_secret_col (both double buffers) or dli_z0_secret_col/COLPF3
+    ; --------------------------------------------------------------------------
     ldx #0
-@loop
+@blink_loop
+    cpx secrets_count
+    bcs @advance_blink_lum
+
+    lda secrets_active,x
+    beq @next_blink
+    lda secrets_blink,x
+    beq @next_blink
+
+    lda secrets_color,x
+    and #$F0
+    ora secrets_blink_lum
+    sta zp_temp_a
+
+    lda secrets_zone,x
+    beq @blink_z0
+
+    sec
+    sbc #1
+    tay
+    lda zp_temp_a
+    sta dli_zone_secret_col,y
+    sta dli_zone_secret_col+8,y
+    jmp @next_blink
+
+@blink_z0
+    lda zp_temp_a
+    sta dli_z0_secret_col
+    sta dli_z0_secret_col+1
+    sta COLPF3
+
+@next_blink
+    inx
+    jmp @blink_loop
+
+@advance_blink_lum
+    ; Advance luminance offset for next frame: $00 -> $02 -> ... -> $0E -> $00
+    clc
+    lda secrets_blink_lum
+    adc #2
+    and #$0E
+    sta secrets_blink_lum
+
+    ; --------------------------------------------------------------------------
+    ; 2. Secret Animation Frames Update
+    ; --------------------------------------------------------------------------
+    ldx #0
+@anim_loop
     cpx secrets_count
     bcs @done
 
     ; Only animate active secrets
     lda secrets_active,x
-    beq @next
+    beq @next_anim
 
     ; Decrement animation timer
     dec secrets_timer,x
-    bne @next
+    bne @next_anim
 
     ; Timer reached 0: reload from frame duration
     lda secrets_frame_dur,x
@@ -492,9 +579,9 @@ secrets_zone        :MAX_SECRETS .byte 0
     pla
     tax
 
-@next
+@next_anim
     inx
-    jmp @loop
+    jmp @anim_loop
 
 @done
     rts
