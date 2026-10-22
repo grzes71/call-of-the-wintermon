@@ -2,6 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Fix Full-Height Garbage Bar Behind the Scene Title Card (Stale PMG Latch)
+
+- **Root Cause ([scenes/game.asm](scenes/game.asm))**:
+  - The scene title card phases set `SDMCTL = $22`, which turns PMG DMA off, but `GRACTL` was never cleared when entering the card. GTIA therefore kept latching and re-dispatching the last hero scanline (`GRAFP0` at `HPOSP0`), painting a full-height vertical bar of garbage behind the scene name.
+  - `dlist_scene_title` contains no DLI bits, so nothing re-staged the sprite registers while the card was displayed.
+- **Fix ([scenes/game.asm](scenes/game.asm))**:
+  - `game_init` step 9 disables PMG latching (`GRACTL = 0`) and clears `HPOSP0..3` / `HPOSM0..3` with a compact loop (`sta HPOSP0,x`, X = 7..0), so the title card shows only the scene name.
+  - Gameplay restores the state: `@do_playing` re-enables `GRACTL = $03`, `dli_vblank_update` restores `HPOSP0`/`SIZEP0`, and the DLI Faza A/C re-stages the platform and enemy positions.
+- **Automated Verification ([tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py))**:
+  - Added `test_scene_title_card_disables_pmg_latching`: after `game_init` the latch must be off and all player/missile positions cleared, and `dli_vblank_update` must bring the hero position back.
+  - `test_scene_title_card_frame_progression` now also asserts `GRACTL == $03` once gameplay resumes.
+  - Full suite: 549 tests passing, `check_memory.py` SUCCESS with 1,837 bytes of headroom below `$C000`.
+
+
 ## [2026-10-22] - Add Level-Complete Victory Fanfare (Rising Arpeggio, Played Before the Scene Change)
 
 - **Victory Fanfare Module ([engine/sfx_victory.asm](engine/sfx_victory.asm))** (new file):

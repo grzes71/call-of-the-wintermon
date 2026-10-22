@@ -96,7 +96,21 @@ SCENE_TITLE_FADE_STEPS = 8
     ; 8. Initialize sound effects engine
     jsr sfx_init
 
-    ; 9. Initialize title card animation phase
+    ; 9. Disable PMG latching and clear every player/missile horizontal position.
+    ;    The title card phases run with PMG DMA off (SDMCTL = $22), so a still-enabled
+    ;    GRACTL latch would make GTIA redraw the last latched hero scanline on every
+    ;    scanline - a full-height vertical bar of garbage at the hero's x.
+    ;    Gameplay restores GRACTL ($03) in @do_playing and HPOSP0/SIZEP0 through
+    ;    dli_vblank_update, while the DLI re-stages the platform/enemy positions.
+    lda #0
+    sta GRACTL              ; $D01D: stop latching players and missiles
+    ldx #7
+@clr_pmg_pos
+    sta HPOSP0,x            ; $D000-$D007: HPOSP0..3 followed by HPOSM0..3
+    dex
+    bpl @clr_pmg_pos
+
+    ; 10. Initialize title card animation phase
     lda #GAME_PHASE_TITLE_IN
     sta game_phase
     lda #0

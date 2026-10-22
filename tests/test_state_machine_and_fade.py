@@ -199,6 +199,40 @@ def test_scene_title_card_frame_progression(emu_env):
     sdlst = mpu.memory[labels["SDLSTL"]] | (mpu.memory[labels["SDLSTH"]] << 8)
     assert sdlst == labels["DLIST_GAME"]
     assert sdlst == 0x3F00
+    # Gameplay re-enables PMG latching (disabled while the title card was shown)
+    assert mpu.memory[labels["GRACTL"]] == 0x03
+
+
+def test_scene_title_card_disables_pmg_latching(emu_env):
+    """Entering the scene title card must disable PMG latching and clear sprite positions.
+
+    Regression test for the full-height vertical bar of garbage behind the scene name:
+    the title card runs with PMG DMA off (SDMCTL = $22), so a still-enabled GRACTL latch
+    makes GTIA redraw the last latched hero scanline on every scanline of the screen.
+    """
+    mpu, labels = emu_env
+
+    # Leave behind the state a finished scene would have: latching on, hero positioned
+    mpu.memory[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.memory[labels["GRACTL"]] = 0x03
+    mpu.memory[labels["GRAFP0"]] = 0xFF
+    mpu.memory[labels["HPOSP0"]] = 48 + 40
+    mpu.memory[labels["HPOSP3"]] = 48 + 60
+    mpu.memory[labels["HPOSM0"]] = 48 + 70
+
+    run_subroutine(mpu, labels["GAME_INIT"])
+
+    assert mpu.memory[labels["GAME_PHASE"]] == 0, "title card fade-in must start"
+    assert mpu.memory[labels["GRACTL"]] == 0, "PMG latching must be off during the title card"
+    for reg in ("HPOSP0", "HPOSP1", "HPOSP2", "HPOSP3",
+                "HPOSM0", "HPOSM1", "HPOSM2", "HPOSM3"):
+        assert mpu.memory[labels[reg]] == 0, f"{reg} must be cleared for the title card"
+
+    # The hero position/size come back for gameplay (restored by the VBLANK update)
+    mpu.memory[labels["PLAYER_X"]] = 40
+    run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+    assert mpu.memory[labels["HPOSP0"]] == 48 + 40
+    assert mpu.memory[labels["SIZEP0"]] == 0
 
 
 def test_title_init_resets_game_state_and_active_scene_id(emu_env):
