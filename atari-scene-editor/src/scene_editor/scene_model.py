@@ -210,12 +210,8 @@ PLATFORM_TYPE_SPRITE = "sprite"
 PLATFORM_TYPE_MISSILE = "missile"
 PLATFORM_TYPES = (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE)
 
-SPRITE_WIDTHS = (
-    4, 8, 12, 16, 20, 24, 28, 32,
-    36, 40, 44, 48, 52, 56, 60, 64,
-    68, 72, 76, 80, 84, 88, 92, 96,
-)
-MISSILE_WIDTHS = (4, 8, 12, 16, 20, 24, 28, 32)
+SPRITE_WIDTHS = (8, 16, 24, 32, 48, 64, 96)
+MISSILE_WIDTHS = (8, 32)
 PLATFORM_HEIGHT = 4
 
 MAX_SPRITES_PER_ROW = 3
@@ -262,7 +258,8 @@ def get_required_platform_resources(platform_type: str, width: int) -> int:
 
     - Sprite: 24 px requires 2 sprites (16px double + 8px normal).
       Otherwise ceil(width / 32) (1 resource up to 32px, 2 up to 64px, 3 up to 96px).
-    - Missile: ceil(width / 8) (1 up to 8px, 2 up to 16px, 3 up to 24px, 4 up to 32px)
+    - Missile: 32 px requires 4 missiles (quad width across all 4).
+      8 px requires 1 missile (quad width on 1 missile).
 
     Raises ModelValidationError if platform_type is invalid.
     Raises InvalidPlatformDimensionError if width is not in allowed widths for the given type.
@@ -281,7 +278,7 @@ def get_required_platform_resources(platform_type: str, width: int) -> int:
             return 2
         return math.ceil(width / 32)
     elif platform_type == PLATFORM_TYPE_MISSILE:
-        return math.ceil(width / 8)
+        return 4 if width == 32 else 1
     raise ModelValidationError(f"Unsupported platform type: '{platform_type}'.")
 
 
@@ -558,6 +555,7 @@ class SceneObjectElement:
         custom_height: int = 8,
         sprite_id: Optional[int] = None,
         sprite: Optional[str] = None,
+        dependency: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         raw_id = id
@@ -626,6 +624,15 @@ class SceneObjectElement:
                 self.sprite_id = None
         else:
             self.sprite_id = None
+
+        raw_dep = dependency if dependency is not None else kwargs.get("dependency")
+        if raw_dep is not None and str(raw_dep).strip() != "" and str(raw_dep).lower() != "none":
+            try:
+                self.dependency: Optional[int] = int(raw_dep)
+            except (ValueError, TypeError):
+                self.dependency = None
+        else:
+            self.dependency = None
 
     def get_effective_sprite(self, catalogues: Any = None) -> Optional[str]:
         """Return explicit sprite name or fallback to definition's sprite name from catalogues."""
@@ -713,6 +720,15 @@ class SceneObjectElement:
                 raise InvalidObjectPropertyError("Secret cannot have speed parameter.")
             if self.movement_strategy is not None:
                 raise InvalidObjectPropertyError("Secret cannot have movement_strategy parameter.")
+            if self.dependency is not None:
+                if not isinstance(self.dependency, int) or isinstance(self.dependency, bool) or not (1 <= self.dependency <= 255):
+                    raise ModelValidationError(
+                        f"Secret 'dependency' must be an integer between 1 and 255, got {self.dependency!r}."
+                    )
+                if self.definition_id and str(self.dependency) == str(self.definition_id):
+                    raise ModelValidationError(
+                        f"Secret '{self.id}' cannot depend on itself."
+                    )
 
         if scene is not None:
             plat = scene.get_platform(self.platform_id)
@@ -769,6 +785,10 @@ class SceneObjectElement:
         if self.type == OBJECT_TYPE_ENEMY:
             d["speed"] = self.speed
             d["movement_strategy"] = self.movement_strategy
+        elif self.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+            if self.dependency is not None:
+                d["dependency"] = int(self.dependency)
+
         if self.source:
             d["source"] = self.source.replace("\\", "/")
         if self.source_rect:
@@ -834,6 +854,16 @@ class SceneObjectElement:
             except (ValueError, TypeError):
                 sprite_id = None
 
+        raw_dep = data.get("dependency")
+        if raw_dep is None and "dependency_id" in data:
+            raw_dep = data.get("dependency_id")
+        dep: Optional[int] = None
+        if raw_dep is not None and str(raw_dep).strip() != "" and str(raw_dep).lower() != "none":
+            try:
+                dep = int(raw_dep)
+            except (ValueError, TypeError):
+                dep = None
+
         return cls(
             id=obj_id,
             type=obj_type,
@@ -846,6 +876,7 @@ class SceneObjectElement:
             source_rect=source_rect,
             sprite_id=sprite_id,
             sprite=sprite,
+            dependency=dep,
         )
 
     def clone(self) -> SceneObjectElement:
@@ -972,12 +1003,31 @@ class Scene:
         max_rows = max(6, len(rows))
         while len(self.row_color_profiles) < max_rows:
             self.row_color_profiles.append(None)
-        # Infer row profiles from platforms if row entry is None
+        # Infer row profiles from platforms and check for row profile conflicts
+        seen_row_cprofs: dict[int, tuple[str, Optional[int]]] = {}
         for p in self.platforms:
             r = p.row_index
-            if 0 <= r < len(self.row_color_profiles) and self.row_color_profiles[r] is None:
-                if p.color_profile_id is not None:
-                    self.row_color_profiles[r] = p.color_profile_id
+            if r in seen_row_cprofs:
+                first_id, first_cp = seen_row_cprofs[r]
+                if p.color_profile_id is not None and first_cp is not None and p.color_profile_id != first_cp:
+                    raise ModelValidationError(
+                        f"Niezgodność profilu kolorów w wierszu y={p.position.y}: "
+                        f"platforma '{first_id}' ma profil {first_cp}, a platforma '{p.id}' ma profil {p.color_profile_id}. "
+                        f"Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów."
+                    )
+            else:
+                seen_row_cprofs[r] = (p.id, p.color_profile_id)
+
+            if 0 <= r < len(self.row_color_profiles):
+                if self.row_color_profiles[r] is None:
+                    if p.color_profile_id is not None:
+                        self.row_color_profiles[r] = p.color_profile_id
+                elif p.color_profile_id is not None and p.color_profile_id != self.row_color_profiles[r]:
+                    raise ModelValidationError(
+                        f"Platforma '{p.id}' w wierszu y={p.position.y} ma profil kolorów {p.color_profile_id}, "
+                        f"podczas gdy wiersz ma przypisany profil {self.row_color_profiles[r]}. "
+                        f"Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów."
+                    )
 
     def _sync_platform_color_profiles(self) -> None:
         """Ensure all platforms reflect their row's color profile."""
@@ -1013,14 +1063,26 @@ class Scene:
             return self.catalogues.get_secret_stage(definition_id)
         return 1
 
-    def get_secret_dependency(self, definition_id: Any) -> Optional[int]:
-        """Resolve dependency (None or int ID) for a secret definition. Defaults to None if catalogues missing or not found."""
+    def get_secret_dependency(self, definition_id: Any, obj: Optional[SceneObjectElement] = None) -> Optional[int]:
+        """Resolve dependency (None or int ID) for a secret.
+        Priority:
+        1. Object-level explicit dependency (obj.dependency)
+        2. Scene object instance for definition_id with dependency set
+        3. Fallback to catalogue secret definition's dependency (legacy compatibility)
+        """
+        if obj is not None and obj.dependency is not None:
+            return obj.dependency
+        if obj is None:
+            for o in self.objects:
+                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and str(o.definition_id) == str(definition_id):
+                    if o.dependency is not None:
+                        return o.dependency
         if self.catalogues is not None:
             if hasattr(self.catalogues, "get_secret_dependency"):
                 return self.catalogues.get_secret_dependency(definition_id)
             if hasattr(self.catalogues, "get_secret"):
                 sec = self.catalogues.get_secret(definition_id)
-                if sec is not None:
+                if sec is not None and getattr(sec, "dependency", None) is not None:
                     return sec.dependency
         return None
 
@@ -1106,6 +1168,21 @@ class Scene:
                     f"Row y={p.position.y} exceeds missile limit ({counts[PLATFORM_TYPE_MISSILE]}/{MAX_MISSILES_PER_ROW})."
                 )
 
+        # Validate that all platforms in the same row share the exact same color profile
+        row_plat_cprofs: dict[int, tuple[str, Optional[int]]] = {}
+        for p in self.platforms:
+            py = p.position.y
+            if py in row_plat_cprofs:
+                first_id, first_cp = row_plat_cprofs[py]
+                if p.color_profile_id != first_cp:
+                    raise ModelValidationError(
+                        f"Wiersz platform y={py} zawiera platformy o różnych profilach kolorów: "
+                        f"platforma '{first_id}' ma profil {first_cp}, a platforma '{p.id}' ma profil {p.color_profile_id}. "
+                        f"Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów."
+                    )
+            else:
+                row_plat_cprofs[py] = (p.id, p.color_profile_id)
+
         # Validate pairwise platform collisions
         for i in range(len(self.platforms)):
             p1 = self.platforms[i]
@@ -1145,7 +1222,7 @@ class Scene:
                             f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
                         )
                 elif obj.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    dep = self.get_secret_dependency(obj.definition_id)
+                    dep = self.get_secret_dependency(obj.definition_id, obj=obj)
                     deps_map = row_secret_deps.setdefault(row_y, {})
                     if dep in deps_map:
                         existing = deps_map[dep]
@@ -1156,6 +1233,29 @@ class Scene:
                             f"Only one secret per unique dependency is allowed per row."
                         )
                     deps_map[dep] = obj
+
+        # Check for circular secret dependencies on this scene
+        scene_secret_defs: dict[int, Optional[int]] = {}
+        for o in self.objects:
+            if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and o.definition_id:
+                try:
+                    s_def = int(o.definition_id)
+                    s_dep = self.get_secret_dependency(s_def, obj=o)
+                    scene_secret_defs[s_def] = s_dep
+                except (ValueError, TypeError):
+                    pass
+        for start_def in scene_secret_defs:
+            visited = set()
+            curr = start_def
+            while curr in scene_secret_defs:
+                if curr in visited:
+                    raise ModelValidationError(
+                        f"Cyclic dependency detected on scene involving secret definition ID {curr}."
+                    )
+                visited.add(curr)
+                curr = scene_secret_defs[curr]
+                if curr is None:
+                    break
 
         # Validate player spawn if present
         if self.player_spawn is not None:
@@ -1396,11 +1496,11 @@ class Scene:
 
             target_deps: dict[Optional[int], SceneObjectElement] = {}
             for t in target_secrets:
-                tdep = self.get_secret_dependency(t.definition_id)
+                tdep = self.get_secret_dependency(t.definition_id, obj=t)
                 target_deps[tdep] = t
 
             for m in moving_secrets:
-                mdep = self.get_secret_dependency(m.definition_id)
+                mdep = self.get_secret_dependency(m.definition_id, obj=m)
                 if mdep in target_deps:
                     conflicting = target_deps[mdep]
                     dep_name = self.get_dependency_display_name(mdep)
@@ -1581,11 +1681,11 @@ class Scene:
             if dependency is not ...:
                 eff_dep = dependency
             else:
-                eff_dep = self.get_secret_dependency(definition_id)
+                eff_dep = self.get_secret_dependency(definition_id, obj=obj)
 
             for o in row_objs:
                 if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    other_dep = self.get_secret_dependency(o.definition_id)
+                    other_dep = self.get_secret_dependency(o.definition_id, obj=o)
                     if other_dep == eff_dep:
                         dep_name = self.get_dependency_display_name(eff_dep)
                         return (
@@ -1715,6 +1815,7 @@ class Scene:
         new_strategy: Optional[str] = None,
         new_sprite_id: Optional[int | str] = None,
         new_sprite: Optional[str] = None,
+        new_dependency: Any = ...,
     ) -> None:
         """Update properties of an existing object with validation."""
         obj = self.get_object(object_id)
@@ -1730,6 +1831,7 @@ class Scene:
         old_strategy = obj.movement_strategy
         old_sprite_id = obj.sprite_id
         old_sprite = obj.sprite
+        old_dependency = obj.dependency
 
         if new_platform_id is not None and new_platform_id != obj.platform_id:
             target_plat = self.get_platform(new_platform_id)
@@ -1784,6 +1886,15 @@ class Scene:
             else:
                 obj.sprite_id = None
 
+        if new_dependency is not ...:
+            if new_dependency is not None and str(new_dependency).strip() != "" and str(new_dependency).lower() != "none":
+                try:
+                    obj.dependency = int(new_dependency)
+                except (ValueError, TypeError):
+                    obj.dependency = None
+            else:
+                obj.dependency = None
+
         try:
             obj.validate(scene=self)
             # Re-check row limits for the scene
@@ -1798,6 +1909,7 @@ class Scene:
             obj.movement_strategy = old_strategy
             obj.sprite_id = old_sprite_id
             obj.sprite = old_sprite
+            obj.dependency = old_dependency
             raise
 
     def clone(self) -> Scene:
@@ -1857,13 +1969,10 @@ class SceneSecretRuntime:
         A type is unlocked if:
         - It has no dependency (dependency is None).
         - OR its dependency P is unlocked AND all secrets of type P on THIS scene are collected."""
-        if not self.scene.catalogues:
-            return True
-        defn = self.scene.catalogues.get_secret(defn_id)
-        if defn is None or defn.dependency is None:
+        parent_id = self.scene.get_secret_dependency(defn_id)
+        if parent_id is None:
             return True
 
-        parent_id = defn.dependency
         if not self.is_type_unlocked(parent_id):
             return False
 
@@ -1961,8 +2070,8 @@ class SceneSecretRuntime:
                         except (ValueError, TypeError):
                             continue
                         if s_def_id != norm_def_id:
-                            defn = self.scene.catalogues.get_secret(s_def_id) if self.scene.catalogues else None
-                            if defn and defn.dependency == norm_def_id:
+                            succ_dep = self.scene.get_secret_dependency(s_def_id, obj=scene_obj)
+                            if succ_dep == norm_def_id:
                                 if self.is_secret_active(scene_obj.id):
                                     return True
         return False

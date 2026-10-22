@@ -607,6 +607,12 @@ class MainWindow(QMainWindow):
         self.new_obj_strategy_lbl = QLabel("Strategy:")
         oc_layout.addRow(self.new_obj_strategy_lbl, self.new_obj_strategy_combo)
 
+        self.new_obj_dependency_combo = QComboBox()
+        self.new_obj_dependency_lbl = QLabel("Dependency:")
+        oc_layout.addRow(self.new_obj_dependency_lbl, self.new_obj_dependency_combo)
+        self.new_obj_dependency_combo.setVisible(False)
+        self.new_obj_dependency_lbl.setVisible(False)
+
         self.btn_add_object = QPushButton("+ Add Object to Platform")
         self.btn_add_object.clicked.connect(self._on_add_object_clicked)
         oc_layout.addRow("", self.btn_add_object)
@@ -667,6 +673,13 @@ class MainWindow(QMainWindow):
         self.obj_prop_strategy_combo.currentIndexChanged.connect(self._on_obj_prop_strategy_changed)
         self.obj_prop_strategy_lbl = QLabel("Strategy:")
         oe_layout.addRow(self.obj_prop_strategy_lbl, self.obj_prop_strategy_combo)
+
+        self.obj_prop_dependency_combo = QComboBox()
+        self.obj_prop_dependency_combo.currentIndexChanged.connect(self._on_obj_prop_dependency_changed)
+        self.obj_prop_dependency_lbl = QLabel("Dependency:")
+        oe_layout.addRow(self.obj_prop_dependency_lbl, self.obj_prop_dependency_combo)
+        self.obj_prop_dependency_combo.setVisible(False)
+        self.obj_prop_dependency_lbl.setVisible(False)
 
         self.btn_delete_obj = QPushButton("Delete Object")
         self.btn_delete_obj.setStyleSheet("color: #ff5555;")
@@ -2375,10 +2388,37 @@ class MainWindow(QMainWindow):
         self.new_obj_speed_combo.setVisible(is_enemy)
         self.new_obj_strategy_lbl.setVisible(is_enemy)
         self.new_obj_strategy_combo.setVisible(is_enemy)
+
+        is_secret = (obj_type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE))
+        if hasattr(self, "new_obj_dependency_lbl"):
+            self.new_obj_dependency_lbl.setVisible(is_secret)
+            self.new_obj_dependency_combo.setVisible(is_secret)
+
         self._refresh_object_creator_definitions()
 
     def _on_new_obj_definition_changed(self) -> None:
         self._update_new_obj_definition_info()
+        self._refresh_new_obj_dependencies()
+
+    def _refresh_new_obj_dependencies(self) -> None:
+        if not hasattr(self, "new_obj_dependency_combo"):
+            return
+        self.new_obj_dependency_combo.blockSignals(True)
+        cur_dep = self.new_obj_dependency_combo.currentData()
+        self.new_obj_dependency_combo.clear()
+        self.new_obj_dependency_combo.addItem("None (dostępny od początku sceny)", None)
+        cur_def = self.new_obj_definition_combo.currentData()
+        for d_id, d in self.catalogues.secrets.items():
+            if cur_def is not None and (d_id == cur_def or str(d_id) == str(cur_def)):
+                continue
+            self.new_obj_dependency_combo.addItem(f"{d.name} [ID: {d.id}]", d.id)
+
+        idx = self.new_obj_dependency_combo.findData(cur_dep)
+        if idx >= 0:
+            self.new_obj_dependency_combo.setCurrentIndex(idx)
+        else:
+            self.new_obj_dependency_combo.setCurrentIndex(0)
+        self.new_obj_dependency_combo.blockSignals(False)
 
     def _update_new_obj_definition_info(self) -> None:
         obj_type = self.new_obj_type_combo.currentData() or OBJECT_TYPE_ENEMY
@@ -2432,6 +2472,7 @@ class MainWindow(QMainWindow):
             self._update_new_obj_definition_info()
 
         self.new_obj_definition_combo.blockSignals(False)
+        self._refresh_new_obj_dependencies()
 
     def _on_new_obj_platform_combo_changed(self) -> None:
         plat_id = self.new_obj_platform_combo.currentData()
@@ -2489,9 +2530,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid Platform", f"Platform '{plat_id}' not found.")
             return
 
-        # Check limits: max 3 enemies, max 4 secrets per stage per row
+        # Check limits: max 3 enemies, max 1 secret per unique dependency per row
+        dependency = self.new_obj_dependency_combo.currentData() if (obj_type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and hasattr(self, "new_obj_dependency_combo")) else None
         can_add, reason = self.scene_model.can_add_object_to_platform(
-            plat_id, obj_type=obj_type, definition_id=defn_id
+            plat_id, obj_type=obj_type, definition_id=defn_id, dependency=dependency
         )
         if not can_add:
             QMessageBox.warning(
@@ -2546,6 +2588,7 @@ class MainWindow(QMainWindow):
             movement_strategy=strategy,
             sprite=None,
             sprite_id=sprite_id,
+            dependency=dependency,
         )
 
         try:
@@ -2669,6 +2712,7 @@ class MainWindow(QMainWindow):
                 obj.platform_id,
                 obj_type=obj.type,
                 definition_id=new_def_id,
+                dependency=obj.dependency,
                 exclude_id=selected_id,
             )
             if not can_add:
@@ -2771,6 +2815,36 @@ class MainWindow(QMainWindow):
             callback=lambda: self._on_object_command_executed(selected_id),
         )
         self.undo_stack.push(cmd)
+
+    def _on_obj_prop_dependency_changed(self) -> None:
+        selected_id = self._get_effective_selected_object_id()
+        if selected_id is None:
+            return
+        obj = self.scene_model.get_object(selected_id)
+        if not obj or obj.type not in (OBJECT_TYPE_SECRET, "treasure"):
+            return
+        new_dep = self.obj_prop_dependency_combo.currentData()
+        if new_dep == obj.dependency:
+            return
+
+        cmd = UpdateSceneObjectPropsCommand(
+            self.scene_model,
+            selected_id,
+            new_dependency=new_dep,
+            callback=lambda: self._on_object_command_executed(selected_id),
+        )
+        try:
+            self.undo_stack.push(cmd)
+        except Exception as err:
+            QMessageBox.warning(self, "Invalid Dependency", str(err))
+            self.obj_prop_dependency_combo.blockSignals(True)
+            if obj.dependency is None:
+                self.obj_prop_dependency_combo.setCurrentIndex(0)
+            else:
+                idx = self.obj_prop_dependency_combo.findData(obj.dependency)
+                if idx >= 0:
+                    self.obj_prop_dependency_combo.setCurrentIndex(idx)
+            self.obj_prop_dependency_combo.blockSignals(False)
 
     def _on_obj_prop_sprite_changed(self) -> None:
         selected_id = self._get_effective_selected_object_id()
@@ -2903,6 +2977,9 @@ class MainWindow(QMainWindow):
             self.obj_prop_speed_combo.setVisible(True)
             self.obj_prop_strategy_lbl.setVisible(True)
             self.obj_prop_strategy_combo.setVisible(True)
+            if hasattr(self, "obj_prop_dependency_lbl"):
+                self.obj_prop_dependency_lbl.setVisible(False)
+                self.obj_prop_dependency_combo.setVisible(False)
             return
 
         self.obj_prop_id_spin.blockSignals(True)
@@ -2988,6 +3065,7 @@ class MainWindow(QMainWindow):
 
         # Speed and Strategy
         is_enemy = (obj.type == OBJECT_TYPE_ENEMY)
+        is_secret = (obj.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE))
         self.obj_prop_speed_lbl.setVisible(is_enemy)
         self.obj_prop_speed_combo.setVisible(is_enemy)
         self.obj_prop_strategy_lbl.setVisible(is_enemy)
@@ -3005,6 +3083,28 @@ class MainWindow(QMainWindow):
             if st_idx >= 0:
                 self.obj_prop_strategy_combo.setCurrentIndex(st_idx)
             self.obj_prop_strategy_combo.blockSignals(False)
+
+        if hasattr(self, "obj_prop_dependency_lbl"):
+            self.obj_prop_dependency_lbl.setVisible(is_secret)
+            self.obj_prop_dependency_combo.setVisible(is_secret)
+
+        if is_secret and hasattr(self, "obj_prop_dependency_combo"):
+            self.obj_prop_dependency_combo.blockSignals(True)
+            self.obj_prop_dependency_combo.clear()
+            self.obj_prop_dependency_combo.addItem("None (dostępny od początku sceny)", None)
+            defs = self.catalogues.secrets
+            for d_id, d_val in defs.items():
+                if d_id != obj.definition_id and str(d_id) != str(obj.definition_id):
+                    self.obj_prop_dependency_combo.addItem(f"{d_val.name} [{d_id}]", d_id)
+
+            dep_idx = 0
+            if obj.dependency is not None:
+                for i in range(self.obj_prop_dependency_combo.count()):
+                    if self.obj_prop_dependency_combo.itemData(i) == obj.dependency:
+                        dep_idx = i
+                        break
+            self.obj_prop_dependency_combo.setCurrentIndex(dep_idx)
+            self.obj_prop_dependency_combo.blockSignals(False)
 
     def bring_to_front_selected(self) -> None:
         selected_id = self.scene_view.get_selected_element_id()

@@ -540,6 +540,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         new_strategy: Optional[str] = None,
         new_sprite_id: Optional[int | str] = None,
         new_sprite: Optional[str] = None,
+        new_dependency: Any = ...,
         old_type: Optional[str] = None,
         old_definition_id: Optional[str] = None,
         old_platform_id: Optional[str] = None,
@@ -549,6 +550,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         old_strategy: Optional[str] = None,
         old_sprite_id: Optional[int | str] = None,
         old_sprite: Optional[str] = None,
+        old_dependency: Any = ...,
         callback: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(f"Update properties of {object_id}", callback)
@@ -586,6 +588,9 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
         self.old_sprite = old_sprite if old_sprite is not None else obj.sprite
         self.new_sprite = new_sprite if new_sprite is not None else self.old_sprite
 
+        self.old_dependency = old_dependency if old_dependency is not ... else getattr(obj, "dependency", None)
+        self.new_dependency = new_dependency if new_dependency is not ... else self.old_dependency
+
     def redo(self) -> None:
         self.scene.update_object_props(
             self.object_id,
@@ -598,6 +603,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
             new_strategy=self.new_strategy,
             new_sprite_id=self.new_sprite_id,
             new_sprite=self.new_sprite,
+            new_dependency=self.new_dependency,
         )
         self.notify()
 
@@ -613,6 +619,7 @@ class UpdateSceneObjectPropsCommand(SceneBaseCommand):
             new_strategy=self.old_strategy,
             new_sprite_id=self.old_sprite_id if self.old_sprite_id is not None else "",
             new_sprite=self.old_sprite if self.old_sprite is not None else "",
+            new_dependency=self.old_dependency,
         )
         self.notify()
 

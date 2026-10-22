@@ -2,6 +2,51 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Synchronize Platform Widths with Atari Hardware & Engine Limits
+
+- **Scene Model Platform Width Constraints ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Restricted `SPRITE_WIDTHS` to `(8, 16, 24, 32, 48, 64, 96)` strictly matching `SUPPORTED_SPRITE_WIDTHS` from [scripts/compile_scenes.py](scripts/compile_scenes.py).
+  - Restricted `MISSILE_WIDTHS` to `(8, 32)` strictly matching GTIA missile capabilities supported by the DLI compiler and engine (8 px single quad-missile, 32 px full 4-missile quad bar).
+  - Updated `get_required_platform_resources()` to return 4 missiles for 32 px and 1 missile for 8 px, rejecting any unsupported missile widths (such as 4, 12, 16, 20, 24, 28 px).
+- **Editor Documentation ([atari-scene-editor/README.md](atari-scene-editor/README.md))**:
+  - Updated section 5 specification with the hardware-accurate sprite and missile platform width lists and resource consumption metrics.
+- **Scene Definition ([scenes/01-forest.json](scenes/01-forest.json))**:
+  - Fixed `platform-015` width from unsupported 16 px to 32 px at (x=48, y=56), resolving compiler failure in `scripts/compile_scenes.py`.
+- **Test Suite Updates ([tests/test_platform_editor.py](tests/test_platform_editor.py), [tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_gui_integration.py](tests/test_gui_integration.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py))**:
+  - Updated [tests/test_platform_editor.py](tests/test_platform_editor.py) to assert exact supported hardware width tuples, invalid width rejection, and resource limit coexistence tests using widths 8 and 32.
+  - Updated [tests/test_compile_scenes.py](tests/test_compile_scenes.py) platform and object counts for `01-forest.json`.
+  - Updated [tests/test_gui_integration.py](tests/test_gui_integration.py) platform resizing verification to test 48 px.
+  - Updated [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py) initialization and progression harness for the 4 secrets in Scene 0.
+
+## [2026-10-22] - Move Secret Dependency Management to Scene Level
+
+- **Scene Object Element Model ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Added `dependency: Optional[int] = None` attribute to `SceneObjectElement`, serialized into/deserialized from scene JSON files (`dependency` field).
+  - Enforced self-dependency validation (`cannot depend on itself`) in `SceneObjectElement.validate()`.
+  - Updated `Scene.get_secret_dependency(definition_id, obj=None)` prioritizing explicit object-level dependency, then scene objects matching definition ID, and falling back to catalogue definitions for backward compatibility.
+  - Updated `Scene.validate()` to evaluate hardware PMG row secret constraints using per-scene dependencies and added circular dependency validation across scene secrets.
+  - Updated `Scene.can_add_object_to_platform()` and `Scene.can_move_platform()` to pass explicit object context to dependency resolution.
+  - Updated `Scene.update_object_props()` to accept and rollback `new_dependency`.
+  - Updated `SceneSecretRuntime` to resolve dependencies dynamically via `Scene.get_secret_dependency()`.
+- **Command Architecture ([atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - Extended `UpdateSceneObjectPropsCommand` to support `new_dependency` and `old_dependency` with full undo/redo support.
+- **Scene Editor UI ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py))**:
+  - Removed dependency controls (`dep_combo`, `stage_lbl`) from `CataloguesDialog` ("Manage Catalogues"); secret catalogue items now display clean names without dependency suffixes.
+  - Added `new_obj_dependency_combo` to "New Object Creator" in `MainWindow`, displayed conditionally when creating secrets, populated with other secret definitions.
+  - Added `obj_prop_dependency_combo` to "Selected Object" properties panel in `MainWindow`, displayed conditionally when a secret is selected, allowing live dependency changes with undo/redo and PMG conflict warnings.
+- **Scene Compiler & Pipelines ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Updated `parse_scene_json()` to resolve secret dependency from scene object definition first with fallback to catalogue item.
+- **Scene & Catalogue Definitions ([scenes/definitions.json](scenes/definitions.json), [scenes/01-forest.json](scenes/01-forest.json), [scenes/02-forest-castle.json](scenes/02-forest-castle.json))**:
+  - Removed catalogue-level dependency from Skull in `definitions.json`.
+  - Assigned `"dependency": 1` directly to Skull secret instances (id 5) in `01-forest.json` and `02-forest-castle.json`.
+- **Game Scenes Invariant Validation ([scripts/compile_scenes.py](scripts/compile_scenes.py), [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Enforced that every scene included in the game manifest (`scenes/scenes.json`) must contain at least one secret (`len(scene.secrets) >= 1`), raising an informative build error otherwise.
+  - Enforced that all platforms in any given row share the identical color profile (`color_profile_id`), rejecting row-level color profile conflicts during compilation and in `Scene.validate()`.
+- **Automated Verification ([tests/test_scene_secret_dependencies.py](tests/test_scene_secret_dependencies.py), [tests/test_catalogues.py](tests/test_catalogues.py), [tests/test_secret_row_constraints.py](tests/test_secret_row_constraints.py), [tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_platform_profiles.py](tests/test_platform_profiles.py), [tests/test_enemies_runtime.py](tests/test_enemies_runtime.py))**:
+  - Created [tests/test_scene_secret_dependencies.py](tests/test_scene_secret_dependencies.py) covering serialization, self-dependency rejection, circular dependency detection, priority resolution, row constraint validation, undo/redo, and GUI controls.
+  - Added test cases in [tests/test_compile_scenes.py](tests/test_compile_scenes.py) and [tests/test_platform_profiles.py](tests/test_platform_profiles.py) verifying game scenes have secrets and consistent row color profiles, rejecting zero-secret scenes and row color mismatches.
+  - Verified full test suite (527 passing tests) and `make all` clean build.
+
 ## [2026-10-22] - Fix Platform PMG Resource Calculation & Unify Row Color Profile Editing
 
 - **Platform 24px Hardware Resource Correction ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:

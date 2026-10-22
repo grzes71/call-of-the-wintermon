@@ -383,7 +383,16 @@ def test_export_eight_scanline_values_in_order(tmp_path: Path):
                 "color_profile_id": 99,
             }
         ],
-        "objects": [],
+        "objects": [
+            {
+                "id": 1,
+                "type": "secret",
+                "definition_id": 1,
+                "platform_id": "p0",
+                "x": 12,
+                "sprite_id": 8,
+            }
+        ],
     }
     scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
 
@@ -635,5 +644,16 @@ def test_gui_changing_platform_profile_updates_all_platforms_in_same_row(tmp_pat
     assert p1.color_profile_id == 2
     assert p2.color_profile_id == 2
     assert window.scene_model.get_row_color_profile_id(1) == 2
+
+
+def test_scene_init_and_validate_rejects_conflicting_row_color_profiles():
+    """Scene construction and validation must reject platforms with different profiles in the same row."""
+    # Platforms on row 1 (y=24) with conflicting profiles
+    p1 = PlatformElement(id="p1", type="sprite", position=Position(10, 24), width=16, height=4, color_profile_id=1)
+    p2 = PlatformElement(id="p2", type="sprite", position=Position(50, 24), width=16, height=4, color_profile_id=2)
+
+    with pytest.raises(ModelValidationError, match="Niezgodność profilu kolorów w wierszu y=24"):
+        Scene(name="Conflict Scene", width=160, height=96, platforms=[p1, p2])
+
 
 

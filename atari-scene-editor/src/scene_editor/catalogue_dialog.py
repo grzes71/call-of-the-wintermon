@@ -263,17 +263,6 @@ class CataloguesDialog(QDialog):
         sprite_combo.setEnabled(False)
         form_layout.addRow("Sprite (Sprite Studio):", sprite_combo)
 
-        dep_combo = None
-        stage_lbl = None
-        if not is_enemy:
-            dep_combo = QComboBox()
-            dep_combo.setToolTip("Select prerequisite secret type. 'None' means this secret is available from the start of the scene.")
-            form_layout.addRow("Dependency (Zależność):", dep_combo)
-
-            stage_lbl = QLabel("Available from the start of the scene")
-            stage_lbl.setStyleSheet("font-weight: bold; color: #4CAF50;")
-            form_layout.addRow("Unlock Condition (Warunek):", stage_lbl)
-
         rp_layout.addWidget(form_group)
 
         # Action buttons
@@ -341,8 +330,6 @@ class CataloguesDialog(QDialog):
             self.secret_atari_hex_lbl = atari_hex_lbl
             self.secret_blink_check = blink_check
             self.secret_sprite_combo = sprite_combo
-            self.secret_dep_combo = dep_combo
-            self.secret_stage_lbl = stage_lbl
             self.secret_btn_save = btn_save
             self.secret_btn_delete = btn_delete
             self._cur_editing_secret_id: Optional[int] = None
@@ -359,8 +346,6 @@ class CataloguesDialog(QDialog):
             r_spin.valueChanged.connect(lambda: self._update_swatch_color(False))
             g_spin.valueChanged.connect(lambda: self._update_swatch_color(False))
             b_spin.valueChanged.connect(lambda: self._update_swatch_color(False))
-            if dep_combo:
-                dep_combo.currentIndexChanged.connect(self._on_secret_dependency_changed)
 
         return widget
 
@@ -722,12 +707,6 @@ class CataloguesDialog(QDialog):
                     text += " ⚠️"
                     warn_msg = f"Ostrzeżenie: nieznany sprite '{defn.sprite}'."
 
-            if defn.dependency is not None:
-                parent = self.catalogues.get_secret(defn.dependency)
-                p_name = parent.name if parent else f"ID {defn.dependency}"
-                text += f" (requires: {p_name})"
-            else:
-                text += " (from start)"
             if defn.atari_color is not None:
                 text += f" (Atari: ${defn.atari_color:02X})"
             if defn.blink:
@@ -754,54 +733,6 @@ class CataloguesDialog(QDialog):
             self.secret_list.setCurrentRow(0)
         else:
             self._on_new_secret_clicked()
-
-    def _on_secret_dependency_changed(self) -> None:
-        if not hasattr(self, "secret_dep_combo") or not self.secret_dep_combo:
-            return
-        dep_id = self.secret_dep_combo.currentData()
-        if dep_id is None:
-            self.secret_stage_lbl.setText("Available from the start of the scene (no dependency)")
-            self.secret_stage_lbl.setStyleSheet("font-weight: bold; color: #4CAF50;")
-        else:
-            parent = self.catalogues.get_secret(dep_id)
-            p_name = parent.name if parent else f"ID {dep_id}"
-            self.secret_stage_lbl.setText(f"Unlocks after collecting all '{p_name}' secrets on the scene")
-            self.secret_stage_lbl.setStyleSheet("font-weight: bold; color: #2196F3;")
-
-    def _populate_secret_dependency_options(self, target_id: Optional[int], current_dep: Optional[int]) -> None:
-        if not hasattr(self, "secret_dep_combo") or not self.secret_dep_combo:
-            return
-        self.secret_dep_combo.blockSignals(True)
-        self.secret_dep_combo.clear()
-
-        # Item 0: No dependency
-        self.secret_dep_combo.addItem("None (dostępny od początku sceny)", None)
-
-        valid_deps = self.catalogues.get_valid_dependencies_for(target_id)
-        valid_ids = {d.id for d in valid_deps}
-
-        # Keep current selection visible if already assigned
-        if current_dep is not None and current_dep not in valid_ids:
-            cur_defn = self.catalogues.get_secret(current_dep)
-            if cur_defn:
-                valid_deps.insert(0, cur_defn)
-                valid_ids.add(current_dep)
-
-        for d in valid_deps:
-            self.secret_dep_combo.addItem(f"{d.name} [ID: {d.id}]", d.id)
-
-        if current_dep is None:
-            self.secret_dep_combo.setCurrentIndex(0)
-        else:
-            idx = self.secret_dep_combo.findData(current_dep)
-            if idx >= 0:
-                self.secret_dep_combo.setCurrentIndex(idx)
-            else:
-                self.secret_dep_combo.addItem(f"Secret ID {current_dep}", current_dep)
-                self.secret_dep_combo.setCurrentIndex(self.secret_dep_combo.count() - 1)
-
-        self.secret_dep_combo.blockSignals(False)
-        self._on_secret_dependency_changed()
 
     def _on_secret_selected(self, row: int) -> None:
         if row < 0 or row >= self.secret_list.count():
@@ -836,7 +767,6 @@ class CataloguesDialog(QDialog):
             self._update_atari_enabled(False, False)
 
         self.secret_blink_check.setChecked(defn.blink)
-        self._populate_secret_dependency_options(defn.id, defn.dependency)
         self._populate_sprite_combo(
             getattr(self, "secret_sprite_combo", None),
             getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None),
@@ -868,7 +798,6 @@ class CataloguesDialog(QDialog):
         self.secret_atari_check.setChecked(False)
         self._update_atari_enabled(False, False)
         self.secret_blink_check.setChecked(False)
-        self._populate_secret_dependency_options(None, None)
         self._populate_sprite_combo(getattr(self, "secret_sprite_combo", None), None)
         self.secret_btn_delete.setEnabled(False)
 
@@ -893,7 +822,6 @@ class CataloguesDialog(QDialog):
             atari = self.secret_atari_spin.value()
 
         blink = self.secret_blink_check.isChecked()
-        dependency = self.secret_dep_combo.currentData() if hasattr(self, "secret_dep_combo") and self.secret_dep_combo else None
         sprite_val = self.secret_sprite_combo.currentData() if hasattr(self, "secret_sprite_combo") and self.secret_sprite_combo else None
         sprite_id = None
         if sprite_val is not None:
@@ -912,21 +840,11 @@ class CataloguesDialog(QDialog):
                 rgb_color=rgb,
                 atari_color=atari,
                 blink=blink,
-                dependency=dependency,
+                dependency=None,
                 sprite_id=sprite_id,
                 sprite=None,
             )
             defn.validate()
-
-            if self._cur_editing_secret_id is not None and self.scene:
-                ok, msg = self.catalogues.check_scene_secret_dependency_conflict(
-                    self.scene,
-                    self._cur_editing_secret_id,
-                    dependency,
-                )
-                if not ok:
-                    QMessageBox.warning(self, "Secret Dependency Conflict", msg)
-                    return
 
             if self._cur_editing_secret_id is None:
                 self.catalogues.add_secret(defn)
@@ -967,19 +885,6 @@ class CataloguesDialog(QDialog):
                 f"Cannot delete secret definition '{target_id}':\n"
                 f"It is currently assigned to {used_count} object(s) on the current scene.\n\n"
                 f"Please reassign or delete those objects before removing this definition.",
-            )
-            return
-
-        # Safety check 2: does any other secret depend on this secret in the chain?
-        dependents = [s for s in self.catalogues.secrets.values() if s.dependency == target_id]
-        if dependents:
-            dep_names = ", ".join(f"'{s.name}' [{s.id}]" for s in dependents)
-            QMessageBox.warning(
-                self,
-                "Cannot Delete Definition",
-                f"Cannot delete secret definition '{target_id}':\n"
-                f"The following secret(s) in the dependency chain depend on it:\n{dep_names}\n\n"
-                f"Please reassign or remove dependencies before deleting this definition.",
             )
             return
 

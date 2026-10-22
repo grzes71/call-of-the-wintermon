@@ -738,35 +738,24 @@ class TestSecretLinearDependencyChain:
 
     def test_catalogues_dialog_secrets_dependency_ui(self, qapp, tmp_path: Path):
         cats = ProjectCatalogues()
-        cats.add_secret(SecretDefinition(id=1, name="Keys", dependency=None))
-        cats.add_secret(SecretDefinition(id=2, name="CDs", dependency=1))
+        cats.add_secret(SecretDefinition(id=1, name="Keys"))
+        cats.add_secret(SecretDefinition(id=2, name="CDs"))
 
         dlg = CataloguesDialog(cats, base_dir=tmp_path, initial_tab="secrets")
         assert dlg.tabs.currentIndex() == 1
 
-        # Check list item formatting shows clean names and dependency requirements without Stage numbers
+        # Check list item formatting shows clean names without Stage or dependency text
         item0 = dlg.secret_list.item(0)
-        assert "Keys [1]" in item0.text()
-        assert "(from start)" in item0.text()
+        assert item0.text() == "Keys [1]"
         assert "Stage" not in item0.text()
 
         item1 = dlg.secret_list.item(1)
-        assert "CDs [2]" in item1.text()
-        assert "(requires: Keys)" in item1.text()
+        assert item1.text() == "CDs [2]"
         assert "Stage" not in item1.text()
 
-        # Select second item (CDs)
-        dlg.secret_list.setCurrentRow(1)
-        assert dlg.secret_dep_combo.currentData() == 1
-        assert "Keys" in dlg.secret_stage_lbl.text()
-        assert "Unlocks after collecting all 'Keys'" in dlg.secret_stage_lbl.text()
-        assert "Stage" not in dlg.secret_stage_lbl.text()
-
-        # Click new secret
-        dlg._on_new_secret_clicked()
-        assert dlg.secret_dep_combo.currentData() is None
-        assert "Available from the start of the scene" in dlg.secret_stage_lbl.text()
-        assert "Stage" not in dlg.secret_stage_lbl.text()
+        # Dependencies are now managed at the Scene level (per scene), not in CataloguesDialog
+        assert not hasattr(dlg, "secret_dep_combo")
+        assert not hasattr(dlg, "secret_stage_lbl")
 
 
 # =============================================================================

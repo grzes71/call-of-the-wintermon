@@ -896,8 +896,10 @@ def parse_scene_json(
     scene_file: Path,
     enemies: dict[int, CatalogueItem],
     secrets: dict[int, CatalogueItem],
-    profiles: dict[str, list[int]] | None = None,
+    profiles: dict[int, list[int]] | None = None,
     sprites: dict[int, SpriteDefinition] | None = None,
+    primary_tileset_id: int | None = None,
+    require_secret: bool = False,
 ) -> SceneCompiledData:
     """Parse and validate a scene JSON file into structured compiler models."""
     if not scene_file.is_file():
@@ -1001,18 +1003,43 @@ def parse_scene_json(
             except (ValueError, TypeError):
                 pass
 
-    # If row_color_profiles was not specified at scene level, infer from platforms
-    if not row_cprof_map:
-        for p in raw_platforms:
-            ppos = p.get("position", {})
-            py = int(ppos.get("y", 0))
-            ridx = (py - 8) // 16
-            cprof = p.get("color_profile_id")
-            if cprof is not None and ridx not in row_cprof_map:
-                try:
-                    row_cprof_map[ridx] = int(cprof)
-                except (ValueError, TypeError):
-                    pass
+    # Validate that all platforms in the same row share the exact same color_profile_id
+    # and match the scene-level row_color_profiles if defined
+    row_platform_profiles: dict[int, tuple[str, Optional[int]]] = {}
+    for idx, p in enumerate(raw_platforms):
+        pid = str(p.get("id", f"platform-{idx}"))
+        ppos = p.get("position", {})
+        py = int(ppos.get("y", 0))
+        ridx = (py - 8) // 16
+
+        raw_cprof_id = p.get("color_profile_id")
+        p_cprof_id: Optional[int] = None
+        if raw_cprof_id is not None and str(raw_cprof_id).strip() != "":
+            try:
+                p_cprof_id = int(raw_cprof_id)
+            except (ValueError, TypeError):
+                p_cprof_id = None
+
+        expected_row_cprof = row_cprof_map.get(ridx)
+        if expected_row_cprof is not None and p_cprof_id is not None and p_cprof_id != expected_row_cprof:
+            raise ValueError(
+                f"Błąd w scenie '{name}' ({scene_file.name}): platforma '{pid}' w wierszu y={py} (wiersz {ridx}) "
+                f"ma przypisany profil kolorów {p_cprof_id}, podczas gdy profil zdefiniowany dla tego wiersza "
+                f"to {expected_row_cprof}. Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów."
+            )
+
+        if py in row_platform_profiles:
+            first_pid, first_cprof = row_platform_profiles[py]
+            if p_cprof_id != first_cprof:
+                raise ValueError(
+                    f"Błąd w scenie '{name}' ({scene_file.name}): niezgodność profilu kolorów w wierszu y={py}. "
+                    f"Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów. "
+                    f"Platforma '{first_pid}' ma profil {first_cprof}, a platforma '{pid}' ma profil {p_cprof_id}."
+                )
+        else:
+            row_platform_profiles[py] = (pid, p_cprof_id)
+            if ridx not in row_cprof_map and p_cprof_id is not None:
+                row_cprof_map[ridx] = p_cprof_id
 
     for idx, p in enumerate(raw_platforms):
         pid = str(p.get("id", f"platform-{idx}"))
@@ -1086,7 +1113,11 @@ def parse_scene_json(
             cat_item = secrets.get(def_id)
             color = cat_item.atari_color if cat_item else 0x1A
             blink = cat_item.blink if cat_item else False
-            dep_val = cat_item.dependency if cat_item else None
+            dep_val = obj.get("dependency")
+            if dep_val is None and "dependency_id" in obj:
+                dep_val = obj.get("dependency_id")
+            if dep_val is None and cat_item and getattr(cat_item, "dependency", None) is not None:
+                dep_val = cat_item.dependency
             dep_id = int(dep_val) if dep_val is not None else 0
 
             # Validate unique secret dependency per platform row
@@ -1096,7 +1127,7 @@ def parse_scene_json(
                 dep_desc = (
                     f"'{secrets[dep_val].name}' (ID {dep_val})"
                     if (dep_val is not None and dep_val in secrets)
-                    else "None"
+                    else ("None" if dep_val is None else f"ID {dep_val}")
                 )
                 raise ValueError(
                     f"Scene '{name}' ({scene_file.name}) violates secret row constraint at platform row y={plat_y}: "
@@ -1263,6 +1294,12 @@ def parse_scene_json(
         raise ValueError(
             f"Błąd w scenie '{name}' ({scene_file.name}): liczba sekretów ({len(scene_secrets)}) "
             f"przekracza dopuszczalny limit MAX_SECRETS={MAX_SECRETS_TOTAL}."
+        )
+
+    if require_secret and len(scene_secrets) < 1:
+        raise ValueError(
+            f"Błąd w scenie '{name}' ({scene_file.name}): na każdej scenie włączanej do gry "
+            f"powinien być ustawiony co najmniej jeden sekret (znaleziono {len(scene_secrets)})."
         )
 
     # Player start position and color (defaults to X=20, Y=68, Color=$98 if not defined)
@@ -2016,7 +2053,14 @@ def compile_scenes(
             return 1
 
         try:
-            sc_data = parse_scene_json(scene_file, enemies, secrets, profiles, sprites)
+            sc_data = parse_scene_json(
+                scene_file,
+                enemies,
+                secrets,
+                profiles,
+                sprites,
+                require_secret=True,
+            )
             compiled_scenes.append(sc_data)
             print(
                 f"Compiled scene: {sc_data.name} ({fname}) — "

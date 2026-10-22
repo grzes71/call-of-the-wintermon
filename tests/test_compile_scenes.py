@@ -79,8 +79,8 @@ def test_parse_01_forest_scene():
     assert scene.height == 96
     assert scene.primary_tileset_id == 3  # trees
     assert len(scene.elements) == 5
-    assert len(scene.platforms) == 11
-    assert len(scene.objects) == 6
+    assert len(scene.platforms) == 12
+    assert len(scene.objects) == 7
 
     # Verify enemy 1
     obj1 = scene.objects[0]
@@ -93,7 +93,7 @@ def test_parse_01_forest_scene():
     # Verify secret with blink
     exit_door = [o for o in scene.objects if o.def_id == 2 and o.type_code == 1][0]
     assert exit_door.blink is True
-    assert exit_door.atari_color == 72
+    assert exit_door.atari_color == secrets[2].atari_color
 
 
 def test_parse_02_forest_castle_scene():
@@ -417,6 +417,100 @@ def test_pmg_patterns_match_platform_widths():
     assert ".byte $FF, $F0, $FF" in asm_text
     assert "scene_pmg_patterns_lo" in asm_text
     assert "scene_pmg_patterns_hi" in asm_text
+
+
+# ==============================================================================
+# Game Scenes Invariants: Secret Presence & Row Color Profile Consistency
+# ==============================================================================
+
+def test_game_scenes_contain_at_least_one_secret():
+    """All scenes included in the game manifest must contain at least one secret."""
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+
+    for fname in manifest["scenes"]:
+        sc_path = Path("scenes") / fname
+        sc_data = parse_scene_json(sc_path, enemies, secrets, require_secret=True)
+        assert len(sc_data.secrets) >= 1, f"Scene '{sc_data.name}' ({fname}) must contain at least one secret."
+
+
+def test_compile_scenes_rejects_game_scene_without_secrets(tmp_path: Path):
+    """Game scenes missing secrets must fail compilation with a descriptive error."""
+    scene_file = tmp_path / "no_secrets.json"
+    scene_data = {
+        "scene": {"name": "Empty of Secrets", "width": 160, "height": 96},
+        "platforms": [
+            {"id": "p1", "type": "sprite", "position": {"x": 20, "y": 24}, "width": 32, "height": 4, "color_profile_id": 1}
+        ],
+        "objects": [
+            {"id": 1, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 24, "sprite_id": 1}
+        ],
+    }
+    scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    with pytest.raises(ValueError, match="powinien być ustawiony co najmniej jeden sekret"):
+        parse_scene_json(scene_file, enemies, secrets, require_secret=True)
+
+
+def test_game_scenes_have_consistent_row_color_profiles():
+    """All platforms in any given row in game scenes must share the same color profile."""
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+
+    for fname in manifest["scenes"]:
+        sc_path = Path("scenes") / fname
+        sc_data = parse_scene_json(sc_path, enemies, secrets)
+        # Check platform row color consistency
+        row_profiles: dict[int, int | None] = {}
+        for p in sc_data.platforms:
+            if p.y in row_profiles:
+                assert p.color_profile_id == row_profiles[p.y], (
+                    f"Scene '{sc_data.name}' ({fname}) row y={p.y} has conflicting platform color profiles."
+                )
+            else:
+                row_profiles[p.y] = p.color_profile_id
+
+
+def test_compile_scenes_rejects_row_color_profile_mismatch(tmp_path: Path):
+    """Platforms in the same row with conflicting color profiles must be rejected."""
+    scene_file = tmp_path / "cprof_mismatch.json"
+    scene_data = {
+        "scene": {"name": "Profile Mismatch", "width": 160, "height": 96},
+        "platforms": [
+            {"id": "p1", "type": "sprite", "position": {"x": 10, "y": 24}, "width": 32, "height": 4, "color_profile_id": 1},
+            {"id": "p2", "type": "sprite", "position": {"x": 60, "y": 24}, "width": 32, "height": 4, "color_profile_id": 2},
+        ],
+        "objects": [
+            {"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 12, "sprite_id": 8}
+        ],
+    }
+    scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    with pytest.raises(ValueError, match="Wszystkie platformy w danym wierszu muszą korzystać z jednego profilu kolorów"):
+        parse_scene_json(scene_file, enemies, secrets)
+
+
+def test_compile_scenes_rejects_platform_conflicting_with_scene_row_color_profiles(tmp_path: Path):
+    """Platform color profile conflicting with scene-level row_color_profiles must be rejected."""
+    scene_file = tmp_path / "row_cprof_conflict.json"
+    scene_data = {
+        "scene": {"name": "Row Profile Conflict", "width": 160, "height": 96},
+        "row_color_profiles": [None, 1, None, None, None, None],  # row index 1 = y 24 has profile 1
+        "platforms": [
+            {"id": "p1", "type": "sprite", "position": {"x": 10, "y": 24}, "width": 32, "height": 4, "color_profile_id": 3},
+        ],
+        "objects": [
+            {"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 12, "sprite_id": 8}
+        ],
+    }
+    scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    with pytest.raises(ValueError, match="profil zdefiniowany dla tego wiersza to 1"):
+        parse_scene_json(scene_file, enemies, secrets)
+
 
 
 

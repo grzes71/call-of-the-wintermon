@@ -81,12 +81,11 @@
       "blink": true,
       "rgb_color": [
         255,
-        0,
-        255
+        234,
+        0
       ],
-      "atari_color": 72,
-      "sprite_id": 7,
-      "dependency": 1
+      "atari_color": 28,
+      "sprite_id": 7
     },
     {
       "id": 3,

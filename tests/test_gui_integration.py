@@ -208,12 +208,12 @@ class TestMainWindowIntegration:
         assert len(warnings) == 1
         assert "Invalid Platform Position" in warnings[-1][0]
 
-        # 5. Try resizing platform 2 from 32 to 36 -> needs 2 sprites (total would be 4)
+        # 5. Try resizing platform 2 from 32 to 48 -> needs 2 sprites (total would be 4)
         p2_id = window.scene_model.platforms[1].id
         window._on_platform_selected(p2_id)
-        idx_prop_36 = window.plat_prop_width_combo.findData(36)
-        assert idx_prop_36 >= 0
-        window.plat_prop_width_combo.setCurrentIndex(idx_prop_36)
+        idx_prop_48 = window.plat_prop_width_combo.findData(48)
+        assert idx_prop_48 >= 0
+        window.plat_prop_width_combo.setCurrentIndex(idx_prop_48)
         assert window.scene_model.get_platform(p2_id).width == 32  # preserved
         assert len(warnings) == 2
         assert "Hardware Resource Limit" in warnings[-1][0]

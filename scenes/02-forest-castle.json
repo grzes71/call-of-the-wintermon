@@ -255,6 +255,7 @@
       "id": 5,
       "type": "secret",
       "definition_id": 2,
+      "dependency": 1,
       "platform_id": "platform-016",
       "x": 96
     }
