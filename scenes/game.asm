@@ -91,7 +91,10 @@ SCENE_TITLE_FADE_STEPS = 8
     sta SDLSTH
     sta DLISTH
 
-    ; 8. Initialize title card animation phase
+    ; 8. Initialize sound effects engine
+    jsr sfx_init
+
+    ; 9. Initialize title card animation phase
     lda #GAME_PHASE_TITLE_IN
     sta game_phase
     lda #0
@@ -287,6 +290,7 @@ SCENE_TITLE_FADE_STEPS = 8
     jsr enemies_update
     jsr secrets_check_player_collision
     jsr enemies_check_player_collision
+    jsr sfx_update
     rts
 .endp
 

@@ -48,6 +48,9 @@
     ; Require releasing fire button before accepting next press
     lda #0
     sta fire_released
+
+    ; Silence sound effects engine
+    jsr sfx_stop_all
     rts
 .endp
 

@@ -36,8 +36,12 @@ source_code:
       description: "Bit-reversal and playfield scanline offset lookup tables"
     - path: "engine/secrets.asm"
       description: "Collectible secrets runtime engine, animation looping and 5th-player missile rendering"
+    - path: "engine/enemies.asm"
+      description: "Enemy patrolling, collision detection and PMG rendering engine"
     - path: "engine/status_line.asm"
       description: "In-game HUD status line engine (ANTIC Mode 2, 40 columns)"
+    - path: "engine/sfx.asm"
+      description: "POKEY sound effects engine (walk, jump, fall, death)"
   scenes:
     - path: "scenes/title.asm"
       description: "Title screen state machine, scroll text raster driver and fade-in/out logic"

@@ -2,6 +2,30 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Implement POKEY Sound Effects Engine (Walk, Jump, Free Fall, Death)
+
+- **Sound Effects Engine ([engine/sfx.asm](engine/sfx.asm))**:
+  - Implemented standalone 6502 SFX engine for Atari POKEY using standard RAM for state (0 Zero Page bytes consumed).
+  - Implemented `sfx_init`: resets SKCTL ($D20F) to 3, AUDCTL ($D208) to 0, and silences all channels.
+  - Implemented `sfx_stop_all`: silences audio channels 1..4 and resets all active timers.
+  - Implemented Footstep SFX (`sfx_play_step`): 3-frame crisp poly4 noise click ($C0 distortion) on Channel 1, triggered on walk animation frames 1 and 3.
+  - Implemented Jump SFX (`sfx_play_jump`): 14-frame pure tone ($A0 distortion) upward pitch sweep ($84 down to $1A frequency divisor) on Channel 1, overriding footstep sound.
+  - Implemented Free Fall Wind Whoosh (`sfx_play_fall`, `sfx_stop_fall`, and auto-tracked in `sfx_update`): ambient poly17 rushing wind noise ($80 distortion) on Channel 2, active whenever Hero is in fall animation (`PLAYER_STATE_FALL`, `PLAYER_STATE_EMERGE`, or vertical jump descent step >= 13), and silenced immediately upon landing.
+  - Implemented Death SFX (`sfx_play_death`): 72-frame highest-priority sequence with initial impact crash on Channel 1 ($8C) and Channel 2 ($C8), followed by a 4-note mournful minor descending arpeggio (E4 -> D4 -> C4 -> A3) on Channel 1 matching the death animation duration.
+  - Implemented `sfx_update`: per-frame dispatcher managing envelopes, pitch sweeps, priority preemption, and channel silencing.
+- **Hardware Equates & Integration ([hardware.asm](hardware.asm), [main.asm](main.asm), [Makefile](Makefile), [manifest.yaml](manifest.yaml))**:
+  - Added `SKCTL = $D20F` equate to [hardware.asm](hardware.asm).
+  - Included `engine/sfx.asm` in `SCENES_DATA` ($5000) segment in [main.asm](main.asm), fitting with 386 bytes remaining before $6000.
+  - Registered `engine/sfx.asm` in `ASM_SRCS` in [Makefile](Makefile) and `engine` source files in [manifest.yaml](manifest.yaml).
+- **Scene & Player Triggers ([engine/player.asm](engine/player.asm), [scenes/game.asm](scenes/game.asm), [scenes/gameover.asm](scenes/gameover.asm))**:
+  - Initialized SFX engine in `game_init` via `jsr sfx_init`, updated per frame in `scenes/game.asm` `@do_playing` via `jsr sfx_update`.
+  - Silenced SFX engine in `scenes/gameover.asm` `gameover_init` and `engine/player.asm` `player_init` via `jsr sfx_stop_all`.
+  - Triggered `sfx_play_step` during walking animation updates in [engine/player.asm](engine/player.asm) `@tick_anim` on frames 1 and 3.
+  - Triggered `sfx_play_jump` in [engine/player.asm](engine/player.asm) `@setup_jump_state`.
+  - Triggered `sfx_play_death` in [engine/player.asm](engine/player.asm) `@regular_death` and upon completing bottom emergence at `@reached_target`.
+- **Test Suite ([tests/test_sfx.py](tests/test_sfx.py))**:
+  - Added py65 CPU emulation test suite verifying symbol presence, register initialization, footstep decay, jump sweep and override, fall wind auto-tracking, and death crash + arpeggio lifecycle.
+
 ## [2026-10-22] - Implement Hero Death Animation Sequence with Bottom Edge Emergence
 
 - **Zero Page Equates ([zeropage.asm](zeropage.asm))**:

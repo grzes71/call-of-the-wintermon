@@ -223,7 +223,8 @@ player_jump_anim_table_hi
     sta player_state
 
 @found_plat
-    ; 8. Render initial standing frame into PMG_PLAYER0
+    ; 8. Silence any playing sound effects and render initial frame
+    jsr sfx_stop_all
     jsr player_render_frame
     rts
 .endp
@@ -600,9 +601,22 @@ player_jump_anim_table_hi
     inc player_frame_idx
     lda player_frame_idx
     cmp #PLAYER_FRAME_COUNT
-    bcc @finish_update
+    bcc @check_footstep
     lda #0
     sta player_frame_idx
+
+@check_footstep
+    ; Trigger footstep sound when walking and stepping (frame 1 and frame 3)
+    lda player_state
+    cmp #PLAYER_STATE_WALK
+    bne @finish_update
+    lda player_frame_idx
+    cmp #1
+    beq @do_step_sfx
+    cmp #3
+    bne @finish_update
+@do_step_sfx
+    jsr sfx_play_step
 
 @finish_update
     ; 5. Check if Hero walked > 50% past the edge of the standing platform
@@ -769,6 +783,7 @@ player_jump_anim_table_hi
     sta player_frame_idx
     lda #$FF
     sta player_plat_idx     ; Airborne
+    jsr sfx_play_jump
     rts
 .endp
 
@@ -1206,6 +1221,9 @@ player_jump_anim_table_hi
     lda #PLAYER_ANIM_DEATH_DUR
     sta player_frame_timer
 
+    ; Trigger death sound effect
+    jsr sfx_play_death
+
     ; Render initial death frame
     jsr player_render_frame
     rts
@@ -1252,6 +1270,9 @@ player_jump_anim_table_hi
     sta player_frame_idx
     lda #PLAYER_ANIM_DEATH_DUR          ; 10
     sta player_frame_timer
+
+    ; Trigger death sound effect
+    jsr sfx_play_death
 
     ; Update HPOSP0 and render first death frame
     lda player_x

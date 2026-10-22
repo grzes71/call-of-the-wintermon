@@ -310,6 +310,7 @@ title_vs_buf
     icl 'engine/secrets.asm'
     icl 'engine/enemies.asm'
     icl 'engine/status_line.asm'
+    icl 'engine/sfx.asm'
 
 ; ==============================================================================
 ; TITLE DISPLAY LIST SEGMENT ($6000)

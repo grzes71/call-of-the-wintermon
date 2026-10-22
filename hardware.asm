@@ -89,6 +89,7 @@ AUDF4       = $D206     ; Częstotliwość kanału 4
 AUDC4       = $D207     ; Głośność i barwa kanału 4
 AUDCTL      = $D208     ; Kontrola zegarów i filtrów POKEY
 IRQEN       = $D20E     ; Włączenie przerwań IRQ z POKEY
+SKCTL       = $D20F     ; Kontrola portu szeregowego i reset POKEY
 
 ; --- OS Shadow Registers & Vectors ---
 RTCLOK      = $0012     ; Licznik klatek VBLANK (3 bajty: $12, $13, $14)
