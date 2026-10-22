@@ -260,7 +260,8 @@ def get_allowed_widths(platform_type: str) -> tuple[int, ...]:
 def get_required_platform_resources(platform_type: str, width: int) -> int:
     """Calculate the number of hardware resources (sprites or missiles) required for a platform.
 
-    - Sprite: ceil(width / 32) (1 resource up to 32px, 2 up to 64px, 3 up to 96px)
+    - Sprite: 24 px requires 2 sprites (16px double + 8px normal).
+      Otherwise ceil(width / 32) (1 resource up to 32px, 2 up to 64px, 3 up to 96px).
     - Missile: ceil(width / 8) (1 up to 8px, 2 up to 16px, 3 up to 24px, 4 up to 32px)
 
     Raises ModelValidationError if platform_type is invalid.
@@ -276,6 +277,8 @@ def get_required_platform_resources(platform_type: str, width: int) -> int:
             f"Invalid width {width} for {platform_type}. Allowed widths: {list(allowed)} px."
         )
     if platform_type == PLATFORM_TYPE_SPRITE:
+        if width == 24:
+            return 2
         return math.ceil(width / 32)
     elif platform_type == PLATFORM_TYPE_MISSILE:
         return math.ceil(width / 8)

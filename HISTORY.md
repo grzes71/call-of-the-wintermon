@@ -2,6 +2,21 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Fix Platform PMG Resource Calculation & Unify Row Color Profile Editing
+
+- **Platform 24px Hardware Resource Correction ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Corrected `get_required_platform_resources(platform_type, width)` for `PLATFORM_TYPE_SPRITE`: 24 px platform now returns 2 hardware sprites (16 px double + 8 px normal) instead of 1, adhering strictly to GTIA `SIZEP` register constraints and `compile_scenes.py` table `SUPPORTED_SPRITE_WIDTHS`.
+  - Updated resource limit validations to prevent placing combinations exceeding 3 sprites per row (e.g. 32px + 24px + 32px or 24px + 24px).
+  - Updated documentation in [atari-scene-editor/README.md](atari-scene-editor/README.md).
+- **Streamlined Platform Color Profile Editing ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - Removed separate "Platform Row Color Profiles" group box (`row_profiles_group`) and per-row comboboxes (`row_cprof_combos`) from the UI.
+  - Retained "Row Color Profile" (`plat_prop_color_profile_combo`) exclusively under "Selected Platform".
+  - Ensured changing "Row Color Profile" for any platform synchronizes `color_profile_id` across ALL platforms residing on that level/row via `ChangeRowColorProfileCommand`.
+- **Automated Verification ([tests/test_platform_editor.py](tests/test_platform_editor.py), [tests/test_platform_profiles.py](tests/test_platform_profiles.py), [tests/test_scene_objects.py](tests/test_scene_objects.py))**:
+  - Updated `test_sprite_resource_calculation_all_intervals` to assert 2 sprites for 24 px platforms.
+  - Added unit tests `test_sprite_platform_24px_resource_limit_rejection`, `test_two_24px_sprite_platforms_in_same_row_rejected`, and `test_resize_to_24px_enforces_limit`.
+  - Added GUI integration test `test_gui_changing_platform_profile_updates_all_platforms_in_same_row` verifying UI removal of `row_profiles_group` and row-wide profile synchronization with undo/redo.
+
 ## [2026-10-21] - Sprite Linkage Exclusively by Numeric ID (De-namification & Reversion)
 
 - **Numeric ID As Sole Linkage Key ([scripts/sprite_links.py](scripts/sprite_links.py))**:

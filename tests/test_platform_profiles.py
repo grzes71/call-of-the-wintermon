@@ -585,3 +585,55 @@ def test_scene_serialization_with_row_color_profiles(tmp_path: Path):
     assert loaded.row_color_profiles[:6] == [1, 2, 3, 4, 5, 6]
 
 
+def test_gui_changing_platform_profile_updates_all_platforms_in_same_row(tmp_path: Path):
+    from PySide6.QtWidgets import QApplication
+    from scene_editor.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(base_dir=tmp_path)
+
+    # 1. Verify "Platform Row Color Profiles" widget has been removed
+    assert not hasattr(window, "row_profiles_group")
+    assert not hasattr(window, "row_cprof_combos")
+
+    # Ensure profile 2 exists or add a profile
+    prof2 = window.catalogues.get_platform_profile(2)
+    if prof2 is None:
+        prof2 = PlatformColorProfile(id=2, name="Profile 2", colors=[0x90] * 8)
+        window.catalogues.add_platform_profile(prof2)
+
+    # 2. Add two platforms to row 1 (y=24)
+    p1 = PlatformElement(id="plat-row1-a", type="sprite", position=Position(10, 24), width=16, height=4)
+    p2 = PlatformElement(id="plat-row1-b", type="sprite", position=Position(50, 24), width=32, height=4)
+    window.scene_model.add_platform(p1)
+    window.scene_model.add_platform(p2)
+    window._sync_all()
+
+    # 4. Select plat-row1-a and change its "Row Color Profile" to Profile 2
+    window._on_platform_selected("plat-row1-a")
+    idx2 = window.plat_prop_color_profile_combo.findData(2)
+    assert idx2 >= 0
+    window.plat_prop_color_profile_combo.setCurrentIndex(idx2)
+
+    # 5. Verify ALL platforms in row 1 now have Profile 2
+    assert p1.color_profile_id == 2
+    assert p2.color_profile_id == 2
+    assert window.scene_model.get_row_color_profile_id(1) == 2
+
+    # 6. Verify selecting the other platform also displays Profile 2 in property panel
+    window._on_platform_selected("plat-row1-b")
+    assert window.plat_prop_color_profile_combo.currentData() == 2
+
+    # 7. Undo test: reverts both platforms
+    window.undo_stack.undo()
+    assert p1.color_profile_id is None
+    assert p2.color_profile_id is None
+    assert window.scene_model.get_row_color_profile_id(1) is None
+
+    # 8. Redo test: reapplies to both platforms
+    window.undo_stack.redo()
+    assert p1.color_profile_id == 2
+    assert p2.color_profile_id == 2
+    assert window.scene_model.get_row_color_profile_id(1) == 2
+
+

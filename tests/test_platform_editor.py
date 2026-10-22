@@ -128,11 +128,16 @@ class TestPlatformResourceCalculation:
     """Tests for shared hardware resource usage calculation: ceil(width / 32) and ceil(width / 8)."""
 
     def test_sprite_resource_calculation_all_intervals(self):
-        # 4–32 px -> 1 sprite
-        for w in (4, 8, 12, 16, 20, 24, 28, 32):
+        # 4–32 px (except 24 px) -> 1 sprite
+        for w in (4, 8, 12, 16, 20, 28, 32):
             assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, w) == 1
             plat = PlatformElement(f"s-{w}", PLATFORM_TYPE_SPRITE, Position(0, 8), w)
             assert plat.required_resources == 1
+
+        # 24 px requires 2 hardware sprites (16px double + 8px normal)
+        assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, 24) == 2
+        plat_24 = PlatformElement("s-24", PLATFORM_TYPE_SPRITE, Position(0, 8), 24)
+        assert plat_24.required_resources == 2
 
         # 36–64 px -> 2 sprites
         for w in (36, 40, 44, 48, 52, 56, 60, 64):
@@ -145,6 +150,36 @@ class TestPlatformResourceCalculation:
             assert get_required_platform_resources(PLATFORM_TYPE_SPRITE, w) == 3
             plat = PlatformElement(f"s-{w}", PLATFORM_TYPE_SPRITE, Position(0, 8), w)
             assert plat.required_resources == 3
+
+    def test_sprite_platform_24px_resource_limit_rejection(self):
+        """A 24px platform takes 2 sprites, so combining with two 32px platforms exceeds limit of 3."""
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(0, 24), 32))   # 1 sprite
+        scene.add_platform(PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(40, 24), 24))  # 2 sprites
+        assert scene.get_platform_row_usage(24) == (3, 0)
+
+        # Adding another 32px sprite must fail (3 + 1 = 4 > 3)
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("p3", PLATFORM_TYPE_SPRITE, Position(80, 24), 32))
+
+    def test_two_24px_sprite_platforms_in_same_row_rejected(self):
+        """Two 24px sprite platforms take 2 + 2 = 4 sprites, exceeding the limit of 3."""
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(0, 56), 24))
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(40, 56), 24))
+
+    def test_resize_to_24px_enforces_limit(self):
+        """Resizing from 16px (1 sprite) to 24px (2 sprites) in a row with two 32px platforms is rejected."""
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(0, 24), 32))
+        scene.add_platform(PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(40, 24), 16))
+        scene.add_platform(PlatformElement("p3", PLATFORM_TYPE_SPRITE, Position(60, 24), 32))
+        assert scene.get_platform_row_usage(24) == (3, 0)
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.resize_platform("p2", 24)
+        assert scene.get_platform("p2").width == 16
 
     def test_missile_resource_calculation_all_intervals(self):
         # 4–8 px -> 1 missile

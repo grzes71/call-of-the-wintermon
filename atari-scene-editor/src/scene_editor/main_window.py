@@ -543,18 +543,6 @@ class MainWindow(QMainWindow):
 
         p_layout.addWidget(self.plat_elem_group)
 
-        # Row Color Profiles Group
-        self.row_profiles_group = QGroupBox("Platform Row Color Profiles")
-        rp_layout = QFormLayout(self.row_profiles_group)
-        self.row_cprof_combos: list[QComboBox] = []
-        for r in range(6):
-            y_coord = 8 + r * 16
-            cb = QComboBox()
-            cb.currentIndexChanged.connect(lambda idx, row_idx=r: self._on_row_cprof_combo_changed(row_idx))
-            rp_layout.addRow(f"Row {r} (y={y_coord}):", cb)
-            self.row_cprof_combos.append(cb)
-        p_layout.addWidget(self.row_profiles_group)
-
         # Platforms List Group
         self.plat_list_group = QGroupBox("Platforms on Scene")
         pl_layout = QVBoxLayout(self.plat_list_group)
@@ -1927,7 +1915,8 @@ class MainWindow(QMainWindow):
         self.plat_prop_color_profile_combo.addItem("(None / Default)", None)
         for prof in sorted(self.catalogues.platform_profiles.values(), key=lambda p: p.name):
             self.plat_prop_color_profile_combo.addItem(f"{prof.name} [{prof.id}]", prof.id)
-        p_idx = self.plat_prop_color_profile_combo.findData(plat.color_profile_id)
+        prof_id = plat.color_profile_id if plat.color_profile_id is not None else self.scene_model.get_row_color_profile_id(plat.row_index)
+        p_idx = self.plat_prop_color_profile_combo.findData(prof_id)
         if p_idx >= 0:
             self.plat_prop_color_profile_combo.setCurrentIndex(p_idx)
         else:
@@ -1956,7 +1945,11 @@ class MainWindow(QMainWindow):
 
         new_prof_id = self.plat_prop_color_profile_combo.currentData()
         old_prof_id = self.scene_model.get_row_color_profile_id(plat.row_index)
-        if old_prof_id == new_prof_id:
+        if old_prof_id == new_prof_id and all(
+            p.color_profile_id == new_prof_id
+            for p in self.scene_model.platforms
+            if p.row_index == plat.row_index
+        ):
             return
 
         cmd = ChangeRowColorProfileCommand(
@@ -1968,40 +1961,8 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
-    def _on_row_cprof_combo_changed(self, row_idx: int) -> None:
-        if not hasattr(self, "row_cprof_combos") or row_idx >= len(self.row_cprof_combos):
-            return
-        cb = self.row_cprof_combos[row_idx]
-        new_prof_id = cb.currentData()
-        old_prof_id = self.scene_model.get_row_color_profile_id(row_idx)
-        if old_prof_id == new_prof_id:
-            return
-
-        cmd = ChangeRowColorProfileCommand(
-            self.scene_model,
-            row_idx,
-            old_prof_id,
-            new_prof_id,
-            callback=self._sync_all,
-        )
-        self.undo_stack.push(cmd)
-
     def _refresh_row_profiles(self) -> None:
-        if not hasattr(self, "row_cprof_combos"):
-            return
-        for r, cb in enumerate(self.row_cprof_combos):
-            cur_data = self.scene_model.get_row_color_profile_id(r)
-            cb.blockSignals(True)
-            cb.clear()
-            cb.addItem("(None / Default)", None)
-            for prof in sorted(self.catalogues.platform_profiles.values(), key=lambda p: p.name):
-                cb.addItem(f"{prof.name} [{prof.id}]", prof.id)
-            idx = cb.findData(cur_data)
-            if idx >= 0:
-                cb.setCurrentIndex(idx)
-            else:
-                cb.setCurrentIndex(0)
-            cb.blockSignals(False)
+        pass
 
     def _refresh_platform_creator_profiles(self) -> None:
         self._refresh_row_profiles()

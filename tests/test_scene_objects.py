@@ -1071,7 +1071,10 @@ class TestObjectRenderingAndGraphics:
         window.obj_prop_strategy_combo.setCurrentIndex(st_idx)
         assert obj.movement_strategy == STRATEGY_LEFT_RIGHT
 
-    def test_load_01_forest_scene_with_numeric_objects(self):
+    def test_load_01_forest_scene_with_numeric_objects(self, monkeypatch):
+        from PySide6.QtWidgets import QMessageBox
+        monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: None)
+        monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: None)
         window = MainWindow(base_dir=Path("."))
         forest_file = Path("scenes/01-forest.json")
         if forest_file.is_file():

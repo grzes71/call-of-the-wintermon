@@ -85,8 +85,8 @@
         255
       ],
       "atari_color": 72,
-      "dependency": 1,
-      "sprite_id": 7
+      "sprite_id": 7,
+      "dependency": 1
     },
     {
       "id": 3,
