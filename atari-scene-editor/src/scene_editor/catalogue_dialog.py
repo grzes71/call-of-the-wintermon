@@ -269,6 +269,17 @@ class CataloguesDialog(QDialog):
         blink_check = QCheckBox("Blink (cycle luminance)")
         form_layout.addRow("", blink_check)
 
+        # Secret-only "special" flag (behaviour implemented in a later stage)
+        special_check: Optional[QCheckBox] = None
+        if not is_enemy:
+            special_check = QCheckBox("Special (specjalny sekret)")
+            special_check.setChecked(False)
+            special_check.setToolTip(
+                "Marks this secret as special. The flag is saved in the catalogue; "
+                "its in-game behaviour will be implemented in a later stage."
+            )
+            form_layout.addRow("", special_check)
+
         # Sprite mapping option (from Sprite Studio)
         sprite_combo = QComboBox()
         sprite_combo.setToolTip("Select a sprite from Sprite Studio to map with this entry. Enabled when sprites are loaded.")
@@ -341,6 +352,7 @@ class CataloguesDialog(QDialog):
             self.secret_atari_spin = atari_spin
             self.secret_atari_hex_lbl = atari_hex_lbl
             self.secret_blink_check = blink_check
+            self.secret_special_check = special_check
             self.secret_sprite_combo = sprite_combo
             self.secret_btn_save = btn_save
             self.secret_btn_delete = btn_delete
@@ -779,6 +791,7 @@ class CataloguesDialog(QDialog):
             self._update_atari_enabled(False, False)
 
         self.secret_blink_check.setChecked(defn.blink)
+        self.secret_special_check.setChecked(bool(getattr(defn, "special", False)))
         self._populate_sprite_combo(
             getattr(self, "secret_sprite_combo", None),
             getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None),
@@ -810,6 +823,7 @@ class CataloguesDialog(QDialog):
         self.secret_atari_check.setChecked(False)
         self._update_atari_enabled(False, False)
         self.secret_blink_check.setChecked(False)
+        self.secret_special_check.setChecked(False)
         self._populate_sprite_combo(getattr(self, "secret_sprite_combo", None), None)
         self.secret_btn_delete.setEnabled(False)
 
@@ -834,6 +848,7 @@ class CataloguesDialog(QDialog):
             atari = self.secret_atari_spin.value()
 
         blink = self.secret_blink_check.isChecked()
+        special = self.secret_special_check.isChecked()
         sprite_val = self.secret_sprite_combo.currentData() if hasattr(self, "secret_sprite_combo") and self.secret_sprite_combo else None
         sprite_id = None
         if sprite_val is not None:
@@ -853,6 +868,7 @@ class CataloguesDialog(QDialog):
                 atari_color=atari,
                 blink=blink,
                 dependency=None,
+                special=special,
                 sprite_id=sprite_id,
                 sprite=None,
             )

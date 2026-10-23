@@ -265,19 +265,19 @@
       "dependency": 1
     },
     {
-      "id": 8,
-      "type": "secret",
-      "definition_id": 3,
-      "platform_id": "platform-004",
-      "x": 59,
-      "dependency": 2
-    },
-    {
       "id": 9,
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-009",
-      "x": 128,
+      "x": 148,
+      "dependency": 2
+    },
+    {
+      "id": 10,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-014",
+      "x": 7,
       "dependency": 2
     }
   ],

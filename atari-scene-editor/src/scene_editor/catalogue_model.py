@@ -204,6 +204,9 @@ class EnemyDefinition(CatalogDefinition):
 class SecretDefinition(CatalogDefinition):
     """Specific definition for a secret / collectible type."""
     dependency: Optional[int] = None
+    # Editor-only flag marking a "special" secret. Its in-game behaviour is not
+    # implemented yet - the flag is stored in the catalogue for later stages.
+    special: bool = False
 
     def validate(self) -> None:
         super().validate()
@@ -221,10 +224,17 @@ class SecretDefinition(CatalogDefinition):
                     f"Secret '{self.id}' cannot depend on itself."
                 )
 
+        if not isinstance(self.special, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'special' must be a boolean, got {self.special!r}."
+            )
+
     def to_dict(self) -> dict[str, Any]:
         d = super().to_dict()
         if self.dependency is not None:
             d["dependency"] = int(self.dependency)
+        if self.special:
+            d["special"] = True
         return d
 
     @classmethod
@@ -247,6 +257,12 @@ class SecretDefinition(CatalogDefinition):
                     f"Secret 'dependency' must be an integer between 1 and 255, got {raw_dep!r}."
                 )
 
+        raw_special = data.get("special", False)
+        if not isinstance(raw_special, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'special' must be a boolean, got {raw_special!r}."
+            )
+
         defn = cls(
             id=base_defn.id,
             name=base_defn.name,
@@ -256,6 +272,7 @@ class SecretDefinition(CatalogDefinition):
             sprite_id=base_defn.sprite_id,
             sprite=base_defn.sprite,
             dependency=dep,
+            special=raw_special,
         )
         defn.validate()
         return defn

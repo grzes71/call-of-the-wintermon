@@ -2,6 +2,17 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - "Special" Flag for Secrets in the Scene Editor
+
+- **Added**: a per-secret `special` flag in the Atari Scene Editor, requested as preparation for a later stage - the in-game behaviour is deliberately not implemented yet, so the flag is data-only for now.
+- **Model** ([atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py)): `SecretDefinition.special: bool = False`, validated as a strict boolean (any other type is rejected), serialized as `"special": true` **only when enabled** (an absent key means `false`, mirroring how the optional `dependency` is written), and accepted by `from_dict` for legacy files.
+- **UI** ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py)): the **Secrets** tab of the Project Catalogues dialog (`Ctrl+K`) gained a **"Special (specjalny sekret)"** checkbox - unchecked by default, cleared by *+ New Entry*, restored when an entry is selected, and written on *Add/Update Entry*. The Enemies tab is untouched (no `enemy_special_check`), since the flag is secret-specific.
+- **No compiler/ROM change**: `scripts/compile_scenes.py` ignores the key, and `scenes/definitions.json` stays byte-identical (no `special` keys added) until an entry is flagged in the editor - pinned by a test.
+- **Toolchain fix found on the way** ([scripts/migrate_sprite_links.py](scripts/migrate_sprite_links.py)): `order_definition_keys()` rebuilds every catalogue entry from an explicit key list, so `migrate_sprite_links.py --apply` would have silently dropped the new flag; it now carries `"special": true` for secrets (only when enabled, mirroring `SecretDefinition.to_dict()`). `scripts/sprite_links.py` mutates entries in place and already preserved unknown keys.
+- **Tests**: [tests/test_catalogues.py](tests/test_catalogues.py) - new `TestSecretSpecialFlag`: default off with the key omitted, round-trip when enabled, rejection of non-boolean values (model *and* `from_dict`), enemies without the field, persistence (the key appears only for the flagged entry), an asset-agnostic check that the project catalogue still round-trips unchanged, and two GUI tests (default unchecked; save -> re-select -> untick cycle verified against `definitions.json`). [tests/test_sprite_links.py](tests/test_sprite_links.py) - two regression tests that the migration and the resolver keep the flag and never invent it.
+- **Docs**: [atari-scene-editor/README.md](atari-scene-editor/README.md) documents the flag in section 6 (catalogue format) and the checkbox in section 8 (Objects tab / catalogue dialog).
+- **Verification**: full suite green (615 tests), `check_memory.py` SUCCESS.
+
 ## [2026-10-22] - Platform PMG Commits Moved to the Last Pre-Pas Scanline (Sprites Stand on Their Platform)
 
 - **Goal**: let a sprite stand directly on its platform (no flickering feet) without the 3-scanline margin.

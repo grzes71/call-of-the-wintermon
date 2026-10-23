@@ -595,3 +595,76 @@ def test_unused_catalog_sprite_resolves_when_added_to_new_scene(tmp_path: Path):
     assert out_scenes_asm.is_file()
     scenes_asm_text = out_scenes_asm.read_text(encoding="utf-8")
     assert "03-cave.json" in scenes_asm_text or "New Test Cave" in scenes_asm_text
+
+# -----------------------------------------------------------------------------
+# 10. Nowe pola kartoteki (np. flaga 'special' sekretów) muszą przetrwać narzędzia
+# -----------------------------------------------------------------------------
+def test_migration_preserves_secret_special_flag(tmp_path: Path):
+    """Migracja sprite'ów przebudowuje wpisy katalogu - nowe pola nie mogą ginąć."""
+    spr_json = {
+        "sprites": [
+            {"id": 7, "description": "Skull", "width": 8, "height": 8, "frames": []},
+            {"id": 8, "description": "Gold Key", "width": 8, "height": 8, "frames": []},
+        ]
+    }
+    spr_path = tmp_path / "objects.sprite.json"
+    spr_path.write_text(json.dumps(spr_json), encoding="utf-8")
+
+    defs_orig = {
+        "enemies": [],
+        "secrets": [
+            {"id": 8, "name": "Gold Key", "sprite": "Gold Key", "blink": True, "special": True},
+            {"id": 7, "name": "Skull", "sprite_id": 7},
+        ],
+        "platform_profiles": [],
+    }
+    defs_path = tmp_path / "definitions.json"
+    defs_path.write_text(json.dumps(defs_orig), encoding="utf-8")
+
+    scene_orig = {
+        "scene": {"name": "TestScene"},
+        "platforms": [],
+        "objects": [{"id": 1, "type": "secret", "definition_id": 8}],
+    }
+    sc_path = tmp_path / "scene.json"
+    sc_path.write_text(json.dumps(scene_orig), encoding="utf-8")
+    man_path = tmp_path / "scenes.json"
+    man_path.write_text(json.dumps({"scenes": ["scene.json"]}), encoding="utf-8")
+
+    assert run_migration(defs_path, spr_path, man_path, apply=True) is True
+
+    migrated = json.loads(defs_path.read_text(encoding="utf-8"))
+    by_id = {s["id"]: s for s in migrated["secrets"]}
+    # Legacy 'sprite' name migrated to sprite_id, the new flag survived untouched.
+    assert by_id[8]["sprite_id"] == 8
+    assert "sprite" not in by_id[8]
+    assert by_id[8]["blink"] is True
+    assert by_id[8]["special"] is True
+    # Entries that never used the flag must not gain it.
+    assert "special" not in by_id[7]
+
+
+def test_resolver_preserves_secret_special_flag(tmp_path: Path):
+    """Resolve definitions -> definitions_resolved.json: nowe pola przechodzą 1:1."""
+    spr_json = {
+        "sprites": [
+            {"id": 8, "description": "Gold Key", "width": 8, "height": 8, "frames": []},
+        ]
+    }
+    spr_path = tmp_path / "objects.sprite.json"
+    spr_path.write_text(json.dumps(spr_json), encoding="utf-8")
+
+    defs_orig = {
+        "enemies": [],
+        "secrets": [{"id": 8, "name": "Gold Key", "sprite_id": 8, "special": True}],
+        "platform_profiles": [],
+    }
+    defs_path = tmp_path / "definitions.json"
+    defs_path.write_text(json.dumps(defs_orig), encoding="utf-8")
+
+    out_path = tmp_path / "definitions_resolved.json"
+    resolve_definitions(defs_path, spr_path, out_path)
+
+    resolved = json.loads(out_path.read_text(encoding="utf-8"))
+    assert resolved["secrets"][0]["sprite_id"] == 8
+    assert resolved["secrets"][0]["special"] is True

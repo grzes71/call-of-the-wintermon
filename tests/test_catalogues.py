@@ -759,6 +759,135 @@ class TestSecretLinearDependencyChain:
 
 
 # =============================================================================
+# 8. Secret "Special" Flag (editor-only; engine behaviour comes later)
+# =============================================================================
+
+class TestSecretSpecialFlag:
+    """The `special` flag is stored and validated in the catalogue only.
+
+    The in-game behaviour is not implemented yet, so these tests pin down the data
+    contract: default off, JSON round-trip, persistence and the GUI checkbox.
+    """
+
+    def test_flag_defaults_to_off_and_is_omitted_from_json(self):
+        defn = SecretDefinition(id=1, name="Gold Key")
+        defn.validate()
+        assert defn.special is False
+        assert "special" not in defn.to_dict()
+
+        legacy = SecretDefinition.from_dict({"id": 1, "name": "Gold Key", "blink": False})
+        assert legacy.special is False
+        assert legacy == defn
+
+    def test_flag_roundtrip_when_enabled(self):
+        defn = SecretDefinition(id=4, name="Mjolnir", special=True)
+        defn.validate()
+        data = defn.to_dict()
+        assert data["special"] is True
+        assert SecretDefinition.from_dict(data) == defn
+
+    @pytest.mark.parametrize("invalid_special", [1, 0, "true", "yes", None, [], {}])
+    def test_flag_rejects_non_boolean_values(self, invalid_special):
+        with pytest.raises(CatalogueValidationError, match="special"):
+            defn = SecretDefinition(id=1, name="Item", special=invalid_special)
+            defn.validate()
+
+        with pytest.raises(CatalogueValidationError, match="special"):
+            SecretDefinition.from_dict({"id": 1, "name": "Item", "special": invalid_special})
+
+    def test_enemy_definitions_do_not_carry_the_flag(self):
+        enemy = EnemyDefinition(id=1, name="Cave Troll")
+        enemy.validate()
+        assert not hasattr(enemy, "special")
+        assert "special" not in enemy.to_dict()
+
+    def test_flag_persisted_only_for_enabled_entries(self, tmp_path: Path):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Gold Key"))
+        cats.add_secret(SecretDefinition(id=2, name="Mjolnir", special=True))
+        cats.save_to_dir(tmp_path)
+
+        definitions_file = tmp_path / "scenes" / "definitions.json"
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        by_id = {entry["id"]: entry for entry in data["secrets"]}
+        assert "special" not in by_id[1]
+        assert by_id[2]["special"] is True
+
+        loaded = ProjectCatalogues.load_from_dir(tmp_path)
+        assert loaded.get_secret(1).special is False
+        assert loaded.get_secret(2).special is True
+
+    def test_project_definitions_are_not_rewritten_by_the_new_flag(self):
+        """Rule 05: expectations come from the project data, not hardcoded values."""
+        definitions_file = Path("scenes") / "definitions.json"
+        if not definitions_file.is_file():
+            pytest.skip(f"{definitions_file} not found")
+
+        raw = json.loads(definitions_file.read_text(encoding="utf-8"))
+        secrets = raw.get("secrets", [])
+        if not secrets:
+            pytest.skip("project catalogue defines no secrets")
+
+        cats = ProjectCatalogues.load_from_dir(Path("."))
+        for entry in secrets:
+            defn = cats.get_secret(entry["id"])
+            assert defn is not None, f"secret {entry['id']} missing after load"
+            assert defn.special is False
+            assert defn.to_dict() == entry
+
+    def test_gui_secret_special_checkbox_is_unchecked_by_default(self, qapp):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Gold Key"))
+        dlg = CataloguesDialog(cats, parent=None)
+
+        assert dlg.secret_special_check.isChecked() is False
+        # Enemies have no such flag - the widget exists only on the Secrets tab.
+        assert not hasattr(dlg, "enemy_special_check")
+
+    def test_gui_secret_special_checkbox_saves_and_restores(self, qapp, tmp_path: Path):
+        cats = ProjectCatalogues()
+        dlg = CataloguesDialog(cats, base_dir=tmp_path, parent=None)
+
+        dlg._on_new_secret_clicked()
+        assert dlg.secret_special_check.isChecked() is False
+
+        dlg.secret_name_edit.setText("Mjolnir")
+        dlg.secret_special_check.setChecked(True)
+        dlg._on_save_secret_clicked()
+
+        saved = [s for s in cats.secrets.values() if s.name == "Mjolnir"]
+        assert len(saved) == 1
+        assert saved[0].special is True
+
+        definitions_file = tmp_path / "scenes" / "definitions.json"
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        persisted = [e for e in data["secrets"] if e["name"] == "Mjolnir"]
+        assert len(persisted) == 1
+        assert persisted[0]["special"] is True
+
+        # Selecting the entry restores the checkbox; "+ New Entry" clears it again.
+        dlg._refresh_secrets_list(select_id=saved[0].id)
+        assert dlg.secret_special_check.isChecked() is True
+
+        dlg._on_new_secret_clicked()
+        assert dlg.secret_special_check.isChecked() is False
+
+        # Unticking and saving the entry again drops the key from the file.
+        dlg._refresh_secrets_list(select_id=saved[0].id)
+        dlg.secret_special_check.setChecked(False)
+        dlg._on_save_secret_clicked()
+
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        persisted = [e for e in data["secrets"] if e["name"] == "Mjolnir"]
+        assert len(persisted) == 1
+        assert "special" not in persisted[0]
+
+
+# =============================================================================
+# 9. Sprite Studio Integration Tests
+# =============================================================================
+
+# =============================================================================
 # 8. Sprite Studio Integration Tests
 # =============================================================================
 
@@ -909,6 +1038,3 @@ class TestSpriteStudioIntegration:
         # Combos must now be enabled
         assert win.new_obj_sprite_combo.isEnabled()
         assert win.catalogues.sprites_path == sprite_file.resolve()
-
-
-
