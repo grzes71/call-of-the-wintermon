@@ -76,6 +76,28 @@ def zone_index(platform_y: int) -> int:
     return (platform_y - 8) // ZONE_HEIGHT if platform_y >= 8 else 0
 
 
+# Background palette: engine/dli.asm swaps COLPF0..2 once per zone. Per frame the zone order is
+# upper, upper, lower, lower, lower, upper (the lower zone starts at playfield line 44 and the
+# upper palette is restored at line 92).
+BG_ZONE_ORDER = ("upper", "upper", "lower", "lower", "lower", "upper")
+
+
+def scene_engine_index(scene_file: str) -> int:
+    """Engine scene index of a scene file (its position in scenes/scenes.json)."""
+    return scene_files().index(scene_file)
+
+
+def scene_background_palette(scene_index: int) -> dict[str, list[int]]:
+    """Background palette (upper/lower COLPF0..2) of the scene at that engine index.
+
+    Derived from the scene JSON, which is the single source of truth for the DLI colours.
+    """
+    scene_file = scene_files()[scene_index]
+    palette = load_scene(scene_file).get("background_palette")
+    assert palette is not None, f"{scene_file} stores no background_palette"
+    return {"upper": list(palette["upper"]), "lower": list(palette["lower"])}
+
+
 def expected_pmg_y(platform_y: int, sprite_height: int) -> int:
     """PMG scanline of a sprite resting on the platform row at `platform_y`."""
     return max(0, PMG_ROW_BASE + platform_y * 2 - sprite_height - SPRITE_TAIL_MARGIN)

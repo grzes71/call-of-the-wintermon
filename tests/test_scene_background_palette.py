@@ -35,11 +35,12 @@ from scripts.compile_scenes import (
     parse_scene_background_palette,
     parse_scene_json,
 )
+from tests.scene_expectations import BG_ZONE_ORDER
 
 _qapp = QApplication.instance() or QApplication([])
 
 # Zone order used by the DLI: pas 0,1 = upper; pas 2,3,4 = lower; pas 5 = upper
-ZONE_ORDER = ("upper", "upper", "lower", "lower", "lower", "upper")
+ZONE_ORDER = BG_ZONE_ORDER
 
 
 def _scene_dict(palette=None, elements=None, name: str = "Palette Scene") -> dict:

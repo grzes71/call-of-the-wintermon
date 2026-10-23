@@ -28,6 +28,11 @@ from py65.devices.mpu6502 import MPU
 from py65.memory import ObservableMemory
 
 from scripts.check_memory import parse_xex_segments
+from tests.scene_expectations import scene_background_palette
+
+# The DLI tests stage the second scene of the game progression (scenes/scenes.json order);
+# the expected background colours are read from that scene's JSON, never hardcoded.
+DLI_TEST_SCENE_INDEX = 1
 
 # Per-scanline CPU budget on a Mode D line with SDMCTL = $3E (full playfield +
 # single-line PMG DMA): ANTIC steals 3 (DL fetch) + 40 (playfield) + 5 (PMG) +
@@ -329,10 +334,10 @@ def test_dli_vblank_update_and_zone0():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Stage scene 1 (Forest Castle: has castles top $94, trees bottom $C4)
+    # Stage the second game scene (its background colours come from the scene JSON)
     run_subroutine(mpu, labels["DLI_INIT"])
 
-    mpu.a = 1  # Scene 1: 02-forest-castle
+    mpu.a = DLI_TEST_SCENE_INDEX
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
     assert mem[labels["DLI_SWAP_REQUESTED"]] == 1
 
@@ -344,13 +349,14 @@ def test_dli_vblank_update_and_zone0():
     assert mem[labels["DLI_SWAP_REQUESTED"]] == 0
     assert mem[labels["DLI_PAS_IDX"]] == 8
 
-    # 2. Upper palette applied to hardware and shadows (Scene 1 castles: $94, $D6, $EA)
-    assert mem[labels["COLPF0"]] == 0x94
-    assert mem[labels["COLOR0"]] == 0x94
-    assert mem[labels["COLPF1"]] == 0xD6
-    assert mem[labels["COLOR1"]] == 0xD6
-    assert mem[labels["COLPF2"]] == 0xEA
-    assert mem[labels["COLOR2"]] == 0xEA
+    # 2. Upper palette applied to hardware and shadows
+    upper = scene_background_palette(DLI_TEST_SCENE_INDEX)["upper"]
+    assert mem[labels["COLPF0"]] == upper[0]
+    assert mem[labels["COLOR0"]] == upper[0]
+    assert mem[labels["COLPF1"]] == upper[1]
+    assert mem[labels["COLOR1"]] == upper[1]
+    assert mem[labels["COLPF2"]] == upper[2]
+    assert mem[labels["COLOR2"]] == upper[2]
 
     # 3. COLBK and COLOR4 are strictly black ($00)
     assert mem[labels["COLBK"]] == 0x00
@@ -384,14 +390,17 @@ def test_dli_handler_full_execution_and_palette_transition():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Setup Scene 1 (02-forest-castle: castles upper $94, trees lower $C4)
+    # Setup the second game scene (its background colours come from the scene JSON)
     run_subroutine(mpu, labels["DLI_INIT"])
 
-    mpu.a = 1  # Scene 1
+    mpu.a = DLI_TEST_SCENE_INDEX
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
 
     run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
     assert mem[labels["DLI_PAS_IDX"]] == 8
+
+    upper = scene_background_palette(DLI_TEST_SCENE_INDEX)["upper"]
+    lower = scene_background_palette(DLI_TEST_SCENE_INDEX)["lower"]
 
     # Set Hero P0 registers to distinct values to ensure DLI never touches them
     HERO_HPOS = 0x77
@@ -408,7 +417,7 @@ def test_dli_handler_full_execution_and_palette_transition():
     # --- DLI 1 (Pas 0, line 8) ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 9
-    assert mem[labels["COLPF0"]] == 0x94, "Pas 0 must keep upper palette ($94)"
+    assert mem[labels["COLPF0"]] == upper[0], f"Pas 0 must keep upper palette (${upper[0]:02X})"
     assert mem[labels["COLBK"]] == 0x00
     assert mem[labels["HPOSP0"]] == HERO_HPOS
     assert mem[labels["SIZEP0"]] == HERO_SIZE
@@ -417,32 +426,32 @@ def test_dli_handler_full_execution_and_palette_transition():
     # --- DLI 2 (Pas 1, line 24) ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 10
-    assert mem[labels["COLPF0"]] == 0x94, "Pas 1 must keep upper palette ($94)"
+    assert mem[labels["COLPF0"]] == upper[0], f"Pas 1 must keep upper palette (${upper[0]:02X})"
 
     # --- DLI 3 (Pas 2, line 40) -> SWAPS TO LOWER PALETTE AT LINE 44 ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 11
-    # Lower palette (trees) is $C4, $C8, $DC!
-    assert mem[labels["COLPF0"]] == 0xC4, "Pas 2 must swap background palette to lower ($C4) at line 44"
-    assert mem[labels["COLPF1"]] == 0xC8
-    assert mem[labels["COLPF2"]] == 0xDC
+    # Lower zone palette is swapped in here
+    assert mem[labels["COLPF0"]] == lower[0], f"Pas 2 must swap background palette to lower (${lower[0]:02X}) at line 44"
+    assert mem[labels["COLPF1"]] == lower[1]
+    assert mem[labels["COLPF2"]] == lower[2]
 
     # --- DLI 4 (Pas 3, line 56) ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 12
-    assert mem[labels["COLPF0"]] == 0xC4, "Pas 3 must keep lower palette ($C4)"
+    assert mem[labels["COLPF0"]] == lower[0], f"Pas 3 must keep lower palette (${lower[0]:02X})"
 
     # --- DLI 5 (Pas 4, line 72) ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 13
-    assert mem[labels["COLPF0"]] == 0xC4, "Pas 4 must keep lower palette ($C4)"
+    assert mem[labels["COLPF0"]] == lower[0], f"Pas 4 must keep lower palette (${lower[0]:02X})"
 
     # --- DLI 6 (Pas 5, line 88) -> RESTORES UPPER PALETTE AT LINE 92 ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 14
-    assert mem[labels["COLPF0"]] == 0x94, "Pas 5 must restore background palette to upper ($94) at line 92"
-    assert mem[labels["COLPF1"]] == 0xD6
-    assert mem[labels["COLPF2"]] == 0xEA
+    assert mem[labels["COLPF0"]] == upper[0], f"Pas 5 must restore background palette to upper (${upper[0]:02X}) at line 92"
+    assert mem[labels["COLPF1"]] == upper[1]
+    assert mem[labels["COLPF2"]] == upper[2]
 
     # Verify VDSLST was hooked to DLI_STATUS_LINE on DLI 6
     vdslst_dli7 = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)

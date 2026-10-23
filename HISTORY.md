@@ -22,6 +22,9 @@
 - **Automated Verification ([tests/test_scene_background_palette.py](tests/test_scene_background_palette.py))**:
   - 39 new tests: model validation and hex parsing, serializer round-trip / absent key / corrupted palette, command undo-redo, compiler parsing and the JSON -> DLI table mapping (`[upper, upper, lower, lower, lower, upper]` per pas, zone 0 = upper), tileset fallback, an asset-agnostic check that every game scene stores the palette its DLI uses, and GUI flows (tab defaults, spinbox -> command, odd-value snapping, palette picker incl. cancel, clear button, save/reopen).
   - Full suite: 590 tests passing, `check_memory.py` SUCCESS with 5,253 bytes of headroom below `$C000`.
+- **Asset-agnostic DLI tests ([tests/test_dli_system.py](tests/test_dli_system.py), [tests/scene_expectations.py](tests/scene_expectations.py))**:
+  - `test_dli_vblank_update_and_zone0` and `test_dli_handler_full_execution_and_palette_transition` hardcoded the staged scene's colours (`$94/$D6/$EA` upper, `$C4/$C8/$DC` lower), so editing the palette in the editor broke them (rule 05 violation).
+  - Added `BG_ZONE_ORDER`, `scene_engine_index()` and `scene_background_palette(scene_index)` to `tests/scene_expectations.py`; the DLI tests now read the expected upper/lower triples from the scene JSON selected by `DLI_TEST_SCENE_INDEX`, so any palette edit in the editor keeps the suite green.
 
 ## [2026-10-22] - Snap Scene Editor Crops to the ANTIC Mode E Byte Grid (x and width)
 
