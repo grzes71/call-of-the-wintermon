@@ -3,7 +3,8 @@
 Validates:
 1. Status line display buffer (status_line_vram) is 40 bytes in ANTIC Mode 2.
 2. Initial player lives: 3 characters of decimal code 64 (heart glyphs) at columns 0..2.
-3. Centered scene name in internal screen codes across columns.
+3. Scene name left-aligned from column 4 (the centred variant is reserved for the
+   scene title card, dlist_scene_title).
 4. Collected CDs counter on far right (columns 38..39) as 2 decimal digits ($10..$19).
 5. Incrementation and clamping of CD count (max 99).
 6. Decrementation of player lives (clearing hearts).
@@ -17,6 +18,13 @@ import pytest
 from py65.devices.mpu6502 import MPU
 
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
+from scripts.compile_scenes import (
+    STATUS_NAME_COL,
+    STATUS_NAME_MAX,
+    text_to_screencodes_line,
+    text_to_screencodes_line_at,
+)
+from tests.scene_expectations import load_scene, scene_files
 
 
 def test_status_line_reset_and_init_scene0():
@@ -47,11 +55,23 @@ def test_status_line_reset_and_init_scene0():
     assert status_bytes[2] == 64, f"Column 2 must be heart glyph (64), got {status_bytes[2]}"
     assert status_bytes[3] == 0, "Column 3 must be space"
 
-    # 2. Center: scene name "The Forest Whispers My Name"
-    # Expected screen code bytes from scene_sc_01_forest_name_line
-    exp_name_line = list(mem[labels["SCENE_SC_01_FOREST_NAME_LINE"] : labels["SCENE_SC_01_FOREST_NAME_LINE"] + 40])
-    # The centered title is between columns 6 and 32
-    assert status_bytes[6:33] == exp_name_line[6:33]
+    # 2. Scene name: left-aligned from column 4 (columns 0..2 lives, column 3 spacer).
+    #    Expected bytes come from the scene JSON through the compiler helper (Rule 05).
+    scene_name = load_scene(scene_files()[0])["scene"]["name"]
+    exp_hud = text_to_screencodes_line_at(
+        scene_name, start_col=STATUS_NAME_COL, width=40, max_len=STATUS_NAME_MAX
+    )
+    assert status_bytes[4:38] == exp_hud[4:38]
+    assert status_bytes[4] == exp_hud[4] != 0, (
+        "the scene name must start exactly at column 4 (no leading blank)"
+    )
+
+    # The centred variant is still compiled for the scene title card.
+    exp_title = text_to_screencodes_line(scene_name, width=40)
+    title_bytes = list(
+        mem[labels["SCENE_SC_01_FOREST_NAME_LINE"] : labels["SCENE_SC_01_FOREST_NAME_LINE"] + 40]
+    )
+    assert title_bytes == exp_title
 
     # 3. Far right: 2 digits "00" in screen codes ($10, $10)
     assert status_bytes[38] == 0x10, f"Column 38 must be '0' ($10), got ${status_bytes[38]:02X}"
@@ -78,9 +98,13 @@ def test_status_line_init_scene1():
     # Left: 3 hearts
     assert status_bytes[0:3] == [64, 64, 64]
 
-    # Center: "Be Quick or Be Dead" (columns 10..28)
-    exp_name_line = list(mem[labels["SCENE_SC_02_FOREST_CASTLE_NAME_LINE"] : labels["SCENE_SC_02_FOREST_CASTLE_NAME_LINE"] + 40])
-    assert status_bytes[10:29] == exp_name_line[10:29]
+    # Scene name: left-aligned from column 4 (no leading blank there)
+    scene_name = load_scene(scene_files()[1])["scene"]["name"]
+    exp_hud = text_to_screencodes_line_at(
+        scene_name, start_col=STATUS_NAME_COL, width=40, max_len=STATUS_NAME_MAX
+    )
+    assert status_bytes[4:38] == exp_hud[4:38]
+    assert status_bytes[4] == exp_hud[4] != 0
 
     # Right: 07 CDs ($10, $17)
     assert status_bytes[38] == 0x10  # '0'

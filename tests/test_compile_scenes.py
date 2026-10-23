@@ -15,6 +15,9 @@ from scripts.compile_scenes import (
     resolve_tileset_id,
     char_to_atari_screencode,
     text_to_screencodes_line,
+    text_to_screencodes_line_at,
+    STATUS_NAME_COL,
+    STATUS_NAME_MAX,
     PAS_Y_COORDS,
     PlatformData,
     SceneDliCompiledData,
@@ -42,6 +45,27 @@ def test_text_to_screencodes_line():
         char_to_atari_screencode("t"),
     ]
     assert line[22:] == [0] * 18
+
+
+def test_text_to_screencodes_line_at_status_line_layout():
+    """Status-line variant: left-aligned at STATUS_NAME_COL, never touching the CD digits."""
+    line = text_to_screencodes_line_at("Forest", start_col=STATUS_NAME_COL, width=40,
+                                       max_len=STATUS_NAME_MAX)
+    assert len(line) == 40
+    # Columns 0..2 hold the lives and column 3 the spacer, so the name starts at column 4.
+    assert line[:STATUS_NAME_COL] == [0] * STATUS_NAME_COL
+    assert line[STATUS_NAME_COL] == char_to_atari_screencode("F")
+    assert line[STATUS_NAME_COL:STATUS_NAME_COL + 6] == [
+        char_to_atari_screencode(c) for c in "Forest"
+    ]
+    # Everything after the text is blank - including the CD counter columns 38..39.
+    assert line[STATUS_NAME_COL + 6:] == [0] * (40 - STATUS_NAME_COL - 6)
+
+    # A name longer than the reserved area is truncated before the counter.
+    long_line = text_to_screencodes_line_at("X" * 60, start_col=STATUS_NAME_COL,
+                                            width=40, max_len=STATUS_NAME_MAX)
+    assert long_line[STATUS_NAME_COL:38] == [char_to_atari_screencode("X")] * STATUS_NAME_MAX
+    assert long_line[38:] == [0, 0], "the name must never overwrite the CD counter"
 
 
 def test_sanitize_symbol():
@@ -136,6 +160,10 @@ def test_compile_scenes_full_pipeline(tmp_path):
     assert "scene_sc_02_forest_castle_name_line" in content
     assert "scene_name_line_lo" in content
     assert "scene_name_line_hi" in content
+    assert "scene_sc_01_forest_hud_line" in content
+    assert "scene_sc_02_forest_castle_hud_line" in content
+    assert "scene_hud_line_lo" in content
+    assert "scene_hud_line_hi" in content
     assert "scene_elem_count" in content
     assert "scene_plat_count" in content
     assert "scene_obj_count" in content
@@ -174,6 +202,10 @@ def test_mads_symbols_present_in_built_xex():
         "scene_sc_02_forest_castle_name_line",
         "scene_name_line_lo",
         "scene_name_line_hi",
+        "scene_sc_01_forest_hud_line",
+        "scene_sc_02_forest_castle_hud_line",
+        "scene_hud_line_lo",
+        "scene_hud_line_hi",
         "dlist_scene_title",
         "scene_elem_count",
         "scene_plat_count",
@@ -559,8 +591,13 @@ def test_generated_asm_contains_secret_special_tables():
 
     assert "scene_secret_special_lo" in asm_text
     assert "scene_secret_special_hi" in asm_text
+    assert "scene_hud_line_lo" in asm_text
+    assert "scene_hud_line_hi" in asm_text
     for scene_file_name in manifest["scenes"]:
         scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
         assert f"scene_{scene_data.symbol_name}_secret_special" in asm_text, (
             f"{scene_file_name}: compiled secret_special table missing from the generated ASM"
+        )
+        assert f"scene_{scene_data.symbol_name}_hud_line" in asm_text, (
+            f"{scene_file_name}: compiled status-line (HUD) table missing from the generated ASM"
         )

@@ -2,9 +2,12 @@
 ; ENGINE/STATUS_LINE.ASM — In-Game Status Line (ANTIC Mode 2, 40 Columns)
 ; Target: Atari 800XL / 65XE (MOS 6502)
 ; Layout (40 chars):
-; - Left: Player lives (initially 3), displayed as heart glyphs (character code 64)
-; - Center: Scene name pre-centered in screen codes
-; - Right: Collected CDs count (0..99, 2-digit number in screen codes $10..$19)
+; - Columns 0..2: Player lives (initially 3), displayed as heart glyphs (code 64)
+; - Column 3: spacer
+; - Columns 4..37: Scene name, left-aligned from column 4 - pre-formatted by the
+;   compiler in scene_<scene>_hud_line. The centred scene_<scene>_name_line is
+;   only used by the scene title card (dlist_scene_title).
+; - Columns 38..39: Collected CDs count (0..99, 2-digit number in screen codes $10..$19)
 ; ==============================================================================
 
 STATUS_LINE_WIDTH   = 40
@@ -31,8 +34,9 @@ STATUS_INIT_LIVES   = 3
 ; ==============================================================================
 ; STATUS LINE INIT
 ; Initializes status line for the specified scene.
-; Copies the centered scene name into status_line_vram, then writes player
-; lives (hearts) at columns 0..2 and collected CDs at columns 38..39.
+; Copies the pre-formatted HUD line (scene name left-aligned from column 4) into
+; status_line_vram, then writes player lives (hearts) at columns 0..2 and collected
+; CDs at columns 38..39.
 ; Input: A = scene_id (0..SCENE_COUNT-1)
 ; Preserves: X
 ; ==============================================================================
@@ -46,14 +50,14 @@ STATUS_INIT_LIVES   = 3
     txa
     pha
 
-    ; 1. Point zp_ptr_src to scene_name_line for this scene
+    ; 1. Point zp_ptr_src to the pre-formatted HUD line for this scene
     ldx active_scene_id
-    lda scene_name_line_lo,x
+    lda scene_hud_line_lo,x
     sta zp_ptr_src
-    lda scene_name_line_hi,x
+    lda scene_hud_line_hi,x
     sta zp_ptr_src+1
 
-    ; 2. Copy 40 bytes of pre-centered scene name line to status_line_vram
+    ; 2. Copy the 40 bytes of the HUD line (name already at column 4) to status_line_vram
     ldy #STATUS_LINE_WIDTH - 1
 @copy_name
     lda (zp_ptr_src),y

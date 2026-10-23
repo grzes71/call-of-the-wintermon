@@ -2,6 +2,26 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-23] - Intro Screen Extended to 12 Lines
+
+- **Change**: the intro screen shows 12 text lines instead of 10 (the intro text was already written for 12), so `texts/intro.txt` and the display list agree again - `make all` and `tests/test_intro_screen.py` were failing on the 10-line limit.
+- **Generator** ([scripts/gen_intro_text.py](scripts/gen_intro_text.py)): the magic numbers are gone - `INTRO_TEXT_LINES = 12`, `INTRO_TEXT_COLS = 40`, `INTRO_TEXT_SIZE = 480`, used by the line-count check, the 40-column check, the buffer assertion and the log message.
+- **Display list** ([main.asm](main.asm)): `dlist_intro` gained lines 11 and 12, keeping the existing rhythm (3 x `DL_BLANK8` top margin, 8 empty scanlines between lines, 3 x `DL_BLANK8` bottom margin). The block is now 232 of the 240 PAL scanlines, so the text stays vertically centred with 8 scanlines of slack. The VRAM segment comment documents `$2800-$29DF` (480 bytes).
+- **Memory**: the font + intro text segment grows from $2400-$298F to $2400-$29DF, still well below the intro display list at $2A00 (the DLIST itself is unchanged at 30 bytes). Headroom below `$C000`: 5,436 -> 5,352 bytes.
+- **Tests** ([tests/test_intro_screen.py](tests/test_intro_screen.py)): the generator test now derives the expected size from `INTRO_TEXT_SIZE`, asserts that the source text holds exactly `INTRO_TEXT_LINES` non-empty lines and that every source line appears in the generated binary (Rule 05); a new test walks `dlist_intro` in the built ROM and asserts 12 ANTIC Mode 2 instructions, a single LMS pointing at `intro_text`, `height <= 240` with at most 16 scanlines of slack and at least `INTRO_TEXT_LINES - 1` blank separators - so growing the text without growing the display list now fails in CI instead of on screen.
+- **Docs**: [README.md](README.md) describes the intro as 12-line; [scenes/intro.asm](scenes/intro.asm) header comment updated.
+- **Verification**: `make all` green again - 622 tests passing, `check_memory.py` SUCCESS, 5,352 bytes of headroom below `$C000`.
+
+## [2026-10-23] - Status Line: Scene Name Fixed at Column 4
+
+- **Change**: the bottom HUD (ANTIC Mode 2) no longer centres the scene name - it is always printed from column 4, right after the three life hearts and one spacer.
+- **Two compiled variants, one per use** ([scripts/compile_scenes.py](scripts/compile_scenes.py)): `scene_<scene>_name_line` stays **centred** (it is the scene title card's LMS operand, `dlist_scene_title`), while the new `scene_<scene>_hud_line` is left-aligned at `STATUS_NAME_COL = 4` and truncated to `STATUS_NAME_MAX = 34` characters so a long name can never overwrite the CD counter at columns 38..39. Added the `text_to_screencodes_line_at()` helper and the `scene_hud_line_lo/hi` pointer pair next to `scene_name_line_lo/hi`.
+- **Engine** ([engine/status_line.asm](engine/status_line.asm)): `status_line_init` now blits the HUD line (`scene_hud_line_*`) instead of the centred name line - the layout is still pre-formatted by the compiler, so no runtime shift or scan is needed. The header comment documents the column layout.
+- **Why not one shared line**: `game_run` points the title card's LMS operand at the same `scene_name_line_*` table, so re-aligning that line would have moved the big centred scene title as well.
+- **Memory**: scene SoA tables 622 -> 706 bytes (+84: two 40-byte lines and two pointer pairs), headroom below `$C000` 5,520 -> 5,436 bytes.
+- **Tests** (621 total, +1): [tests/test_status_line.py](tests/test_status_line.py) derives both lines from the scene JSON (Rule 05), asserts that the name starts exactly at column 4 and that the title-card line is still centred; [tests/test_compile_scenes.py](tests/test_compile_scenes.py) covers the new helper (start column, truncation, blank tail) plus the new symbols in the generated ASM, in the full pipeline and in the built XEX.
+- **Verification**: 620 passed, 1 pre-existing failure unrelated to this change - `tests/test_intro_screen.py::test_generate_intro_text_from_file` (and `make all`) fail because `texts/intro.txt` currently has 12 lines while the 10-line intro screen and its generator require exactly 10. `check_memory.py` SUCCESS.
+
 ## [2026-10-22] - Secret-Collect Sound (Normal vs "Special" Secrets, Silent on the Last One)
 
 - **Added**: a short POKEY blip played when the hero collects a secret, with two variants and one deliberate exception.

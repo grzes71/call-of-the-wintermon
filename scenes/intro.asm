@@ -1,6 +1,6 @@
 ; ==============================================================================
 ; SCENES/INTRO.ASM — Intro Screen State Handler
-; 10 lines of ANTIC 2 (Gr.0 40x8), separated by 8 empty scanlines (DL_BLANK8).
+; 12 lines of ANTIC 2 (Gr.0 40x8), separated by 8 empty scanlines (DL_BLANK8).
 ; Centered horizontally. Foreground: light green ($CA), Background: black ($00).
 ; ==============================================================================
 

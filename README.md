@@ -24,7 +24,7 @@ Plik wynikowy `call_of_the_wintermon.xex` został zaprojektowany z myślą o kom
   - Tęczowy gradient tła (8 scanlinii w rejestrze `COLPF2` synchronizowanych `WSYNC` w przerwaniu DLI).
   - Odtwarzanie utworu tytułowego na silniku audio POKEY.
 - **Ekran wprowadzający (Intro)**:
-  - 10-wierszowy tekst wprowadzający w trybie ANTIC Mode 2 z dedykowanym zestawem znaków (1 KB font w `$2400`).
+  - 12-wierszowy tekst wprowadzający w trybie ANTIC Mode 2 z dedykowanym zestawem znaków (1 KB font w `$2400`).
   - Dedykowana ścieżka muzyczna intro skompilowana z notacji DSL.
 - **Rozgrywka (Gameplay)**:
   - Ekran rozgrywki w trybie ANTIC Mode D (160 × 96 pikseli).
@@ -43,7 +43,7 @@ Plik wynikowy `call_of_the_wintermon.xex` został zaprojektowany z myślą o kom
 - **Linia statusowa (HUD)**:
   - Stały wiersz tekstu ANTIC Mode 2 na dole ekranu.
   - Licznik pozostałych żyć (serca o kodzie wewnętrznym 64).
-  - Wycentrowana nazwa bieżącej sceny.
+  - Nazwa bieżącej sceny wyrównana do lewej od kolumny 4 (kolumny 0–2: życia, kolumna 3: odstęp, kolumny 38–39: licznik CD).
   - Dwucyfrowy licznik zebranych płyt CD (`00`–`99`).
 - **Ekran końca gry**:
   - Obsługa stanów `GAME_FAILED` (porażka) oraz `GAME_SUCCESS` (zwycięstwo) z dedykowanymi wierszami poezji i bezpiecznym powrotem do ekranu tytułowego.
@@ -170,5 +170,3 @@ Sprite Studio oraz Scene Editor łączą się wyłącznie poprzez numeryczny ide
   - Jeśli `sprite_id` nie istnieje w pliku sprite'ów, proces budowy (`make`) zgłosi błąd z listą dostępnych ID i nazw pomocniczych.
   - Przeniesienie sprite'a pod numer zajęty przez inny sprite nie jest wykrywane przez resolver (obiekty automatycznie przyjmą nowy wygląd przypisany do danego numeru).
   - Obiekty sceny nie zapisują pola `sprite_id`, jeśli ich powiązanie jest identyczne z domyślnym z katalogu.
-
-

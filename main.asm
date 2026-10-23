@@ -11,7 +11,7 @@
 ; --- Memory Map Equates ---
 CODE_ADDR   = $2000
 FONT_ADDR   = $2400     ; 1 KB aligned font (1024 bytes: $2400-$27FF)
-INTRO_VRAM  = $2800     ; Intro text VRAM (400 bytes: $2800-$298F)
+INTRO_VRAM  = $2800     ; Intro text VRAM (480 bytes: $2800-$29DF, 12 lines x 40 cols)
 INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
 TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: $2A30-$2C1D)
 GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
@@ -138,7 +138,7 @@ intro_font
     ins 'fonts/font.fnt'
 
 ; ==============================================================================
-; INTRO TEXT VRAM SEGMENT ($2800) - 400 bytes (10 lines x 40 bytes)
+; INTRO TEXT VRAM SEGMENT ($2800) - 480 bytes (12 lines x 40 bytes)
 ; ==============================================================================
     org INTRO_VRAM
 intro_text
@@ -146,7 +146,9 @@ intro_text
 
 ; ==============================================================================
 ; INTRO DISPLAY LIST SEGMENT ($2A00)
-; 10 lines in ANTIC mode 2 with 8 empty scanlines between each line
+; 12 lines in ANTIC mode 2 with 8 empty scanlines between each line:
+; 3 x DL_BLANK8 + 12 x (8 + 8) + 3 x DL_BLANK8 = 232 scanlines (PAL screen is 240,
+; so the text block stays vertically centred with 8 scanlines of slack at the bottom)
 ; ==============================================================================
     org INTRO_DLIST
 dlist_intro
@@ -192,6 +194,14 @@ dlist_intro
     .byte DL_BLANK8
 
     ; Line 10
+    .byte DL_MODE_2
+    .byte DL_BLANK8
+
+    ; Line 11
+    .byte DL_MODE_2
+    .byte DL_BLANK8
+
+    ; Line 12
     .byte DL_MODE_2
 
     .byte DL_BLANK8

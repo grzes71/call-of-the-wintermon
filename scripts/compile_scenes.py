@@ -112,13 +112,45 @@ def char_to_atari_screencode(c: str) -> int:
 
 
 def text_to_screencodes_line(text: str, width: int = 40) -> list[int]:
-    """Center text within width characters and convert to Atari screen codes."""
+    """Center text within width characters and convert to Atari screen codes.
+
+    Used for the scene title card (dlist_scene_title LMS operand).
+    """
     stripped = text.strip()
     if len(stripped) > width:
         stripped = stripped[:width]
     pad_left = (width - len(stripped)) // 2
     pad_right = width - len(stripped) - pad_left
     padded = (" " * pad_left) + stripped + (" " * pad_right)
+    return [char_to_atari_screencode(c) for c in padded]
+
+
+# Bottom status line (ANTIC Mode 2, 40 columns) layout:
+#   columns 0..2  - remaining lives (heart glyphs)
+#   column  3     - spacer
+#   columns 4..37 - scene name, always starting at STATUS_NAME_COL
+#   columns 38..39- collected CD counter
+STATUS_NAME_COL = 4
+STATUS_NAME_MAX = 34
+
+
+def text_to_screencodes_line_at(
+    text: str,
+    start_col: int,
+    width: int = 40,
+    max_len: Optional[int] = None,
+) -> list[int]:
+    """Convert text to Atari screen codes, left-aligned at `start_col` (rest blank).
+
+    The bottom status line keeps the lives and a spacer to the left of the name, so
+    the name is left-aligned at `STATUS_NAME_COL` instead of being centred. `max_len`
+    caps the text so a long name can never run into the CD counter on the right.
+    """
+    stripped = text.strip()
+    limit = width - start_col if max_len is None else min(max_len, width - start_col)
+    if len(stripped) > limit:
+        stripped = stripped[:limit]
+    padded = (" " * start_col) + stripped + (" " * (width - start_col - len(stripped)))
     return [char_to_atari_screencode(c) for c in padded]
 
 
@@ -1543,12 +1575,19 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         sym = sc.symbol_name
         screencodes = text_to_screencodes_line(sc.name, width=40)
         sc_bytes = ", ".join(f"${b:02X}" for b in screencodes)
+        # Status line (bottom HUD): same name, but left-aligned at STATUS_NAME_COL.
+        hud_screencodes = text_to_screencodes_line_at(
+            sc.name, start_col=STATUS_NAME_COL, width=40, max_len=STATUS_NAME_MAX
+        )
+        hud_bytes = ", ".join(f"${b:02X}" for b in hud_screencodes)
         lines.extend([
             "; " + "=" * 78,
             f"; SCENE {idx}: {sc.name} ({sc.file_stem}.json)",
             "; " + "=" * 78,
             f"scene_{sym}_name_line",
             f"    .byte {sc_bytes}",
+            f"scene_{sym}_hud_line",
+            f"    .byte {hud_bytes}",
             "",
         ])
 
@@ -1711,6 +1750,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_name_line" for sc in scenes),
         "scene_name_line_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_name_line" for sc in scenes),
+        "scene_hud_line_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_hud_line" for sc in scenes),
+        "scene_hud_line_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_hud_line" for sc in scenes),
         "",
         "scene_width_px",
         "    .byte " + ", ".join(str(sc.width) for sc in scenes),
