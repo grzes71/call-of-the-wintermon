@@ -65,6 +65,7 @@ def scene_objects(scene_file: str, kind: str) -> list[dict[str, Any]]:
                 "sprite_id": obj.get("sprite_id", definition.get("sprite_id")),
                 "atari_color": definition.get("atari_color"),
                 "blink": bool(definition.get("blink", False)),
+                "special": bool(definition.get("special", False)),
             }
         )
     return objects
@@ -316,4 +317,3 @@ def complete_victory_hold(mpu, mem, labels, run_subroutine) -> None:
         mem[labels["GAME_PHASE"]] != labels["GAME_PHASE_VICTORY"]
         or mem[labels["GAME_RESULT"]] == labels["GAME_SUCCESS"]
     ), "the victory hold must end after SFX_VICTORY_DURATION frames"
-

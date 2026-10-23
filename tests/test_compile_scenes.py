@@ -525,3 +525,42 @@ def test_compile_scenes_rejects_platform_conflicting_with_scene_row_color_profil
 
 
 
+def test_compiled_secret_special_flag_matches_catalogue():
+    """SceneSecretData.special mirrors the catalogue flag (Rule 05: derived from JSON).
+
+    The flag drives the secret-collect sound in the engine (scenes/game.asm ->
+    engine/sfx_secret.asm), so a wrong value would be audible in game.
+    """
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+
+    checked = 0
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        for secret in scene_data.secrets:
+            catalogue_item = secrets.get(secret.def_id)
+            expected = bool(getattr(catalogue_item, "special", False)) if catalogue_item else False
+            assert secret.special is expected, (
+                f"{scene_file_name}: secret {secret.id} (def {secret.def_id}) 'special' mismatch"
+            )
+            checked += 1
+    assert checked, "at least one compiled secret must be checked"
+
+
+def test_generated_asm_contains_secret_special_tables():
+    """Every scene emits the secret_special SoA table plus the shared pointer pair."""
+    asm_path = Path("gen/scenes_data.asm")
+    if not asm_path.is_file():
+        pytest.skip("gen/scenes_data.asm not found, run 'make data' first")
+
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    asm_text = asm_path.read_text(encoding="utf-8")
+
+    assert "scene_secret_special_lo" in asm_text
+    assert "scene_secret_special_hi" in asm_text
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        assert f"scene_{scene_data.symbol_name}_secret_special" in asm_text, (
+            f"{scene_file_name}: compiled secret_special table missing from the generated ASM"
+        )

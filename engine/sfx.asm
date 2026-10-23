@@ -10,6 +10,10 @@
 ;   5. Victory    (Level)  - Ch 1: rising 4-note major arpeggio fanfare (64 frames)
 ;                            (implemented in engine/sfx_victory.asm, which lives in
 ;                             the $2A30 segment to keep the $5000 block from overflowing)
+;   6. Secret     (Collect)- Ch 3: short rising blip (6 frames, or 9 for a secret with
+;                            "special": true), skipped when the collected secret is the
+;                            last one of the scene (that plays the victory fanfare)
+;                            (implemented in engine/sfx_secret.asm, $2A30 segment)
 ;
 ; Public API:
 ;   sfx_init         - Reset POKEY & all SFX state
@@ -20,6 +24,8 @@
 ;   sfx_stop_fall    - Stop free-fall wind sound (Channel 2)
 ;   sfx_play_death   - Trigger death sound sequence
 ;   sfx_play_victory - Trigger level-complete victory fanfare (engine/sfx_victory.asm)
+;   sfx_play_secret_collect - Trigger the secret-collect blip, A = 0 normal / 1 special
+;                             (engine/sfx_secret.asm)
 ;   sfx_stop_all     - Silence all channels & reset timers
 ; ==============================================================================
 
@@ -95,6 +101,7 @@ sfx_death_notes
     sta sfx_fall_frame
     sta sfx_death_timer
     sta sfx_victory_timer
+    sta sfx_secret_timer
 
     ; Silence channels 1..4
     sta AUDC1
@@ -199,6 +206,7 @@ sfx_death_notes
     sta sfx_jump_timer
     sta sfx_fall_active
     sta sfx_victory_timer
+    sta sfx_secret_timer        ; Stop a running collect blip (Channel 3 below)
 
     lda #SFX_DEATH_DURATION     ; 72 frames
     sta sfx_death_timer
@@ -213,6 +221,10 @@ sfx_death_notes
     sta AUDF2
     lda #$C8                    ; Poly4 crunch noise, volume 8
     sta AUDC2
+
+    lda #0                      ; Silence the collect blip channel
+    sta AUDC3
+    sta AUDF3
     rts
 .endp
 
@@ -305,11 +317,20 @@ sfx_death_notes
     ; --------------------------------------------------------------------------
 @chk_victory_sfx
     jsr sfx_victory_tick
-    beq @chk_fall_sfx
+    beq @chk_secret_sfx
     jmp @sfx_exit
 
     ; --------------------------------------------------------------------------
-    ; 3. FREE FALL SFX UPDATE (Channel 2)
+    ; 3. SECRET-COLLECT BLIP UPDATE (Channel 3)
+    ; The driver lives in engine/sfx_secret.asm ($2A30 segment). The blip owns
+    ; Channel 3, so it never takes the frame exclusively - unlike the fanfare the
+    ; chain always falls through to the sounds below.
+    ; --------------------------------------------------------------------------
+@chk_secret_sfx
+    jsr sfx_secret_tick
+
+    ; --------------------------------------------------------------------------
+    ; 4. FREE FALL SFX UPDATE (Channel 2)
     ; Checks player state: active when fall animation is shown.
     ; --------------------------------------------------------------------------
 @chk_fall_sfx
@@ -353,7 +374,7 @@ sfx_death_notes
     sta AUDC2
 
     ; --------------------------------------------------------------------------
-    ; 4. JUMP SFX UPDATE (Channel 1)
+    ; 5. JUMP SFX UPDATE (Channel 1)
     ; --------------------------------------------------------------------------
 @chk_jump_sfx
     lda sfx_jump_timer
@@ -380,7 +401,7 @@ sfx_death_notes
     jmp @sfx_exit
 
     ; --------------------------------------------------------------------------
-    ; 5. WALK FOOTSTEP SFX UPDATE (Channel 1)
+    ; 6. WALK FOOTSTEP SFX UPDATE (Channel 1)
     ; --------------------------------------------------------------------------
 @chk_walk_sfx
     lda sfx_walk_timer

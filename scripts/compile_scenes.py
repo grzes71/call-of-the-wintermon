@@ -131,6 +131,7 @@ class CatalogueItem:
     atari_color: int
     blink: bool = False
     dependency: Optional[int] = None
+    special: bool = False
     sprite_id: Optional[int] = None
     sprite: Optional[str] = None
 
@@ -203,6 +204,7 @@ class SceneSecretData:
     dep_id: int = 0
     zone_idx: int = 0
     blink: bool = False
+    special: bool = False
 
 
 @dataclass
@@ -889,6 +891,7 @@ def load_catalogues(
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
+                    special=bool(item.get("special", False)),
                     sprite_id=sid,
                     sprite=sname,
                 )
@@ -936,6 +939,7 @@ def load_catalogues(
                     atari_color=item.get("atari_color", 0x1A),
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
+                    special=bool(item.get("special", False)),
                     sprite_id=item.get("sprite_id"),
                 )
         except Exception as exc:
@@ -1235,6 +1239,7 @@ def parse_scene_json(
             cat_item = secrets.get(def_id)
             color = cat_item.atari_color if cat_item else 0x1A
             blink = cat_item.blink if cat_item else False
+            special = bool(getattr(cat_item, "special", False)) if cat_item else False
             dep_val = obj.get("dependency")
             if dep_val is None and "dependency_id" in obj:
                 dep_val = obj.get("dependency_id")
@@ -1311,6 +1316,7 @@ def parse_scene_json(
                     dep_id=dep_id,
                     zone_idx=zid,
                     blink=blink,
+                    special=special,
                 )
             )
         else:
@@ -1626,6 +1632,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(s.zone_idx) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_blink")
             lines.append("    .byte " + ", ".join(str(1 if s.blink else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_special")
+            lines.append("    .byte " + ", ".join(str(1 if s.special else 0) for s in sc.secrets))
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
@@ -1640,6 +1648,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_color      .byte 0",
                 f"scene_{sym}_secret_zone       .byte 0",
                 f"scene_{sym}_secret_blink      .byte 0",
+                f"scene_{sym}_secret_special    .byte 0",
             ])
         lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
         if sc.enemies:
@@ -1825,6 +1834,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_blink" for sc in scenes),
         "scene_secret_blink_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_blink" for sc in scenes),
+        "scene_secret_special_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_special" for sc in scenes),
+        "scene_secret_special_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_special" for sc in scenes),
         "",
         "; --- Enemy Pointer Tables ---",
         "scene_enemy_def_id_lo",

@@ -98,6 +98,14 @@ def test_sfx_symbols_present(emu_env):
         "SFX_VICTORY_TIMER",
         "SFX_VICTORY_NOTES",
         "SFX_VICTORY_DURATION",
+        "SFX_PLAY_SECRET_COLLECT",
+        "SFX_SECRET_TICK",
+        "SFX_SECRET_TIMER",
+        "SFX_SECRET_SPECIAL",
+        "SFX_SECRET_DURATION",
+        "SFX_SECRET_SPECIAL_DURATION",
+        "SFX_SECRET_AUDF",
+        "SFX_SECRET_SP_AUDF",
     ]
     for sym in required:
         assert sym in labels, f"Missing required SFX symbol '{sym}'"
@@ -332,3 +340,101 @@ def test_sfx_victory_fanfare_sequence_and_priority(emu_env):
     run_subroutine(mpu, labels["SFX_PLAY_VICTORY"])
     run_subroutine(mpu, labels["SFX_STOP_ALL"])
     assert mpu.memory[labels["SFX_VICTORY_TIMER"]] == 0
+
+# ==============================================================================
+# Secret-Collect Blip (engine/sfx_secret.asm, POKEY Channel 3)
+# ==============================================================================
+
+def test_sfx_secret_collect_blip_variants(emu_env):
+    """Normal and special secrets play two different, short Channel-3 blips.
+
+    Contract (engine/sfx_secret.asm): each variant walks its own AUDF/AUDC table for
+    its own frame count and then silences Channel 3; the special variant ("special":
+    true) is longer and pitched an octave above the normal one.
+    """
+    mpu, labels = emu_env
+    run_subroutine(mpu, labels["SFX_INIT"])
+
+    normal_duration = labels["SFX_SECRET_DURATION"]
+    special_duration = labels["SFX_SECRET_SPECIAL_DURATION"]
+    assert 0 < normal_duration < special_duration, "the special blip must be the longer one"
+
+    audf3 = labels["AUDF3"]
+    audc3 = labels["AUDC3"]
+    timer = labels["SFX_SECRET_TIMER"]
+
+    def play_and_record(variant: int, duration: int) -> list[tuple[int, int]]:
+        mpu.a = variant
+        run_subroutine(mpu, labels["SFX_PLAY_SECRET_COLLECT"])
+        frames = [(mpu.memory[audf3], mpu.memory[audc3])]
+        assert mpu.memory[timer] == duration, "the trigger must arm the whole blip"
+        assert mpu.memory[labels["SFX_SECRET_SPECIAL"]] == variant
+        # The trigger played frame 0; the next duration-1 frames are the remaining notes.
+        for _ in range(duration - 1):
+            run_subroutine(mpu, labels["SFX_UPDATE"])
+            frames.append((mpu.memory[audf3], mpu.memory[audc3]))
+        # One final frame only silences the channel.
+        run_subroutine(mpu, labels["SFX_UPDATE"])
+        assert mpu.memory[timer] == 0
+        assert mpu.memory[audc3] == 0 and mpu.memory[audf3] == 0, "the blip must silence Channel 3"
+        return frames
+
+    normal = play_and_record(0, normal_duration)
+    assert len(normal) == normal_duration
+    assert normal[0] != normal[-1], "the blip must change pitch while it plays"
+    assert mpu.memory[timer] == 0
+    assert mpu.memory[audc3] == 0 and mpu.memory[audf3] == 0, "the blip must silence Channel 3"
+
+    special = play_and_record(1, special_duration)
+    assert len(special) == special_duration
+    assert mpu.memory[timer] == 0
+    assert mpu.memory[audc3] == 0 and mpu.memory[audf3] == 0
+
+    # The two variants must differ audibly: different length and different pitches.
+    assert len(special) > len(normal)
+    assert {f[0] for f in special} != {f[0] for f in normal}
+    assert min(f[0] for f in special) < min(f[0] for f in normal), (
+        "the special blip must sit above the normal one (lower AUDF = higher pitch)"
+    )
+
+
+def test_sfx_secret_blip_keeps_its_own_channel(emu_env):
+    """The blip owns Channel 3 only: other effects keep playing, death silences it."""
+    mpu, labels = emu_env
+    run_subroutine(mpu, labels["SFX_INIT"])
+
+    mpu.a = 1                                   # special variant: the longest blip
+    run_subroutine(mpu, labels["SFX_PLAY_SECRET_COLLECT"])
+
+    # The hero falls while the blip plays: the wind (Channel 2) must still be updated,
+    # because the blip never takes the frame exclusively.
+    mpu.memory[labels["PLAYER_STATE"]] = labels["PLAYER_STATE_FALL"]
+    run_subroutine(mpu, labels["SFX_UPDATE"])
+    assert mpu.memory[labels["SFX_FALL_ACTIVE"]] == 1
+    assert (mpu.memory[labels["AUDC2"]] & 0xF0) == 0x80, "the free-fall wind must keep playing"
+    assert mpu.memory[labels["AUDC3"]] != 0, "the blip must keep advancing on Channel 3"
+
+    # Death has the highest priority: it stops the blip and silences Channel 3.
+    run_subroutine(mpu, labels["SFX_PLAY_DEATH"])
+    assert mpu.memory[labels["SFX_SECRET_TIMER"]] == 0
+    assert mpu.memory[labels["AUDC3"]] == 0
+    assert mpu.memory[labels["AUDF3"]] == 0
+
+    # sfx_stop_all (title screen / scene reload) clears it as well.
+    mpu.a = 0
+    run_subroutine(mpu, labels["SFX_PLAY_SECRET_COLLECT"])
+    assert mpu.memory[labels["SFX_SECRET_TIMER"]] == labels["SFX_SECRET_DURATION"]
+    run_subroutine(mpu, labels["SFX_STOP_ALL"])
+    assert mpu.memory[labels["SFX_SECRET_TIMER"]] == 0
+    assert mpu.memory[labels["AUDC3"]] == 0
+
+    # The victory fanfare also cancels a blip still in flight: it is started by the
+    # scene-finishing secret, so a blip from the previous collection must not resurface
+    # after the fanfare has played out.
+    mpu.a = 1
+    run_subroutine(mpu, labels["SFX_PLAY_SECRET_COLLECT"])
+    assert mpu.memory[labels["SFX_SECRET_TIMER"]] == labels["SFX_SECRET_SPECIAL_DURATION"]
+    run_subroutine(mpu, labels["SFX_PLAY_VICTORY"])
+    assert mpu.memory[labels["SFX_SECRET_TIMER"]] == 0
+    assert mpu.memory[labels["AUDC3"]] == 0
+    assert mpu.memory[labels["AUDF3"]] == 0

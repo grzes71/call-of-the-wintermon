@@ -210,6 +210,7 @@ dlist_intro
     icl 'gen/player_sprites.asm'
     icl 'engine/status_line.asm'
     icl 'engine/sfx_victory.asm'
+    icl 'engine/sfx_secret.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)

@@ -2,6 +2,19 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Secret-Collect Sound (Normal vs "Special" Secrets, Silent on the Last One)
+
+- **Added**: a short POKEY blip played when the hero collects a secret, with two variants and one deliberate exception.
+- **Requirement 1 - special secrets sound different**: a secret whose catalogue definition carries `"special": true` plays a *different* blip. Normal: 2 notes (C5 -> F5), 6 frames (~0.12 s). Special: 3 notes an octave above (G5 -> C6 -> E6), 9 frames (~0.18 s) - different length *and* pitch, same pure-tone timbre.
+- **Requirement 2 - no blip for the scene-finishing secret**: `secret_collect` ([scenes/game.asm](scenes/game.asm)) arms the blip in `secret_coll_sfx`, and the `@all_cleared` path - the one that starts the victory fanfare - clears it again, so the last secret of a scene only triggers the fanfare. Every other collection, including the one that unlocks the next stage, plays the blip.
+- **New module** ([engine/sfx_secret.asm](engine/sfx_secret.asm), TILES_META segment `$2A30` next to `sfx_victory.asm`, because `$5000` has no headroom left): `sfx_secret_timer` / `sfx_secret_special` state, per-variant AUDF/AUDC tables, `sfx_play_secret_collect` (A = 0 normal / 1 special) and the per-frame `sfx_secret_tick`.
+- **Channel 3 - the only POKEY channel free during gameplay**: footstep/jump/death/fanfare use Channel 1 and the free-fall wind uses Channel 2, so the blip cannot cut them. Unlike the fanfare it does *not* take the frame exclusively: `sfx_update` falls through to the remaining sounds, so walking and falling keep their channels while the blip plays. `sfx_play_death` and `sfx_stop_all` stop the blip and silence Channel 3 (death keeps the highest priority).
+- **Data path**: the editor flag now reaches the ROM - `CatalogueItem.special` / `SceneSecretData.special` in [scripts/compile_scenes.py](scripts/compile_scenes.py), the emitted SoA table `scene_<scene>_secret_special` plus the `scene_secret_special_lo/hi` pointer pair, and the RAM copy `secrets_special` filled by `secrets_init` ([engine/secrets.asm](engine/secrets.asm)). `scenes/definitions.json` is untouched (no secret is flagged yet), so every current secret plays the normal blip until one is ticked in the editor.
+- **Memory**: scene SoA tables 607 -> 622 bytes, `$2A30` block 1,295 bytes, headroom below `$C000` 5,757 -> 5,529 bytes.
+- **Tests** (620 total, +5): [tests/test_sfx.py](tests/test_sfx.py) - both variants walk their own tables, differ in length and pitch, end by silencing Channel 3, keep the free-fall wind playing and are cancelled by death / `sfx_stop_all`; [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py) - a full chain walk asserts the ROM flag table mirrors the catalogue and that exactly the last secret leaves `sfx_secret_timer == 0` with the fanfare armed; [tests/test_compile_scenes.py](tests/test_compile_scenes.py) - the compiled flag matches the catalogue and the generated ASM carries the table for every scene.
+- **Docs**: [atari-scene-editor/README.md](atari-scene-editor/README.md) (sections 6 and 8) and the checkbox tooltip now describe the audible effect instead of "implemented in a later stage".
+- **Verification**: 620 tests passing, `check_memory.py` SUCCESS, all segments within limits. Audio confirmation on emulator/hardware pending.
+
 ## [2026-10-22] - "Special" Flag for Secrets in the Scene Editor
 
 - **Added**: a per-secret `special` flag in the Atari Scene Editor, requested as preparation for a later stage - the in-game behaviour is deliberately not implemented yet, so the flag is data-only for now.

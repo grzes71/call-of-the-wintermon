@@ -467,3 +467,91 @@ def test_secrets_blink_cadence_and_static_colors():
             assert mem[slot] == mem[col_addr + i], f"static secret {i} colour must not change"
         checked += 1
     assert checked, "at least one static secret must be verifiable in this scene"
+
+
+def test_secret_collect_blip_variant_and_final_secret_silence():
+    """Collecting a secret arms the collect blip; the scene-finishing one stays silent.
+
+    Derived from the scene JSON + definitions.json (Rule 05). Contract
+    (scenes/game.asm, `secret_collect`):
+      - `secrets_special` mirrors the catalogue "special" flag;
+      - every collected secret triggers the blip with that flag (different sound),
+        except the one that completes the scene - that path plays the victory fanfare
+        instead and must not start the blip at all.
+    """
+    scene_file = scene_files()[0]
+    secrets = scene_objects(scene_file, "secret")
+    assert secrets, f"{scene_file} must define at least one secret"
+
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    count = len(secrets)
+    coll_addr = labels["SECRETS_COLLECTED"]
+    x_addr = labels["SECRETS_X"]
+    y_addr = labels["SECRETS_PMG_Y"]
+    spec_addr = labels["SECRETS_SPECIAL"]
+    blip_timer = labels["SFX_SECRET_TIMER"]
+    fanfare_timer = labels["SFX_VICTORY_TIMER"]
+
+    # 1. Engine flag table mirrors the catalogue (compiler -> ROM -> secrets_init)
+    for i, secret in enumerate(secrets):
+        assert mem[spec_addr + i] == int(secret["special"]), f"secret {i} special flag mismatch"
+
+    # 2. Walk the whole chain and check the blip contract at every collection
+    model = SecretProgressionModel(secrets)
+    played = 0
+    silent = 0
+    while model.pending:
+        target = model.pending[0]
+        hits = engine_colliding_secrets(mem, labels, mem[x_addr + target], mem[y_addr + target])
+        assert hits, f"hero placed on secret {target} must overlap it"
+        expected = min(hits)  # the engine collects the first matching secret
+
+        mem[labels["PLAYER_X"]] = mem[x_addr + target]
+        mem[labels["PLAYER_PMG_Y"]] = mem[y_addr + target]
+        mem[labels["M0PL"]] = 1
+        mem[blip_timer] = 0         # cleared so arming the blip is observable
+        mem[fanfare_timer] = 0
+        run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+        assert mem[coll_addr + expected] == 1, "the collided secret must be collected"
+        assert mem[labels["SECRET_COLL_SPECIAL"]] == int(secrets[expected]["special"]), (
+            f"secret {expected}: blip variant must follow the catalogue 'special' flag"
+        )
+
+        model.collect(expected)
+        if model.pending:
+            # Scene continues: the blip plays, with the variant of the collected secret
+            expected_duration = (
+                labels["SFX_SECRET_SPECIAL_DURATION"]
+                if secrets[expected]["special"]
+                else labels["SFX_SECRET_DURATION"]
+            )
+            assert mem[labels["SECRET_COLL_SFX"]] == 1
+            assert mem[blip_timer] == expected_duration, (
+                f"secret {expected}: the collect blip must be armed for {expected_duration} frames"
+            )
+            played += 1
+        else:
+            # Last secret of the scene: the fanfare plays, so no collect blip
+            assert mem[labels["SECRET_COLL_SFX"]] == 0
+            assert mem[blip_timer] == 0, "the scene-finishing secret must not play the collect blip"
+            assert mem[fanfare_timer] != 0, "the victory fanfare must be armed instead"
+            assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_VICTORY"]
+            silent += 1
+
+    assert played == count - 1, f"every secret but the last must play a blip (count={count})"
+    assert silent == 1, "exactly one secret finishes the scene"

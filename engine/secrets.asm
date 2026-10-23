@@ -29,6 +29,7 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
 secrets_color       :MAX_SECRETS .byte 0
 secrets_zone        :MAX_SECRETS .byte 0
 secrets_blink       :MAX_SECRETS .byte 0
+secrets_special     :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; RENDER SECRET FRAME
@@ -439,7 +440,20 @@ secrets_blink       :MAX_SECRETS .byte 0
     dey
     bpl @copy_blk
 
-    ; 13. Clear secrets_collected array
+    ; 13. Copy special flags ("special": true -> distinct collect sound, scenes/game.asm)
+    lda scene_secret_special_lo,x
+    sta zp_ptr_src
+    lda scene_secret_special_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_spc
+    lda (zp_ptr_src),y
+    sta secrets_special,y
+    dey
+    bpl @copy_spc
+
+    ; 14. Clear secrets_collected array
     ldy secrets_count
     dey
     lda #0

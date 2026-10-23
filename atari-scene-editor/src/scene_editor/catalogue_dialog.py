@@ -275,8 +275,8 @@ class CataloguesDialog(QDialog):
             special_check = QCheckBox("Special (specjalny sekret)")
             special_check.setChecked(False)
             special_check.setToolTip(
-                "Marks this secret as special. The flag is saved in the catalogue; "
-                "its in-game behaviour will be implemented in a later stage."
+                "Marks this secret as special: in game it plays a different, higher collect "
+                "sound (3 notes instead of 2). Saved in the catalogue as \"special\": true."
             )
             form_layout.addRow("", special_check)
 

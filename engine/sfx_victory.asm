@@ -36,14 +36,21 @@ sfx_victory_notes
 ; ==============================================================================
 ; SFX_PLAY_VICTORY
 ; Starts the fanfare and silences walk/jump/fall sounds (level complete).
+; Also stops a secret-collect blip that may still be running: the fanfare is
+; started by the *last* secret of the scene, which never starts a blip itself, but
+; the previous collection (a different secret, a few frames earlier) may still have
+; one in flight - it must not resurface once the fanfare is over.
 ; ==============================================================================
 .proc sfx_play_victory
     lda #0
     sta sfx_walk_timer
     sta sfx_jump_timer
     sta sfx_fall_active
+    sta sfx_secret_timer
     sta AUDC2                   ; Silence the free-fall wind (Channel 2)
     sta AUDF2
+    sta AUDC3                   ; Silence the secret-collect blip (Channel 3)
+    sta AUDF3
 
     lda #SFX_VICTORY_DURATION
     sta sfx_victory_timer

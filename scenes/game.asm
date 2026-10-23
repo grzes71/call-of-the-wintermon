@@ -348,6 +348,8 @@ SCENE_TITLE_FADE_STEPS = 8
 ; ==============================================================================
 secret_coll_def  .byte 0
 secret_unl_count .byte 0
+secret_coll_sfx  .byte 0         ; 1 = play the collect blip, 0 = suppressed (fanfare)
+secret_coll_special .byte 0      ; 0 = normal secret, 1 = secret with "special": true
 scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
 
 .proc secrets_check_player_collision
@@ -439,7 +441,15 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     lda secrets_def_id,x
     sta secret_coll_def
 
-    ; 4. Check if any active secrets remain on the scene
+    ; 4. Arm the collect blip: secrets with "special": true use a different sound,
+    ;    and the blip is suppressed later if this secret finishes the whole scene
+    ;    (that path plays the victory fanfare instead - see @all_cleared).
+    lda secrets_special,x
+    sta secret_coll_special
+    lda #1
+    sta secret_coll_sfx
+
+    ; 5. Check if any active secrets remain on the scene
     ldy #0
 @chk_act
     cpy secrets_count
@@ -505,6 +515,9 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     ; All secrets on level collected: play the victory fanfare IN this scene and only
     ; then advance. game_phase = GAME_PHASE_VICTORY makes game_run count the fanfare
     ; down through game_victory_update before game_next_scene is called.
+    ; The collect blip is dropped for this one secret - the fanfare replaces it.
+    lda #0
+    sta secret_coll_sfx
     lda #SFX_VICTORY_DURATION
     sta scene_victory_timer
     jsr sfx_play_victory
@@ -512,6 +525,12 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     sta game_phase
 
 @done
+    ; Collect blip: normal or special variant, skipped for the scene-finishing secret.
+    lda secret_coll_sfx
+    beq @no_collect_blip
+    lda secret_coll_special
+    jsr sfx_play_secret_collect
+@no_collect_blip
     rts
 .endp
 
