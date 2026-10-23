@@ -346,7 +346,6 @@ SCENE_TITLE_FADE_STEPS = 8
 ; Checks GTIA Player 0 - Missile collisions (M0PL..M3PL), bounding boxes,
 ; erases collected secrets, handles stage unlocking, and scene progression.
 ; ==============================================================================
-secret_coll_def  .byte 0
 secret_unl_count .byte 0
 secret_coll_sfx  .byte 0         ; 1 = play the collect blip, 0 = suppressed (fanfare)
 secret_coll_special .byte 0      ; 0 = normal secret, 1 = secret with "special": true
@@ -437,11 +436,7 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     lda #0
     sta secrets_active,x
 
-    ; 3. Record def_id of collected secret
-    lda secrets_def_id,x
-    sta secret_coll_def
-
-    ; 4. Arm the collect blip: secrets with "special": true use a different sound,
+    ; 3. Arm the collect blip: secrets with "special": true use a different sound,
     ;    and the blip is suppressed later if this secret finishes the whole scene
     ;    (that path plays the victory fanfare instead - see @all_cleared).
     lda secrets_special,x
@@ -449,7 +444,7 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     cmp #0
     beq @no_special_icon
 
-    ; 4b. Special secrets also get a permanent HUD icon (one disc glyph per secret,
+    ; 3b. Special secrets also get a permanent HUD icon (one disc glyph per secret,
     ;     filled from the right). The counter survives scene changes - only a new
     ;     game (status_line_reset) clears it.
     jsr status_line_add_special
@@ -458,7 +453,7 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     lda #1
     sta secret_coll_sfx
 
-    ; 5. Check if any active secrets remain on the scene
+    ; 4. Check if any active secrets remain on the scene
     ldy #0
 @chk_act
     cpy secrets_count
@@ -470,7 +465,9 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
 
 @stage_cleared
     ; All active secrets of this stage have been collected!
-    ; Unlock dependent secrets where dep_id == secret_coll_def
+    ; Unlock every secret whose dependency definition has been collected at all. A stage
+    ; may mix definitions (e.g. keys + skulls), so the unlock must not depend on which of
+    ; them happened to be collected last.
     ldy #0
     lda #0
     sta secret_unl_count    ; Unlocked count
@@ -481,9 +478,22 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     bne @next_unl
 
     lda secrets_dep_id,y
-    cmp secret_coll_def
-    bne @next_unl
+    beq @next_unl           ; Root secret (no dependency) - never unlocked here
 
+    ldx #0                  ; Scan the collected secrets for the required definition
+@unl_scan
+    cpx secrets_count
+    bcs @next_unl           ; Dependency not collected yet -> stays inactive
+    lda secrets_collected,x
+    beq @unl_scan_next
+    lda secrets_def_id,x
+    cmp secrets_dep_id,y
+    beq @unlock
+@unl_scan_next
+    inx
+    jmp @unl_scan
+
+@unlock
     ; Match! Activate dependent secret and render initial Frame 0
     lda #1
     sta secrets_active,y

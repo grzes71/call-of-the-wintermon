@@ -128,6 +128,8 @@ Każda definicja w kartotece zawiera:
 - Obiekt może być dodany wyłącznie na platformę (`y = platform.y - height`).
 - Obiekt przechowuje jedynie referencję `definition_id` — pełne dane definicji nie są duplikowane w pliku sceny.
 - Obowiązuje ścisły limit sprzętowy: **maksymalnie 3 obiekty na wiersz** (liczone łącznie dla wrogów i sekretów).
+- **Odblokowywanie kolejnych etapów:** sekret z `dependency` = N pojawia się dopiero po zebraniu **wszystkich** sekretów bieżącego etapu, jeśli wśród zebranych jest choć jeden sekret o definicji N. Etap może więc mieszać definicje (np. klucze + czaszki) — liczy się komplet zebranych, a nie „ostatni” sekret.
+- **Pojemność sekretów:** silnik trzyma dane sekretów w tablicach o rozmiarze `MAX_SECRETS` (`engine/secrets.asm`, obecnie 12 na scenę). Kompilator odrzuca scenę z większą liczbą sekretów i w komunikacie podpowiada, co zmienić (`MAX_SECRETS` razem z `MAX_SECRETS_TOTAL` w `scripts/sprite_roles.py`).
 - Wizualizacja w edytorze: czytelny kwadrat 8×8 px z literą typu (`E` dla wroga, `S` dla sekretu) w wybranym kolorze RGB lub neutralnym kolorze zastępczym (karmazynowy dla wrogów, bursztynowy dla sekretów).
 - Ochrona integralności: usunięcie definicji, która jest używana przez instancje na scenie, jest blokowane w oknie dialogowym.
 

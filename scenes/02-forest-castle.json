@@ -136,7 +136,7 @@
       },
       "width": 96,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 3
     },
     {
       "id": "platform-008",
@@ -236,6 +236,17 @@
       "width": 8,
       "height": 4,
       "color_profile_id": 2
+    },
+    {
+      "id": "platform-019",
+      "type": "sprite",
+      "position": {
+        "x": 64,
+        "y": 8
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 5
     }
   ],
   "objects": [
@@ -301,6 +312,39 @@
       "x": 55,
       "speed": "medium",
       "movement_strategy": "stationary"
+    },
+    {
+      "id": 10,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-002",
+      "x": 46,
+      "dependency": 1
+    },
+    {
+      "id": 9,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-008",
+      "x": 91,
+      "dependency": 1
+    },
+    {
+      "id": 11,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-018",
+      "x": 24,
+      "sprite_id": 7,
+      "dependency": 2
+    },
+    {
+      "id": 12,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-012",
+      "x": 142,
+      "dependency": 2
     }
   ],
   "player_spawn": {
@@ -314,7 +358,7 @@
     4,
     1,
     2,
-    1
+    3
   ],
   "background_palette": {
     "upper": [

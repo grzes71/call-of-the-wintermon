@@ -9,7 +9,11 @@
 ; - Displayed using packed bytes in PMG_MISSILES ($6B00 + Y)
 ; ==============================================================================
 
-MAX_SECRETS = 6
+; Per-scene secret capacity: sizes the SoA arrays below (16 bytes per slot). The
+; design limit is one secret per unique dependency per platform row (validated by the
+; compiler and the scene editor), so this is only a memory guard - it must match
+; MAX_SECRETS_TOTAL in scripts/sprite_roles.py (asserted by the test suite).
+MAX_SECRETS = 12
 SECRETS_BLINK_STEP_FRAMES = 2   ; Frames each luminance step is held (2 = 2x slower blink pulse)
 
 ; --- Active Scene Secrets State (Structure-of-Arrays) ---

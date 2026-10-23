@@ -28,6 +28,8 @@ from py65.devices.mpu6502 import MPU
 from py65.memory import ObservableMemory
 
 from scripts.check_memory import parse_xex_segments
+from scripts.compile_scenes import load_catalogues, parse_scene_json
+from tests.scene_expectations import scene_files
 from tests.scene_expectations import scene_background_palette
 
 # The DLI tests stage the second scene of the game progression (scenes/scenes.json order);
@@ -192,6 +194,56 @@ def test_dli_memory_bounds_and_zeropage_allocations():
 # ==============================================================================
 # TEST 3: dli_init Hardware Setup and PMG Pre-fill
 # ==============================================================================
+# Platform pas scanlines in PMG memory: 6 blocks of 8 rows (32 scanlines apart).
+PAS_SCANLINE_STARTS = [48, 80, 112, 144, 176, 208]
+
+
+def expected_scene_patterns(scene_index: int) -> list[int]:
+    """Compiled PMG platform patterns (P1,P2,P3 per pas) of the scene at that index.
+
+    Taken from the compiler (Rule 05): the engine must load exactly what the compiler
+    produced, so the expectation follows scenes/*.json instead of hardcoded bytes.
+    """
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    scene_data = parse_scene_json(Path("scenes") / scene_files()[scene_index], enemies, secrets)
+    dli = scene_data.dli_data
+    assert dli is not None and dli.pmg_patterns is not None, (
+        f"{scene_files()[scene_index]} must compile DLI PMG patterns"
+    )
+    return list(dli.pmg_patterns.patterns)
+
+
+def guard_scanlines() -> list[int]:
+    """Scanlines between the platform pas blocks - they must stay blank."""
+    lines: list[int] = []
+    for start in PAS_SCANLINE_STARTS:
+        lines.extend([start - 1, start + 8])
+    return lines
+
+
+def assert_pmg_patterns(mem, labels, patterns: list[int], scene_index: int) -> None:
+    """PMG players must hold the scene's compiled platform patterns for all 6 pas."""
+    pmg_players = [labels["PMG_PLAYER1"], labels["PMG_PLAYER2"], labels["PMG_PLAYER3"]]
+    pmg_m = labels["PMG_MISSILES"]
+    for pas_idx, start in enumerate(PAS_SCANLINE_STARTS):
+        expected = patterns[pas_idx * 3: pas_idx * 3 + 3]
+        for sl in range(8):
+            row = start + sl
+            for ch, base in enumerate(pmg_players):
+                assert mem[base + row] == expected[ch], (
+                    f"Scene {scene_index} Player {ch + 1} pas {pas_idx} row {row} must be "
+                    f"${expected[ch]:02X}, got ${mem[base + row]:02X}"
+                )
+            assert mem[pmg_m + row] == 0xFF, f"Missiles pas {pas_idx} row {row} must be $FF"
+
+
+def assert_pmg_guard_lines(mem, labels) -> None:
+    """The scanlines between the pas blocks must remain $00."""
+    for guard in guard_scanlines():
+        assert mem[labels["PMG_PLAYER1"] + guard] == 0x00, f"Guard line {guard} in Player 1 must be $00"
+        assert mem[labels["PMG_MISSILES"] + guard] == 0x00, f"Guard line {guard} in Missiles must be $00"
+
+
 def test_dli_init_execution():
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
@@ -214,34 +266,13 @@ def test_dli_init_execution():
     assert mem[labels["DLI_SWAP_REQUESTED"]] == 0
     assert mem[labels["DLI_PAS_IDX"]] == 0
 
-    # 4. PMG platform rows pre-filled from Scene 0 patterns ($F0 for 16px platforms)
+    # 4. PMG platform rows pre-filled from Scene 0's compiled patterns (Rule 05: the
+    #    expectation follows scenes/*.json through the compiler, not hardcoded bytes).
     # 6 pas at scanlines: 48..55, 80..87, 112..119, 144..151, 176..183, 208..215
-    pas_scanline_starts = [48, 80, 112, 144, 176, 208]
-    pmg_p1 = labels["PMG_PLAYER1"]
-    pmg_p2 = labels["PMG_PLAYER2"]
-    pmg_p3 = labels["PMG_PLAYER3"]
-    pmg_m  = labels["PMG_MISSILES"]
-
-    expected_p1 = [0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]
-    expected_p2 = [0xFF, 0xF0, 0xFF, 0xFF, 0xF0, 0xFF]
-    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-
-    for idx, p_start in enumerate(pas_scanline_starts):
-        exp1 = expected_p1[idx]
-        exp2 = expected_p2[idx]
-        exp3 = expected_p3[idx]
-        for sl in range(8):
-            curr_sl = p_start + sl
-            assert mem[pmg_p1 + curr_sl] == exp1, f"Player 1 pas {idx} row {curr_sl} must be ${exp1:02X}, got ${mem[pmg_p1 + curr_sl]:02X}"
-            assert mem[pmg_p2 + curr_sl] == exp2, f"Player 2 pas {idx} row {curr_sl} must be ${exp2:02X}, got ${mem[pmg_p2 + curr_sl]:02X}"
-            assert mem[pmg_p3 + curr_sl] == exp3, f"Player 3 pas {idx} row {curr_sl} must be ${exp3:02X}, got ${mem[pmg_p3 + curr_sl]:02X}"
-            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas {idx} row {curr_sl} must be $FF"
+    assert_pmg_patterns(mem, labels, expected_scene_patterns(0), scene_index=0)
 
     # Guard lines (e.g. scanline 47, 56, 79, 88, etc.) must remain 0
-    guard_lines = [47, 56, 79, 88, 111, 120, 143, 152, 175, 184, 207, 216]
-    for gl in guard_lines:
-        assert mem[pmg_p1 + gl] == 0x00, f"Guard line {gl} in Player 1 must be $00"
-        assert mem[pmg_m + gl] == 0x00, f"Guard line {gl} in Missiles must be $00"
+    assert_pmg_guard_lines(mem, labels)
 
 
 def test_dli_init_scene1_patterns():
@@ -255,39 +286,11 @@ def test_dli_init_scene1_patterns():
     mem[labels["ACTIVE_SCENE_ID"]] = 1
     run_subroutine(mpu, labels["DLI_INIT"])
 
-    pas_scanline_starts = [48, 80, 112, 144, 176, 208]
-    pmg_p1 = labels["PMG_PLAYER1"]
-    pmg_p2 = labels["PMG_PLAYER2"]
-    pmg_p3 = labels["PMG_PLAYER3"]
-    pmg_m  = labels["PMG_MISSILES"]
-
-    # Scene 1 (Forest Castle) patterns from gen/scenes_dli_data.asm:
-    # Pas 0: $F0, $FF, $FF
-    # Pas 1: $FF, $FF, $FF
-    # Pas 2: $FF, $FF, $FF
-    # Pas 3: $F0, $FF, $FF
-    # Pas 4: $FF, $F0, $C0
-    # Pas 5: $FF, $FF, $FF
-    expected_p1 = [0xF0, 0xFF, 0xFF, 0xF0, 0xFF, 0xFF]
-    expected_p2 = [0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF]
-    expected_p3 = [0xFF, 0xFF, 0xFF, 0xFF, 0xC0, 0xFF]
-
-    for idx, p_start in enumerate(pas_scanline_starts):
-        exp1 = expected_p1[idx]
-        exp2 = expected_p2[idx]
-        exp3 = expected_p3[idx]
-        for sl in range(8):
-            curr_sl = p_start + sl
-            assert mem[pmg_p1 + curr_sl] == exp1, (
-                f"Scene 1 Player 1 pas {idx} row {curr_sl} must be ${exp1:02X}, got ${mem[pmg_p1 + curr_sl]:02X}"
-            )
-            assert mem[pmg_p2 + curr_sl] == exp2, (
-                f"Scene 1 Player 2 pas {idx} row {curr_sl} must be ${exp2:02X}, got ${mem[pmg_p2 + curr_sl]:02X}"
-            )
-            assert mem[pmg_p3 + curr_sl] == exp3, (
-                f"Scene 1 Player 3 pas {idx} row {curr_sl} must be ${exp3:02X}, got ${mem[pmg_p3 + curr_sl]:02X}"
-            )
-            assert mem[pmg_m + curr_sl] == 0xFF, f"Missiles pas {idx} row {curr_sl} must be $FF"
+    # Scene 1 patterns come from its own scene JSON through the compiler (Rule 05).
+    patterns = expected_scene_patterns(1)
+    assert patterns != expected_scene_patterns(0), "scene 1 must load its own pattern set"
+    assert_pmg_patterns(mem, labels, patterns, scene_index=1)
+    assert_pmg_guard_lines(mem, labels)
 
 
 # ==============================================================================
@@ -497,59 +500,36 @@ def test_dli_handler_full_execution_and_palette_transition():
 # TEST 7: PMG Patterns Are Applied On Scene Change
 # ==============================================================================
 def test_pmg_patterns_are_applied_on_scene_change():
+    """Staging a scene must swap the PMG platform rows to that scene's patterns.
+
+    Which scanline/player carries which pattern comes from the scene JSON through the
+    compiler (Rule 05); this test only checks that the engine applies the right set.
+    """
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    pmg_p1 = labels["PMG_PLAYER1"]
-    pmg_p2 = labels["PMG_PLAYER2"]
-    pmg_p3 = labels["PMG_PLAYER3"]
+    scene0_patterns = expected_scene_patterns(0)
+    scene1_patterns = expected_scene_patterns(1)
+    assert scene0_patterns != scene1_patterns, "the two scenes must use different pattern sets"
 
     # 1. Initialize with Scene 0
     run_subroutine(mpu, labels["DLI_INIT"])
+    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=0)
 
-    # In Scene 0 (Forest):
-    # Pas 0 (48): P1=$FF
-    # Pas 2 (112): P1=$F0 (platform-008 is 16px on P1)
-    # Pas 3 (144): P2=$F0 (platform-012 is 16px on P2)
-    # Pas 4 (176): P2=$F0 (platform-004 is 48px -> P2 is 16px)
-    assert mem[pmg_p1 + 48] == 0xFF
-    assert mem[pmg_p1 + 112] == 0xF0
-    assert mem[pmg_p2 + 144] == 0xFF
-    assert mem[pmg_p2 + 176] == 0xF0
-
-    # 2. Stage Scene 1 (Forest Castle)
+    # 2. Stage Scene 1; the buffer swap is committed in VBLANK
     mpu.a = 1
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-
-    # Buffer swap commit via VBLANK update
     run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
+    assert_pmg_patterns(mem, labels, scene1_patterns, scene_index=1)
 
-    # In Scene 1 (Castle):
-    # Pas 0 (48): P1=$F0 (platform-007 is 16px on P1)
-    # Pas 2 (112): P1=$FF
-    # Pas 3 (144): P1=$F0 (platform-011 is 16px on P1)
-    # Pas 4 (176): P2=$F0, P3=$C0 (platform-001 is 8px on P3)
-    assert mem[pmg_p1 + 48] == 0xF0
-    assert mem[pmg_p1 + 112] == 0xFF
-    assert mem[pmg_p1 + 144] == 0xF0
-    assert mem[pmg_p2 + 176] == 0xF0
-    assert mem[pmg_p3 + 176] == 0xC0
-
-    # 3. Stage Scene 0 back
+    # 3. Stage Scene 0 back: the original patterns must return
     mpu.a = 0
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
     run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
-
-    # Verify Scene 0 patterns restored
-    assert mem[pmg_p1 + 48] == 0xFF
-    assert mem[pmg_p1 + 112] == 0xF0
-    assert mem[pmg_p1 + 144] == 0xFF
-    assert mem[pmg_p2 + 144] == 0xFF
-    assert mem[pmg_p2 + 176] == 0xF0
-    assert mem[pmg_p3 + 176] == 0xFF
+    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=0)
 
 
 # ==============================================================================
@@ -772,4 +752,3 @@ def test_dli_missile_platform_first_scanline_color():
     assert {scene for scene, _ in missile_rows} == {0, 1}, (
         f"Expected missile platforms in both scenes, found {sorted(missile_rows)}"
     )
-

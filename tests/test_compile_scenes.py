@@ -20,12 +20,16 @@ from scripts.compile_scenes import (
     STATUS_NAME_COL,
     status_name_max,
     status_special_total,
+    SUPPORTED_SPRITE_WIDTHS,
+    WIDTH_TO_PMG_PATTERN,
     PAS_Y_COORDS,
     PlatformData,
     SceneDliCompiledData,
     validate_scene_dli_platforms,
 )
 from tests.scene_expectations import special_secret_total
+from tests.test_state_machine_and_fade import parse_labels
+from scripts.sprite_roles import MAX_SECRETS_TOTAL
 
 
 def test_char_to_atari_screencode():
@@ -490,34 +494,46 @@ def test_sizem_for_missile_platforms():
 
 
 def test_pmg_patterns_match_platform_widths():
+    """Every pas pattern byte follows the platform segments on that channel.
+
+    The engine convention (`WIDTH_TO_PMG_PATTERN`) is fixed - a 32-pixel segment fills the
+    byte ($FF), 16 px uses $F0 and 8 px $C0 - while which pas/channel a platform lands on
+    comes from the scene JSON (Rule 05).
+    """
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
-    scene_data = parse_scene_json(Path("scenes/01-forest.json"), enemies, secrets)
-    dli = scene_data.dli_data
-    assert dli is not None
-    assert dli.pmg_patterns is not None
 
-    # Expected patterns for 01-forest:
-    # pas 0: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
-    # pas 1: P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
-    # pas 2: platform-008 is 16px -> P1 has $F0; P2=$FF, P3=$FF
-    # pas 3: platform-006 (32px, $FF) + platform-012 (24px -> seg 16px $F0 + seg 8px $C0) -> P1=$FF, P2=$F0, P3=$C0
-    # pas 4: platform-004 is 48px -> P1=32px ($FF), P2=16px ($F0); P3=$FF
-    # pas 5: platform-002 is 96px -> P1=32px ($FF), P2=32px ($FF), P3=32px ($FF)
-    expected_patterns = [
-        0xFF, 0xFF, 0xFF,  # pas 0
-        0xFF, 0xF0, 0xFF,  # pas 1 (platform-011 16px on P2)
-        0xF0, 0xFF, 0xFF,  # pas 2 (platform-008 16px on P1)
-        0xFF, 0xFF, 0xFF,  # pas 3 (platform-006 32px on P1, platform-012 32px on P2)
-        0xFF, 0xF0, 0xFF,  # pas 4 (platform-004 48px -> P2 has $F0)
-        0xFF, 0xFF, 0xFF,  # pas 5 (platform-002 96px)
-    ]
-    assert dli.pmg_patterns.patterns == expected_patterns
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        dli = scene_data.dli_data
+        assert dli is not None and dli.pmg_patterns is not None
 
-    # Also verify generated ASM contains correct pattern tables
+        expected: list[int] = []
+        for pas_y in PAS_Y_COORDS:
+            channels = [0xFF, 0xFF, 0xFF]   # channels without a platform keep the default
+            sprite_plats = sorted(
+                (p for p in scene_data.platforms if p.y == pas_y and p.type_code == 0),
+                key=lambda p: p.x,
+            )
+            ch = 0
+            for platform in sprite_plats:
+                for seg_w, _sizep in SUPPORTED_SPRITE_WIDTHS[platform.width]:
+                    assert ch < 3, (
+                        f"{scene_file_name}: more than 3 platform segments in pas y={pas_y}"
+                    )
+                    channels[ch] = WIDTH_TO_PMG_PATTERN[seg_w]
+                    ch += 1
+            expected.extend(channels)
+
+        assert dli.pmg_patterns.patterns == expected, (
+            f"{scene_file_name}: compiled PMG patterns must follow the platform segments"
+        )
+
+    # The generated ASM carries one pattern table per scene plus the shared pointer pair.
     asm_text = Path("gen/scenes_dli_data.asm").read_text(encoding="utf-8")
-    assert "scene_sc_01_forest_pmg_patterns" in asm_text
-    assert ".byte $F0, $FF, $FF" in asm_text
-    assert ".byte $FF, $F0, $FF" in asm_text
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        assert f"scene_{scene_data.symbol_name}_pmg_patterns" in asm_text
     assert "scene_pmg_patterns_lo" in asm_text
     assert "scene_pmg_patterns_hi" in asm_text
 
@@ -666,4 +682,42 @@ def test_generated_asm_contains_secret_special_tables():
         )
         assert f"scene_{scene_data.symbol_name}_hud_line" in asm_text, (
             f"{scene_file_name}: compiled status-line (HUD) table missing from the generated ASM"
+        )
+
+
+def test_secret_capacity_matches_engine_arrays():
+    """The compiler's per-scene secret capacity must equal the engine's MAX_SECRETS.
+
+    The engine sizes its SoA arrays with `MAX_SECRETS` (engine/secrets.asm), while the
+    compiler validates scenes against `MAX_SECRETS_TOTAL` (scripts/sprite_roles.py). If
+    the two drift, a scene that compiles cleanly can overflow the runtime arrays - so
+    this test pins them together.
+    """
+    lab_file = Path("gen/main.lab")
+    if not lab_file.is_file():
+        pytest.skip("gen/main.lab not found, build XEX first")
+
+    labels = parse_labels(lab_file)
+    assert "MAX_SECRETS" in labels, "MAX_SECRETS must be exported to the MADS symbol file"
+    assert labels["MAX_SECRETS"] == MAX_SECRETS_TOTAL, (
+        f"engine MAX_SECRETS={labels['MAX_SECRETS']} != compiler "
+        f"MAX_SECRETS_TOTAL={MAX_SECRETS_TOTAL}"
+    )
+
+
+def test_every_scene_fits_the_secret_capacity():
+    """Each scene may place at most MAX_SECRETS_TOTAL secrets (engine array capacity).
+
+    The design limit is one secret per unique dependency per platform row - this test
+    only guards the memory bound, so a scene that would overflow the engine arrays fails
+    here (with the counts) instead of corrupting RAM at runtime.
+    """
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        assert len(scene_data.secrets) <= MAX_SECRETS_TOTAL, (
+            f"{scene_file_name}: {len(scene_data.secrets)} secrets exceed the engine capacity "
+            f"of {MAX_SECRETS_TOTAL}"
         )

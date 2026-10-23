@@ -221,9 +221,9 @@ class SecretProgressionModel:
 
     - a secret is initially active iff it has no dependency;
     - collecting a secret marks it collected=1 / active=0;
-    - once no active secret remains, every uncollected secret whose dependency
-      equals the collected secret's definition id is activated (one stage at a
-      time);
+    - once no active secret remains, every uncollected secret whose dependency matches
+      the definition id of *any* secret collected so far is activated (one stage at a
+      time) - a stage may mix definitions, e.g. keys + skulls;
     - if nothing was unlocked and every secret is collected, the scene advances.
     """
 
@@ -242,19 +242,34 @@ class SecretProgressionModel:
         assert self.active[index] and not self.collected[index]
         self.collected[index] = True
         self.active[index] = False
-        collected_def = self.secrets[index]["definition_id"]
         if any(self.active):
             return []
+        # Mirror of the nested scan in secret_collect (scenes/game.asm): unlock by the
+        # definition of any collected secret, not only by the one collected last.
+        collected_defs = {
+            self.secrets[i]["definition_id"]
+            for i in range(len(self.secrets))
+            if self.collected[i]
+        }
         unlocked = [
             i
             for i, secret in enumerate(self.secrets)
-            if not self.collected[i] and (secret.get("dependency") or 0) == collected_def
+            if not self.collected[i] and (secret.get("dependency") or 0) in collected_defs
         ]
         for i in unlocked:
             self.active[i] = True
         if not unlocked and all(self.collected):
             self.scene_advanced = True
         return unlocked
+
+    def uncollected_description(self) -> str:
+        """Human-readable list of the secrets this model could not collect."""
+        return ", ".join(
+            f"id={self.secrets[i]['id']} def={self.secrets[i]['definition_id']} "
+            f"dep={self.secrets[i].get('dependency')}"
+            for i in range(len(self.secrets))
+            if not self.collected[i]
+        )
 
 
 def engine_colliding_secrets(mem, labels, player_x: int, player_pmg_y: int) -> list[int]:

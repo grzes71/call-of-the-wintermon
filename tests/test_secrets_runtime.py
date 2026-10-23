@@ -376,7 +376,10 @@ def test_game_success_on_final_scene_completion():
     model = SecretProgressionModel(secrets)
     drive_secret_progression(mpu, mem, labels, model, run_subroutine)
 
-    assert model.scene_advanced, "the last secret must complete the final scene"
+    assert model.scene_advanced, (
+        "the last secret must complete the final scene; the chain stopped with these "
+        f"secrets uncollected: {model.uncollected_description()}"
+    )
     # The fanfare plays in the finished scene first; GAME_SUCCESS follows afterwards
     complete_victory_hold(mpu, mem, labels, run_subroutine)
     assert mem[labels["GAME_RESULT"]] == labels["GAME_SUCCESS"]

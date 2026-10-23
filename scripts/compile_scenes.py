@@ -1469,7 +1469,11 @@ def parse_scene_json(
     if len(scene_secrets) > MAX_SECRETS_TOTAL:
         raise ValueError(
             f"Błąd w scenie '{name}' ({scene_file.name}): liczba sekretów ({len(scene_secrets)}) "
-            f"przekracza dopuszczalny limit MAX_SECRETS={MAX_SECRETS_TOTAL}."
+            f"przekracza pojemność tablic silnika MAX_SECRETS={MAX_SECRETS_TOTAL} "
+            f"(engine/secrets.asm). Ograniczenie projektowe dotyczy tylko jednego sekretu na "
+            f"unikalną zależność w wierszu platformy - rozłóż sekrety na kolejne wiersze albo "
+            f"podnieś MAX_SECRETS (engine/secrets.asm) razem z MAX_SECRETS_TOTAL "
+            f"(scripts/sprite_roles.py)."
         )
 
     if require_secret and len(scene_secrets) < 1:

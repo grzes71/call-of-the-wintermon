@@ -18,7 +18,11 @@ from typing import Any, Optional
 MAX_ZONE_SPRITE_HEIGHT = 20
 MAX_ENEMIES_PER_ZONE = 3
 MAX_ENEMIES_TOTAL = 6
-MAX_SECRETS_TOTAL = 6
+# Per-scene secret capacity: the engine sizes its SoA arrays (16 bytes per slot) with
+# MAX_SECRETS in engine/secrets.asm - keep both values in sync (asserted by tests).
+# The *design* limit is one secret per unique dependency per platform row, which the
+# scene validation below enforces; this constant is only a memory guard.
+MAX_SECRETS_TOTAL = 12
 
 
 class SpriteValidationError(ValueError):
