@@ -64,6 +64,28 @@ class InvalidObjectPropertyError(SceneObjectError):
     pass
 
 
+# ANTIC Mode E packs 4 pixels per byte and the game renderer reads tileset bitmaps in
+# whole bytes (`w_bytes = (w + 3) // 4`), so an element crop must start on a multiple of
+# this many pixels and be this many pixels wide, otherwise the game draws a horizontally
+# shifted / wider tile than the editor previews.
+SOURCE_X_ALIGN = 4
+
+
+def align_source_x(x: float | int) -> int:
+    """Round a crop source x down to the byte grid used by the game renderer."""
+    return max(0, int(round(float(x)))) // SOURCE_X_ALIGN * SOURCE_X_ALIGN
+
+
+def align_crop_width(width: float | int) -> int:
+    """Round a crop width up to whole bytes (never below one byte).
+
+    Rounding up keeps every pixel the author selected: the renderer reads whole bytes
+    anyway, so the extra pixels are already part of the drawn tile.
+    """
+    value = max(1, int(round(float(width))))
+    return max(SOURCE_X_ALIGN, -(-value // SOURCE_X_ALIGN) * SOURCE_X_ALIGN)
+
+
 @dataclass
 class Rect:
     """Rectangle defining a sub-region in source coordinates."""
@@ -174,6 +196,19 @@ class SceneElement:
 
     def clone(self) -> SceneElement:
         return copy.deepcopy(self)
+
+    def normalize_crop(self) -> bool:
+        """Snap the crop onto the ANTIC Mode E byte grid (x down, width up).
+
+        Returns True when anything changed, so callers can report the fix.
+        """
+        aligned_x = align_source_x(self.source_rect.x)
+        aligned_w = align_crop_width(self.source_rect.width)
+        if aligned_x == self.source_rect.x and aligned_w == self.source_rect.width:
+            return False
+        self.source_rect.x = aligned_x
+        self.source_rect.width = aligned_w
+        return True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -966,6 +1001,139 @@ class PlayerSpawn:
         return cls(x=int(data["x"]), y=int(data["y"]), color=color_val)
 
 
+# ---------------------------------------------------------------------------
+# Scene background palette (upper / lower zone colours driven by the DLI)
+# ---------------------------------------------------------------------------
+# ANTIC Mode E shows four playfield colours: pixel value 0 is always COLBK (black),
+# values 1..3 are COLPF0..COLPF2. engine/dli.asm re-loads COLPF0..2 once per zone, so a
+# scene owns one colour triple for the upper zone and one for the lower zone.
+BG_PALETTE_ZONES = ("upper", "lower")
+BG_PALETTE_COLORS_PER_ZONE = 3
+
+# Fallback palette used by scripts/compile_scenes.py when a scene stores no explicit
+# palette (the trees tileset palette). tests/test_scene_background_palette.py asserts the
+# editor and the compiler agree on this value.
+DEFAULT_BACKGROUND_PALETTE_COLORS = (0xC4, 0xC8, 0xDC)
+
+
+def parse_atari_color_value(raw: Any, field_name: str = "color") -> int:
+    """Parse an Atari colour register value from an int or hex string ('$C4', '0xC4', 'C4').
+
+    GTIA ignores bit 0, so the returned value is always even.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise ModelValidationError(
+            f"{field_name} must be an integer or hex string, got {type(raw).__name__}."
+        )
+    if isinstance(raw, int):
+        value = raw
+    else:
+        cleaned = raw.strip()
+        if not cleaned:
+            raise ModelValidationError(f"{field_name} cannot be empty.")
+        try:
+            if cleaned.startswith("$"):
+                value = int(cleaned[1:], 16)
+            elif cleaned.lower().startswith("0x"):
+                value = int(cleaned[2:], 16)
+            else:
+                value = int(cleaned, 16)
+        except ValueError as exc:
+            raise ModelValidationError(
+                f"{field_name} is not a valid Atari colour value: '{raw}'."
+            ) from exc
+    if not (0 <= value <= 255):
+        raise ModelValidationError(f"{field_name} must be within 0x00-0xFF, got {value}.")
+    return value & 0xFE
+
+
+@dataclass
+class BackgroundPalette:
+    """Per-scene background colours for the upper and lower screen zones (3 colours each)."""
+
+    upper: list[int] = field(default_factory=lambda: list(DEFAULT_BACKGROUND_PALETTE_COLORS))
+    lower: list[int] = field(default_factory=lambda: list(DEFAULT_BACKGROUND_PALETTE_COLORS))
+
+    def clone(self) -> BackgroundPalette:
+        return BackgroundPalette(upper=list(self.upper), lower=list(self.lower))
+
+    def get_colors(self, zone: str) -> list[int]:
+        """Return the colour triple of 'upper' or 'lower'."""
+        if zone not in BG_PALETTE_ZONES:
+            raise ModelValidationError(
+                f"Unknown background palette zone '{zone}' (expected one of {BG_PALETTE_ZONES})."
+            )
+        return self.upper if zone == "upper" else self.lower
+
+    def set_color(self, zone: str, index: int, value: int) -> None:
+        """Set one colour of a zone (index 0..2 maps to COLPF0..COLPF2)."""
+        if not (0 <= index < BG_PALETTE_COLORS_PER_ZONE):
+            raise ModelValidationError(
+                f"Background palette colour index must be 0..{BG_PALETTE_COLORS_PER_ZONE - 1}, got {index}."
+            )
+        self.get_colors(zone)[index] = int(value) & 0xFE
+
+    def validate(self) -> None:
+        """Ensure both zones carry exactly three even, in-range Atari colour values."""
+        for zone in BG_PALETTE_ZONES:
+            colors = self.get_colors(zone)
+            if not isinstance(colors, list) or len(colors) != BG_PALETTE_COLORS_PER_ZONE:
+                raise ModelValidationError(
+                    f"Background palette '{zone}' must have exactly {BG_PALETTE_COLORS_PER_ZONE} colours, "
+                    f"got {colors!r}."
+                )
+            for idx, color in enumerate(colors):
+                if isinstance(color, bool) or not isinstance(color, int):
+                    raise ModelValidationError(
+                        f"Background palette '{zone}' colour {idx} must be an integer, "
+                        f"got {type(color).__name__}."
+                    )
+                if not (0 <= color <= 255):
+                    raise ModelValidationError(
+                        f"Background palette '{zone}' colour {idx} must be within 0x00-0xFF, got {color}."
+                    )
+                if color & 1:
+                    raise ModelValidationError(
+                        f"Background palette '{zone}' colour {idx} (0x{color:02X}) must have bit 0 clear "
+                        f"(GTIA ignores the lowest bit)."
+                    )
+
+    def to_dict(self) -> dict[str, list[int]]:
+        return {
+            "upper": [int(c) for c in self.upper],
+            "lower": [int(c) for c in self.lower],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> BackgroundPalette:
+        """Build a palette from JSON data (ints or hex strings per colour)."""
+        if not isinstance(data, dict):
+            raise ModelValidationError(
+                "Background palette must be a dictionary with 'upper' and 'lower' zones."
+            )
+        palette = cls()
+        for zone in BG_PALETTE_ZONES:
+            if zone not in data:
+                raise ModelValidationError(f"Background palette is missing the '{zone}' zone.")
+            raw_colors = data[zone]
+            if not isinstance(raw_colors, (list, tuple)):
+                raise ModelValidationError(f"Background palette '{zone}' must be a list of colours.")
+            if len(raw_colors) != BG_PALETTE_COLORS_PER_ZONE:
+                raise ModelValidationError(
+                    f"Background palette '{zone}' must have exactly {BG_PALETTE_COLORS_PER_ZONE} colours, "
+                    f"got {len(raw_colors)}."
+                )
+            colors = [
+                parse_atari_color_value(raw, f"background_palette.{zone}[{idx}]")
+                for idx, raw in enumerate(raw_colors)
+            ]
+            if zone == "upper":
+                palette.upper = colors
+            else:
+                palette.lower = colors
+        palette.validate()
+        return palette
+
 
 DEFAULT_SCENE_WIDTH = 160
 DEFAULT_SCENE_HEIGHT = 192
@@ -987,6 +1155,7 @@ class Scene:
     platforms: list[PlatformElement] = field(default_factory=list)
     objects: list[SceneObjectElement] = field(default_factory=list)
     row_color_profiles: list[Optional[int]] = field(default_factory=lambda: [None] * 6)
+    background_palette: Optional[BackgroundPalette] = None
     catalogues: Optional[Any] = None
     player_spawn: Optional[PlayerSpawn] = None
 
@@ -1041,6 +1210,16 @@ class Scene:
         if 0 <= row_index < len(self.row_color_profiles):
             return self.row_color_profiles[row_index]
         return None
+
+    def effective_background_palette(self) -> BackgroundPalette:
+        """Explicit scene background palette, or the compiler default when none is stored."""
+        if self.background_palette is not None:
+            return self.background_palette
+        return BackgroundPalette()
+
+    def get_background_colors(self, zone: str) -> list[int]:
+        """Colour triple of a background zone ('upper'/'lower'), explicit or default."""
+        return self.effective_background_palette().get_colors(zone)
 
     def set_row_color_profile_id(self, row_index: int, profile_id: Optional[int]) -> None:
         """Set the color profile ID for a platform row, updating all platforms in that row."""
@@ -1136,6 +1315,9 @@ class Scene:
             )
         if not isinstance(self.name, str) or not self.name.strip():
             raise ModelValidationError("Scene name must be a non-empty string.")
+
+        if self.background_palette is not None:
+            self.background_palette.validate()
 
         # Validate elements
         seen_ids: set[str] = set()

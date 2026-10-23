@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import tempfile
@@ -13,6 +14,8 @@ from .scene_model import (
     MAX_SCENE_WIDTH,
     MIN_SCENE_HEIGHT,
     MIN_SCENE_WIDTH,
+    SOURCE_X_ALIGN,
+    BackgroundPalette,
     ModelValidationError,
     PlatformElement,
     PlayerSpawn,
@@ -23,6 +26,8 @@ from .scene_model import (
     SceneObjectElement,
     SingleSourceViolationError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SerializationError(Exception):
@@ -77,6 +82,8 @@ class SceneSerializer:
 
         elements_data = []
         for elem in scene.elements:
+            # Keep saved crops on the ANTIC Mode E byte grid (see SOURCE_X_ALIGN)
+            elem.normalize_crop()
             elem_data = elem.to_dict()
             if base_path:
                 source_path = Path(elem.source)
@@ -125,6 +132,8 @@ class SceneSerializer:
             res["player_spawn"] = scene.player_spawn.to_dict()
         if scene.row_color_profiles and any(x is not None for x in scene.row_color_profiles):
             res["row_color_profiles"] = list(scene.row_color_profiles)
+        if scene.background_palette is not None:
+            res["background_palette"] = scene.background_palette.to_dict()
         return res
 
     @classmethod
@@ -209,6 +218,17 @@ class SceneSerializer:
 
             elements.append(elem)
 
+        # Snap every crop onto the ANTIC Mode E byte grid (4 pixels per byte): the game
+        # renderer reads tileset bitmaps in whole bytes, so an off-grid crop would be drawn
+        # shifted (x) or wider (w) compared to what the editor previews.
+        realigned = [elem.id for elem in elements if elem.normalize_crop()]
+        if realigned:
+            logger.warning(
+                "Realigned crop x/width to the %d-pixel byte grid for element(s): %s",
+                SOURCE_X_ALIGN,
+                ", ".join(realigned),
+            )
+
         raw_platforms = data.get("platforms", [])
         if not isinstance(raw_platforms, list):
             raise CorruptedFileError("'platforms' must be a list if present.")
@@ -267,6 +287,17 @@ class SceneSerializer:
             except Exception as exc:
                 raise CorruptedFileError(f"Error parsing player_spawn: {exc}") from exc
 
+        raw_bg_palette = data.get("background_palette")
+        if raw_bg_palette is None and isinstance(data.get("scene"), dict):
+            raw_bg_palette = data["scene"].get("background_palette")
+
+        background_palette: Optional[BackgroundPalette] = None
+        if raw_bg_palette is not None:
+            try:
+                background_palette = BackgroundPalette.from_dict(raw_bg_palette)
+            except Exception as exc:
+                raise CorruptedFileError(f"Error parsing background_palette: {exc}") from exc
+
         scene = Scene(
             name=name,
             schema_version=version,
@@ -277,6 +308,7 @@ class SceneSerializer:
             platforms=platforms,
             objects=objects,
             row_color_profiles=row_color_profiles if row_color_profiles else [None] * 6,
+            background_palette=background_palette,
             catalogues=catalogues,
             player_spawn=player_spawn,
         )

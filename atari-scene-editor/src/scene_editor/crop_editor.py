@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from .asset_manager import AssetManager
-from .scene_model import Rect
+from .scene_model import Rect, SOURCE_X_ALIGN, align_crop_width, align_source_x
 
 
 class CropSelectionItem(QGraphicsRectItem):
@@ -73,16 +73,17 @@ class CropSelectionItem(QGraphicsRectItem):
     def to_rect(self) -> Rect:
         r = self.rect()
         return Rect(
-            x=max(0, int(round(r.x()))),
+            x=align_source_x(r.x()),
             y=max(0, int(round(r.y()))),
-            width=max(1, int(round(r.width()))),
+            width=align_crop_width(r.width()),
             height=max(1, int(round(r.height()))),
         )
 
     def _clamp_rect(self, r: QRectF) -> QRectF:
-        x = max(self.max_bounds.left(), min(r.x(), self.max_bounds.right() - 1))
+        # The crop sits on the 4-pixel byte grid: x rounds down, width rounds up
+        x = max(self.max_bounds.left(), min(float(align_source_x(r.x())), self.max_bounds.right() - 1))
         y = max(self.max_bounds.top(), min(r.y(), self.max_bounds.bottom() - 1))
-        w = max(1.0, min(r.width(), self.max_bounds.right() - x))
+        w = min(float(align_crop_width(r.width())), self.max_bounds.right() - x)
         h = max(1.0, min(r.height(), self.max_bounds.bottom() - y))
         return QRectF(round(x), round(y), round(w), round(h))
 
@@ -341,8 +342,19 @@ class CropEditorWidget(QWidget):
 
         # Spinboxes: X, Y, Width, Height
         self.spin_x = self._make_spinbox("X:", grid_layout)
+        self.spin_x.setSingleStep(SOURCE_X_ALIGN)
+        self.spin_x.setToolTip(
+            f"Crop X snaps to multiples of {SOURCE_X_ALIGN}: ANTIC Mode E packs "
+            f"{SOURCE_X_ALIGN} pixels per byte and the game reads tileset bitmaps at "
+            f"byte boundaries."
+        )
         self.spin_y = self._make_spinbox("Y:", grid_layout)
         self.spin_w = self._make_spinbox("W:", grid_layout, min_val=1)
+        self.spin_w.setSingleStep(SOURCE_X_ALIGN)
+        self.spin_w.setToolTip(
+            f"Crop W snaps up to multiples of {SOURCE_X_ALIGN}: the game reads tileset "
+            f"bitmaps byte by byte, so e.g. a 77 px crop is drawn 80 px wide."
+        )
         self.spin_h = self._make_spinbox("H:", grid_layout, min_val=1)
 
         cg_layout.addLayout(grid_layout)
@@ -396,8 +408,8 @@ class CropEditorWidget(QWidget):
         self.spin_w.setMaximum(pm.width())
         self.spin_h.setMaximum(pm.height())
 
-        # Reset selection to initial 16x16 or min dimensions
-        init_w = min(16, pm.width())
+        # Reset selection to an initial 16x16 byte-aligned crop (or the image size)
+        init_w = max(SOURCE_X_ALIGN, min(16, pm.width()) // SOURCE_X_ALIGN * SOURCE_X_ALIGN)
         init_h = min(16, pm.height())
         self._current_crop = Rect(x=0, y=0, width=init_w, height=init_h)
         self._sync_spinboxes_from_crop(self._current_crop)
@@ -420,10 +432,19 @@ class CropEditorWidget(QWidget):
         self._validate_current_crop()
 
     def _on_spinbox_changed(self) -> None:
+        # Keep the crop on the byte grid so the game shows exactly what is previewed
+        aligned_x = align_source_x(self.spin_x.value())
+        aligned_w = align_crop_width(self.spin_w.value())
+        for spin, value in ((self.spin_x, aligned_x), (self.spin_w, aligned_w)):
+            if spin.value() != value:
+                spin.blockSignals(True)
+                spin.setValue(value)
+                spin.blockSignals(False)
+
         r = Rect(
-            x=self.spin_x.value(),
+            x=aligned_x,
             y=self.spin_y.value(),
-            width=self.spin_w.value(),
+            width=aligned_w,
             height=self.spin_h.value(),
         )
         self._current_crop = r

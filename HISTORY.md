@@ -2,6 +2,62 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Editable Per-Scene Background Palettes (Upper / Lower Zone COLPF0..2)
+
+- **Requirement**: A scene background (tile elements) already had two colour sets - one for the upper screen zone and one for the lower one, swapped by the DLI - but those colours were derived from the tilesets in the compiler and could not be edited per scene.
+- **Model ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - New `BackgroundPalette` dataclass (`upper` / `lower`, three Atari colour codes each) with `validate()`, `set_color()`, `get_colors()`, `clone()`, `to_dict()` and `from_dict()` (accepts ints and `$C4` / `0xC4` / `C4` hex strings, masks bit 0 because GTIA ignores it).
+  - `BG_PALETTE_ZONES`, `BG_PALETTE_COLORS_PER_ZONE` and `DEFAULT_BACKGROUND_PALETTE_COLORS` (the compiler's fallback) plus the shared `parse_atari_color_value()` helper.
+  - `Scene.background_palette: Optional[BackgroundPalette] = None` (None keeps the legacy "derive from tilesets" behaviour), `Scene.effective_background_palette()` / `get_background_colors(zone)`, and palette validation inside `Scene.validate()`.
+- **Serialization ([atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:
+  - New optional root key `background_palette` (also accepted nested inside `scene`), written only when a palette is stored, so scenes without one keep the previous format byte for byte.
+- **Undo/Redo ([atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py))**:
+  - New `SetBackgroundPaletteCommand` (set and clear, with `undo()` restoring the previous palette or `None`).
+- **Editor UI ([atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py))**:
+  - New right-panel tab **"Background Colors"** with two groups (Upper zone lines 0-43, Lower zone lines 44-95) and, per colour, an Atari code spinbox (0-254, step 2, odd input snapped to even), a `$XX` label and a swatch button that opens `AtariColorPickerDialog` (16 hues x 8 luminances). Status line reports whether the palette is stored or still derived, and *Clear* drops it.
+  - All edits go through the undo stack and refresh the panel from the model, so `Ctrl+Z` / `Ctrl+Y` and scene load/new stay consistent.
+- **Compiler ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - `parse_scene_background_palette()` reads and strictly validates the new key (exactly 3 colours per zone, in range, even) and `compile_scene_dli_data()` now prefers the explicit scene palette over `TILESET_PALETTES`, which stays the fallback (with `DEFAULT_BACKGROUND_PALETTE` as the last resort).
+- **Scenes**: `scenes/01-forest.json` and `scenes/02-forest-castle.json` now store the palettes they were already using ($C4/$C8/$DC for both forest zones; $94/$D6/$EA upper + $C4/$C8/$DC lower for the castle scene). `gen/scenes_dli_data.asm` is byte-identical to before the change, proving the explicit values reproduce the previous on-screen colours exactly.
+- **Automated Verification ([tests/test_scene_background_palette.py](tests/test_scene_background_palette.py))**:
+  - 39 new tests: model validation and hex parsing, serializer round-trip / absent key / corrupted palette, command undo-redo, compiler parsing and the JSON -> DLI table mapping (`[upper, upper, lower, lower, lower, upper]` per pas, zone 0 = upper), tileset fallback, an asset-agnostic check that every game scene stores the palette its DLI uses, and GUI flows (tab defaults, spinbox -> command, odd-value snapping, palette picker incl. cancel, clear button, save/reopen).
+  - Full suite: 590 tests passing, `check_memory.py` SUCCESS with 5,253 bytes of headroom below `$C000`.
+
+## [2026-10-22] - Snap Scene Editor Crops to the ANTIC Mode E Byte Grid (x and width)
+
+- **Canonical Rule ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py))**:
+  - Added `SOURCE_X_ALIGN = 4`, `align_source_x()` (rounds down) and `align_crop_width()` (rounds **up**, never below one byte) plus `SceneElement.normalize_crop()`: ANTIC Mode E packs 4 pixels per byte and the game renderer reads tileset bitmaps in whole bytes (`src_x_byte = src_x // 4`, `w_bytes = (w + 3) // 4`), so an off-grid crop is drawn shifted (`x = 79` renders from pixel 76) or wider (a 77 px crop is drawn 80 px wide) than the editor previews. Rounding the width up never drops a selected pixel.
+- **Crop Editor ([atari-scene-editor/src/scene_editor/crop_editor.py](atari-scene-editor/src/scene_editor/crop_editor.py))**:
+  - `CropSelectionItem._clamp_rect` and `to_rect` align both values (x down, width up) so mouse drags, handle resizes and the rect emitted by "Add to Scene" are always on the grid; image-bounds clamping still wins over the grid.
+  - `CropEditorWidget._on_spinbox_changed` snaps the `X:` and `W:` values and writes them back into the fields; both spinboxes step by 4 and carry a tooltip documenting the rule (helpers imported from the model).
+  - `load_image` starts from a byte-aligned 16x16 selection (or the image size, rounded down) instead of a raw `min(16, width)`.
+- **Load/Save Normalization ([atari-scene-editor/src/scene_editor/json_serializer.py](atari-scene-editor/src/scene_editor/json_serializer.py))**:
+  - `from_dict` realigns every element crop and logs a warning listing the affected element ids, so opening an older scene reports the fix instead of silently shifting it.
+  - `to_dict` normalizes again before writing, guaranteeing saved scenes stay on the grid.
+  - Applied to the existing scenes: `01-forest.json` (x 79 -> 76, w 77 -> 80 / 81 -> 84) and `02-forest-castle.json` (x 77 -> 76, w 77 -> 80 / 83 -> 84). Verified visually neutral: the compiled `w_byte`/`src_x_byte` tables in `gen/scenes_data.asm` are byte-identical, only the unused `scene_*_elem_w_px` mirrors changed.
+- **Documentation ([atari-scene-editor/README.md](atari-scene-editor/README.md))**:
+  - Section 8 documents the byte grid for x (down) and width (up), the image-bounds precedence, and the automatic realignment on load/save.
+- **Automated Verification ([tests/test_gui_integration.py](tests/test_gui_integration.py), [tests/test_json_serializer.py](tests/test_json_serializer.py))**:
+  - Added `test_crop_snaps_to_byte_grid` (helper boundaries 0/1/4/5/77/81 and 0/3/4/79/-5, both spinbox steps, snapping with write-back, snapped mouse selections) and `test_off_grid_crop_is_realigned_on_load_and_save` (79 -> 76, 81 -> 84 on load, aligned values written back, other fields untouched).
+  - Full suite: 551 tests passing, `check_memory.py` SUCCESS with 5,253 bytes of headroom below `$C000`.
+
+
+## [2026-10-22] - Make Tile/Background Tests Asset-Agnostic (Rule 05 Refactor)
+
+- **Shared Test Helpers ([tests/tile_expectations.py](tests/tile_expectations.py))** (new module):
+  - `tileset_files` / `expected_tileset_metrics` derive every tileset's `w_px`, `w_bytes = (w+3)//4`, `h_lines` and packed size straight from `tiles/*.png`, in the converter's emission order.
+  - `element_dst_rect`, `element_is_rendered`, `element_reference_bytes` and `topmost_visible_element` mirror the exact compiler/renderer contract: `src_x_byte = src_x // 4` (byte-aligned source reads), `dst_x_byte = max(0, dst_x) // 4`, elements with `dst_y >= 96` are skipped (not clipped), widths/heights are clipped to the playfield, and `flip_x` reverses the byte order of a scanline while swapping pixels through the ROM `FLIP_BYTE_2BPP` table.
+- **Tile Conversion Tests ([tests/test_convert_tiles.py](tests/test_convert_tiles.py))**:
+  - `test_convert_tiles_integration` asserts each `gen/tiles_*.bin` size against the derived PNG dimensions instead of hardcoded 2992/6480/4161/2604.
+  - `test_compiled_xex_tiles_layout` derives the total payload size and end address from the PNGs instead of hardcoding 16237 / `$BF6C`.
+  - `test_py65_tiles_metadata_and_tables` verifies `tileset_w_bytes`, `tileset_h_lines`, the cumulative data pointers and the row-offset tables (`line * stride`) for every tileset dynamically.
+- **Background Render Tests ([tests/test_render_scene.py](tests/test_render_scene.py))**:
+  - Both scene tests derive the expected palette from the scene's `scene_primary_tileset` entry plus the ROM `tileset_colpf0/1/2` and `tileset_colbk` tables instead of hardcoding the castle/forest colours.
+  - Replaced the hardcoded element crop (`line2[9:30]`) and the `>1000` non-zero-byte thresholds with a byte-exact comparison of the topmost fully visible element (source bitmap -> pack -> compare against VRAM).
+- **Verification**:
+  - Red/green validated by mirroring `tiles/castles.png`, `tiles/hell.png` and `tiles/trees.png` (every packed byte changes): the full 549-test suite passes unchanged; the artwork was then restored byte-identically (SHA-256 verified) and `make all` passes with 5,253 bytes of headroom below `$C000`.
+
+
 ## [2026-10-22] - Rebalance Memory: Relocate Intro Screen Handler Out of the Tight $2000 Block
 
 - **Motivation**: after the victory-hold phase and the PMG-latch fix, the `$2000` CODE block ended at `$23EA`, i.e. only **21 bytes** before the intro font at `$2400` - no room left for further gameplay logic.

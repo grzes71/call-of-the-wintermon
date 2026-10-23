@@ -74,6 +74,53 @@ class TestMainWindowIntegration:
         assert window.layers_list.count() == 2
         assert window.scene_view.get_selected_element_id() == "element-002"
 
+    def test_crop_snaps_to_byte_grid(self, test_app):
+        """Crop x and width must snap to multiples of 4 (ANTIC Mode E packs 4 px per byte)."""
+        from PySide6.QtCore import QRectF
+        from scene_editor.crop_editor import SOURCE_X_ALIGN, align_crop_width, align_source_x
+
+        window, _tmp_path, _tile_path = test_app
+
+        assert SOURCE_X_ALIGN == 4
+        assert align_source_x(0) == 0
+        assert align_source_x(3) == 0
+        assert align_source_x(4) == 4
+        assert align_source_x(79) == 76   # the value that used to shift the crop in game
+        assert align_source_x(-5) == 0
+
+        # Widths round *up* to whole bytes so no selected pixel is dropped
+        assert align_crop_width(0) == 4
+        assert align_crop_width(1) == 4
+        assert align_crop_width(4) == 4
+        assert align_crop_width(5) == 8
+        assert align_crop_width(77) == 80
+        assert align_crop_width(81) == 84
+
+        window.tile_browser.select_file("tiles/grass.png")
+        editor = window.crop_editor
+        assert editor.spin_x.singleStep() == SOURCE_X_ALIGN
+        assert editor.spin_w.singleStep() == SOURCE_X_ALIGN
+
+        # Spinbox input is snapped and reflected back to the user (tile is 64 px wide)
+        editor.spin_x.setValue(47)
+        assert editor.spin_x.value() == 44
+        assert editor._current_crop.x == 44
+
+        editor.spin_x.setValue(0)
+        editor.spin_w.setValue(45)
+        assert editor.spin_w.value() == 48
+        assert editor._current_crop.width == 48
+
+        # A mouse selection is snapped as well
+        item = editor.canvas_view.selection_item
+        item.set_crop_rect(QRectF(47, 5, 16, 10))
+        assert item.rect().x() == 44
+        assert item.to_rect().x == 44
+
+        item.set_crop_rect(QRectF(4, 5, 45, 10))
+        assert item.rect().width() == 48
+        assert item.to_rect().width == 48
+
     def test_flip_and_delete_flow(self, test_app):
         window, tmp_path, tile_path = test_app
         window._on_add_element_requested("tiles/grass.png", Rect(0, 0, 16, 16))
@@ -249,8 +296,14 @@ class TestMainWindowIntegration:
         window, _, _ = test_app
         from PySide6.QtWidgets import QFrame, QScrollArea
 
-        assert window.prop_tabs.count() == 4
-        expected_titles = ["Tiles & Elements", "Hardware Platforms", "Objects", "Player Start"]
+        assert window.prop_tabs.count() == 5
+        expected_titles = [
+            "Tiles & Elements",
+            "Hardware Platforms",
+            "Objects",
+            "Player Start",
+            "Background Colors",
+        ]
 
         for idx, title in enumerate(expected_titles):
             assert window.prop_tabs.tabText(idx) == title

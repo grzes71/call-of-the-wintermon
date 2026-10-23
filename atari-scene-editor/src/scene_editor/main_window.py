@@ -77,6 +77,7 @@ from .commands import (
     ReorderElementCommand,
     ResizePlatformCommand,
     ResizeSceneCommand,
+    SetBackgroundPaletteCommand,
     SetPlayerSpawnCommand,
     ChangePlayerSpawnColorCommand,
     UpdateSceneObjectPropsCommand,
@@ -91,6 +92,8 @@ from .json_serializer import (
     find_project_root,
 )
 from .scene_model import (
+    BG_PALETTE_COLORS_PER_ZONE,
+    BG_PALETTE_ZONES,
     DEFAULT_PLAYER_COLOR,
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
@@ -267,6 +270,7 @@ class MainWindow(QMainWindow):
         self._is_selecting_object: bool = False
         self._is_selecting_player_spawn: bool = False
         self._is_updating_player_spawn: bool = False
+        self._is_updating_bg_palette: bool = False
         self._new_obj_source: Optional[str] = None
         self._new_obj_rect: Optional[Rect] = None
 
@@ -845,6 +849,93 @@ class MainWindow(QMainWindow):
         pl_layout.addWidget(player_info_group, stretch=1)
 
         self.prop_tabs.addTab(self._create_scrollable_tab(player_widget), "Player Start")
+
+        # -------------------------------------------------------------
+        # Tab 5: Background Colors (upper / lower zone COLPF0..2)
+        # -------------------------------------------------------------
+        bg_widget = QWidget()
+        bg_layout = QVBoxLayout(bg_widget)
+        bg_layout.setContentsMargins(6, 6, 6, 6)
+        bg_layout.setSpacing(6)
+
+        bg_info = QLabel(
+            "ANTIC Mode E shows four playfield colours. Pixel value 0 is always black (COLBK); "
+            "values 1..3 use <b>COLPF0..COLPF2</b>. The DLI swaps the palette once per frame, so "
+            "the upper and the lower screen zone each carry their own three colours "
+            "(the zone split sits at playfield line 44)."
+        )
+        bg_info.setWordWrap(True)
+        bg_info.setStyleSheet("color: #a4b0be; font-size: 11px;")
+        bg_layout.addWidget(bg_info)
+
+        self.bg_palette_spins: dict[str, list[QSpinBox]] = {}
+        self.bg_palette_hex_lbls: dict[str, list[QLabel]] = {}
+        self.bg_palette_swatches: dict[str, list[QPushButton]] = {}
+
+        zone_titles = {
+            "upper": "Upper Zone (playfield lines 0-43)",
+            "lower": "Lower Zone (playfield lines 44-95)",
+        }
+        for zone in BG_PALETTE_ZONES:
+            zone_group = QGroupBox(zone_titles.get(zone, zone))
+            zone_form = QFormLayout(zone_group)
+
+            spins: list[QSpinBox] = []
+            hex_lbls: list[QLabel] = []
+            swatches: list[QPushButton] = []
+
+            for idx in range(BG_PALETTE_COLORS_PER_ZONE):
+                row_widget = QWidget()
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
+
+                spin = QSpinBox()
+                spin.setRange(0, 254)
+                spin.setSingleStep(2)
+                spin.setToolTip("Atari colour code written to the COLPFn register ($00-$FE, even values)")
+                spin.valueChanged.connect(
+                    lambda val, z=zone, i=idx: self._on_bg_palette_spin_changed(z, i, val)
+                )
+
+                hex_lbl = QLabel("$--")
+                hex_lbl.setMinimumWidth(34)
+
+                swatch = QPushButton()
+                swatch.setFixedSize(32, 22)
+                swatch.setToolTip("Click to pick a colour from the Atari GTIA palette")
+                swatch.clicked.connect(
+                    lambda checked=False, z=zone, i=idx: self._on_pick_bg_palette_color(z, i)
+                )
+
+                row_layout.addWidget(spin)
+                row_layout.addWidget(hex_lbl)
+                row_layout.addWidget(swatch)
+                row_layout.addStretch()
+
+                zone_form.addRow(f"COLPF{idx} (pixel {idx + 1}):", row_widget)
+                spins.append(spin)
+                hex_lbls.append(hex_lbl)
+                swatches.append(swatch)
+
+            bg_layout.addWidget(zone_group)
+            self.bg_palette_spins[zone] = spins
+            self.bg_palette_hex_lbls[zone] = hex_lbls
+            self.bg_palette_swatches[zone] = swatches
+
+        self.bg_palette_status_lbl = QLabel()
+        self.bg_palette_status_lbl.setWordWrap(True)
+        bg_layout.addWidget(self.bg_palette_status_lbl)
+
+        self.btn_clear_bg_palette = QPushButton("Clear (derive colours from the tilesets)")
+        self.btn_clear_bg_palette.setToolTip(
+            "Removes the stored palette; the compiler then derives the colours from the scene tilesets."
+        )
+        self.btn_clear_bg_palette.clicked.connect(self._on_clear_bg_palette_clicked)
+        bg_layout.addWidget(self.btn_clear_bg_palette)
+        bg_layout.addStretch()
+
+        self.prop_tabs.addTab(self._create_scrollable_tab(bg_widget), "Background Colors")
         self.prop_tabs.currentChanged.connect(self._on_prop_tab_changed)
 
         self.right_dock.setWidget(self.prop_tabs)
@@ -855,6 +946,7 @@ class MainWindow(QMainWindow):
         self._update_platform_property_panel(None)
         self._update_object_property_panel(None)
         self._update_player_spawn_property_panel()
+        self._update_background_palette_panel()
 
     # -------------------------------------------------------------------------
     # Menus and Toolbars
@@ -1348,6 +1440,7 @@ class MainWindow(QMainWindow):
         selected_obj = self.scene_model.get_object(selected_obj_id) if selected_obj_id is not None else None
         self._update_object_property_panel(selected_obj)
         self._update_player_spawn_property_panel()
+        self._update_background_palette_panel()
 
         self.status_res_lbl.setText(f"Size: {self.scene_model.width}×{self.scene_model.height}")
         has_spawn = f"({self.scene_model.player_spawn.x}, {self.scene_model.player_spawn.y})" if self.scene_model.player_spawn else "None"
@@ -1542,6 +1635,8 @@ class MainWindow(QMainWindow):
             if self.scene_model.player_spawn is not None:
                 self.scene_view.select_player_spawn(True)
             self._update_player_spawn_property_panel()
+        elif index == 4:  # Background Colors tab
+            self._update_background_palette_panel()
 
     def _on_object_command_executed(self, select_id: Optional[Any] = None) -> None:
         self._is_dirty = True
@@ -3485,5 +3580,100 @@ class MainWindow(QMainWindow):
                 self.btn_remove_player_spawn.setEnabled(True)
         finally:
             self._is_updating_player_spawn = False
+    # -------------------------------------------------------------------------
+    # Scene background palette (upper / lower zone colours)
+    # -------------------------------------------------------------------------
+    def _on_bg_palette_spin_changed(self, zone: str, index: int, val: int) -> None:
+        """Store a typed Atari colour code for one background zone colour."""
+        if self._is_updating_bg_palette:
+            return
+        val_even = val & 0xFE
+        if val != val_even:
+            spin = self.bg_palette_spins[zone][index]
+            spin.blockSignals(True)
+            spin.setValue(val_even)
+            spin.blockSignals(False)
+            val = val_even
+
+        if val == self.scene_model.get_background_colors(zone)[index]:
+            return
+
+        new_palette = self.scene_model.effective_background_palette().clone()
+        new_palette.set_color(zone, index, val)
+        self.undo_stack.push(
+            SetBackgroundPaletteCommand(
+                self.scene_model,
+                new_palette,
+                callback=self._on_bg_palette_command_executed,
+            )
+        )
+
+    def _on_pick_bg_palette_color(self, zone: str, index: int) -> None:
+        """Open the GTIA palette dialog for one background zone colour."""
+        cur_color = self.scene_model.get_background_colors(zone)[index]
+        new_color, ok = AtariColorPickerDialog.get_color(self, cur_color)
+        if not ok or new_color == cur_color:
+            return
+
+        new_palette = self.scene_model.effective_background_palette().clone()
+        new_palette.set_color(zone, index, new_color)
+        self.undo_stack.push(
+            SetBackgroundPaletteCommand(
+                self.scene_model,
+                new_palette,
+                callback=self._on_bg_palette_command_executed,
+            )
+        )
+
+    def _on_clear_bg_palette_clicked(self) -> None:
+        """Drop the stored palette so the compiler derives the colours from the tilesets."""
+        if self.scene_model.background_palette is None:
+            return
+        self.undo_stack.push(
+            SetBackgroundPaletteCommand(
+                self.scene_model,
+                None,
+                callback=self._on_bg_palette_command_executed,
+            )
+        )
+
+    def _on_bg_palette_command_executed(self) -> None:
+        self._is_dirty = True
+        self._update_background_palette_panel()
+
+    def _update_background_palette_panel(self) -> None:
+        """Mirror the scene background palette (or the compiler default) into the widgets."""
+        if not hasattr(self, "bg_palette_spins"):
+            return
+        self._is_updating_bg_palette = True
+        try:
+            for zone in BG_PALETTE_ZONES:
+                colors = self.scene_model.get_background_colors(zone)
+                for idx, color in enumerate(colors):
+                    spin = self.bg_palette_spins[zone][idx]
+                    spin.blockSignals(True)
+                    spin.setValue(color)
+                    spin.blockSignals(False)
+
+                    self.bg_palette_hex_lbls[zone][idx].setText(f"${color:02X}")
+                    self.bg_palette_swatches[zone][idx].setStyleSheet(
+                        f"background-color: {atari_color_to_hex_rgb(color)}; "
+                        f"border: 1px solid #888; border-radius: 2px;"
+                    )
+
+            if self.scene_model.background_palette is not None:
+                self.bg_palette_status_lbl.setText(
+                    "<span style='color: #4cd137;'>Palette stored in this scene.</span>"
+                )
+                self.btn_clear_bg_palette.setEnabled(True)
+            else:
+                self.bg_palette_status_lbl.setText(
+                    "<span style='color: #f0a020;'>No palette stored yet - the compiler derives the colours "
+                    "from the scene tilesets. Change any colour to store an explicit palette.</span>"
+                )
+                self.btn_clear_bg_palette.setEnabled(False)
+        finally:
+            self._is_updating_bg_palette = False
+
 
 

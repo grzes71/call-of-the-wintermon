@@ -107,6 +107,43 @@ class TestJsonSerializer:
             assert original.flip_x == restored.flip_x
             assert original.z_index == restored.z_index
 
+    def test_off_grid_crop_is_realigned_on_load_and_save(self):
+        """Crop x and width must snap to the ANTIC Mode E byte grid (4 pixels per byte)."""
+        from scene_editor.scene_model import SOURCE_X_ALIGN
+
+        assert SOURCE_X_ALIGN == 4
+        scene_dict = {
+            "schema_version": 1,
+            "scene": {"name": "Crop Grid", "width": 160, "height": 96},
+            "elements": [
+                {
+                    "id": "element-001",
+                    "source": "tiles/castles.png",
+                    "source_rect": {"x": 79, "y": 0, "width": 81, "height": 42},
+                    "position": {"x": 0, "y": 0},
+                },
+                {
+                    "id": "element-002",
+                    "source": "tiles/castles.png",
+                    "source_rect": {"x": 4, "y": 0, "width": 16, "height": 16},
+                    "position": {"x": 0, "y": 0},
+                },
+            ],
+        }
+
+        scene = SceneSerializer.from_dict(scene_dict)
+        assert scene.elements[0].source_rect.x == 76        # 79 -> 76 (byte aligned)
+        assert scene.elements[0].source_rect.width == 84    # 81 -> 84 (whole bytes)
+        assert scene.elements[1].source_rect.x == 4         # already on the grid
+        assert scene.elements[1].source_rect.width == 16    # already on the grid
+
+        saved = SceneSerializer.to_dict(scene)
+        assert saved["elements"][0]["source_rect"]["x"] == 76
+        assert saved["elements"][0]["source_rect"]["width"] == 84
+        assert saved["elements"][0]["source_rect"]["height"] == 42  # other fields untouched
+        assert saved["elements"][1]["source_rect"]["x"] == 4
+        assert saved["elements"][1]["source_rect"]["width"] == 16
+
     def test_unsupported_schema_version(self):
         data = {
             "schema_version": 999,

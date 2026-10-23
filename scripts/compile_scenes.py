@@ -238,6 +238,84 @@ TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
     3: (0xC4, 0xC8, 0xDC),  # trees
 }
 
+# Background palette used when a scene stores no explicit 'background_palette' and no
+# tileset can be resolved. Mirrors scene_editor.scene_model.DEFAULT_BACKGROUND_PALETTE_COLORS
+# (tests/test_scene_background_palette.py asserts both stay in sync).
+DEFAULT_BACKGROUND_PALETTE: tuple[int, int, int] = (0xC4, 0xC8, 0xDC)
+
+BG_PALETTE_ZONES = ("upper", "lower")
+BG_PALETTE_COLORS_PER_ZONE = 3
+
+
+def parse_atari_color_value(raw: object, context: str) -> int:
+    """Parse an Atari colour register byte from an int or a hex string ('$C4', '0xC4', 'C4')."""
+    if isinstance(raw, bool):
+        raise ValueError(f"{context}: colour must be an integer or hex string, got bool.")
+    if isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, str):
+        cleaned = raw.strip()
+        if not cleaned:
+            raise ValueError(f"{context}: colour cannot be empty.")
+        try:
+            if cleaned.startswith("$"):
+                value = int(cleaned[1:], 16)
+            elif cleaned.lower().startswith("0x"):
+                value = int(cleaned[2:], 16)
+            else:
+                value = int(cleaned, 16)
+        except ValueError as exc:
+            raise ValueError(f"{context}: '{raw}' is not a valid Atari colour value.") from exc
+    else:
+        raise ValueError(
+            f"{context}: colour must be an integer or hex string, got {type(raw).__name__}."
+        )
+
+    if not (0 <= value <= 255):
+        raise ValueError(f"{context}: colour 0x{value:02X} is outside the 0x00-0xFF range.")
+    if value & 1:
+        raise ValueError(
+            f"{context}: colour 0x{value:02X} has bit 0 set; GTIA ignores the lowest bit "
+            f"(use 0x{value & 0xFE:02X})."
+        )
+    return value
+
+
+def parse_scene_background_palette(
+    data: dict[str, Any], scene_name: str
+) -> Optional[dict[str, tuple[int, int, int]]]:
+    """Parse the optional per-scene background palette (upper/lower zone COLPF0..2 triples).
+
+    Returns None when the scene stores no explicit palette, in which case the DLI colours are
+    derived from the tilesets (legacy behaviour).
+    """
+    raw = data.get("background_palette")
+    if raw is None and isinstance(data.get("scene"), dict):
+        raw = data["scene"].get("background_palette")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Scene '{scene_name}': 'background_palette' must be an object with 'upper' and 'lower' zones."
+        )
+
+    parsed: dict[str, tuple[int, int, int]] = {}
+    for zone in BG_PALETTE_ZONES:
+        if zone not in raw:
+            raise ValueError(f"Scene '{scene_name}': background_palette is missing the '{zone}' zone.")
+        colors = raw[zone]
+        if not isinstance(colors, (list, tuple)) or len(colors) != BG_PALETTE_COLORS_PER_ZONE:
+            raise ValueError(
+                f"Scene '{scene_name}': background_palette['{zone}'] must list exactly "
+                f"{BG_PALETTE_COLORS_PER_ZONE} Atari colours (COLPF0..COLPF2), got {colors!r}."
+            )
+        values = tuple(
+            parse_atari_color_value(item, f"Scene '{scene_name}': background_palette['{zone}'][{idx}]")
+            for idx, item in enumerate(colors)
+        )
+        parsed[zone] = values  # type: ignore[assignment]
+    return parsed
+
 
 SUPPORTED_SPRITE_WIDTHS: dict[int, list[tuple[int, int]]] = {
     8: [(8, 0)],
@@ -446,16 +524,23 @@ def compile_scene_dli_data(
     objects: list[SceneObjectData],
     primary_tileset_id: int,
     scene_name: str = "",
+    background_palette: Optional[dict[str, tuple[int, int, int]]] = None,
 ) -> SceneDliCompiledData:
     """Compile platform channels, profiles, palettes, and zones for unified DLI."""
     # 1. Determine background palettes
     upper_elements = [e for e in elements if e.dst_y < 44]
     upper_ts = upper_elements[0].tileset_id if upper_elements else primary_tileset_id
-    upper_palette = TILESET_PALETTES.get(upper_ts, (0xC4, 0xC8, 0xDC))
+    upper_palette = TILESET_PALETTES.get(upper_ts, DEFAULT_BACKGROUND_PALETTE)
 
     lower_elements = [e for e in elements if e.dst_y >= 44]
     lower_ts = lower_elements[0].tileset_id if lower_elements else upper_ts
     lower_palette = TILESET_PALETTES.get(lower_ts, upper_palette)
+
+    # An explicit scene palette (edited in the Scene Editor) always wins over the
+    # tileset-derived colours above.
+    if background_palette is not None:
+        upper_palette = background_palette["upper"]
+        lower_palette = background_palette["lower"]
 
     # Background palette per pas:
     # Pas 0 (line 8): upper
@@ -1329,7 +1414,14 @@ def parse_scene_json(
         player_start_y = 68
         player_color = 0x98
 
-    dli_data = compile_scene_dli_data(elements, platforms, objects, primary_tileset_id, scene_name=name)
+    dli_data = compile_scene_dli_data(
+        elements,
+        platforms,
+        objects,
+        primary_tileset_id,
+        scene_name=name,
+        background_palette=parse_scene_background_palette(data, name),
+    )
 
     return SceneCompiledData(
         file_stem=stem,

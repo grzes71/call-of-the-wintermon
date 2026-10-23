@@ -7,6 +7,14 @@ import re
 import pytest
 from py65.devices.mpu6502 import MPU
 
+from tests.scene_expectations import scene_files
+from tests.tile_expectations import (
+    element_dst_rect,
+    element_reference_bytes,
+    load_scene,
+    topmost_visible_element,
+)
+
 
 def parse_labels(lab_path: Path) -> dict[str, int]:
     """Parse MADS symbol table into dictionary of uppercase label -> address."""
@@ -128,32 +136,36 @@ def test_render_forest_scene_background(emu_state):
     mpu.a = forest_id
     run_subroutine(mpu, render_proc)
 
-    # 1. Palette check: Forest theme (trees)
-    # COLPF0=$C4, COLPF1=$C8, COLPF2=$DC, COLBK=$00
-    color0 = labels["COLOR0"]
-    color1 = labels["COLOR1"]
-    color2 = labels["COLOR2"]
-    color4 = labels["COLOR4"]
-    assert mem[color0] == 0xC4
-    assert mem[color1] == 0xC8
-    assert mem[color2] == 0xDC
-    assert mem[color4] == 0x00
+    # 1. Palette must match the scene's primary tileset ROM entry (derived, Rule 05)
+    primary_tileset = mem[labels["SCENE_PRIMARY_TILESET"] + forest_id]
+    assert mem[labels["COLOR0"]] == mem[labels["TILESET_COLPF0"] + primary_tileset]
+    assert mem[labels["COLOR1"]] == mem[labels["TILESET_COLPF1"] + primary_tileset]
+    assert mem[labels["COLOR2"]] == mem[labels["TILESET_COLPF2"] + primary_tileset]
+    assert mem[labels["COLOR4"]] == mem[labels["TILESET_COLBK"] + primary_tileset]
 
     # 2. Check active scene ID
     active_scene_id = labels["ACTIVE_SCENE_ID"]
     assert mem[active_scene_id] == forest_id
 
-    # 3. Check VRAM contains rendered tree graphics (not blank)
+    # 3. Check VRAM contains rendered background graphics (not blank)
     vram_slice = mem[game_vram : game_vram + 3840]
     non_zero_count = sum(1 for b in vram_slice if b != 0)
-    assert non_zero_count > 1000, f"Expected >1000 non-zero bytes, got {non_zero_count}"
+    assert non_zero_count > 0, "scene background must not be blank"
 
-    # 4. Check specific element position:
-    # element-002: trees canopy at y=2, x=37 (x_byte = 9), width 21 bytes
-    # Scanline 2 in playfield starts at game_vram + 2*40 = game_vram + 80
-    line2 = mem[game_vram + 80 : game_vram + 120]
-    # Byte 9..29 should contain graphics
-    assert any(b != 0 for b in line2[9:30])
+    # 4. Byte-exact verification of the topmost scene element that fits on screen:
+    #    read the source bitmap, pack it and compare against the rendered playfield
+    scene = load_scene(scene_files()[forest_id])
+    element = topmost_visible_element(scene)
+    assert element is not None, "scene must contain a fully visible background element"
+    dst_x, dst_y, w_bytes, h_lines = element_dst_rect(element)
+    reference = element_reference_bytes(mem, labels, element)
+    for row in range(h_lines):
+        base = game_vram + (dst_y + row) * 40 + dst_x
+        actual = list(mem[base : base + w_bytes])
+        assert actual == reference[row], (
+            f"element {element['id']} scanline {row} mismatch: "
+            f"{actual} != {reference[row]}"
+        )
 
 
 def test_render_castle_scene_background(emu_state):
@@ -169,22 +181,28 @@ def test_render_castle_scene_background(emu_state):
     mpu.a = castle_id
     run_subroutine(mpu, render_proc)
 
-    # 1. Palette check: Castle theme (castles)
-    # COLPF0=$94, COLPF1=$D6, COLPF2=$EA, COLBK=$00
-    color0 = labels["COLOR0"]
-    color1 = labels["COLOR1"]
-    color2 = labels["COLOR2"]
-    color4 = labels["COLOR4"]
-    assert mem[color0] == 0x94
-    assert mem[color1] == 0xD6
-    assert mem[color2] == 0xEA
-    assert mem[color4] == 0x00
+    # 1. Palette must match the scene's primary tileset ROM entry (derived, Rule 05)
+    primary_tileset = mem[labels["SCENE_PRIMARY_TILESET"] + castle_id]
+    assert mem[labels["COLOR0"]] == mem[labels["TILESET_COLPF0"] + primary_tileset]
+    assert mem[labels["COLOR1"]] == mem[labels["TILESET_COLPF1"] + primary_tileset]
+    assert mem[labels["COLOR2"]] == mem[labels["TILESET_COLPF2"] + primary_tileset]
+    assert mem[labels["COLOR4"]] == mem[labels["TILESET_COLBK"] + primary_tileset]
 
     # 2. Check active scene ID
     active_scene_id = labels["ACTIVE_SCENE_ID"]
     assert mem[active_scene_id] == castle_id
 
-    # 3. Check VRAM has non-zero graphics
-    vram_slice = mem[game_vram : game_vram + 3840]
-    non_zero_count = sum(1 for b in vram_slice if b != 0)
-    assert non_zero_count > 1000, f"Expected >1000 non-zero bytes, got {non_zero_count}"
+    # 3. Byte-exact verification of the topmost scene element that fits on screen
+    #    (elements whose y is negative are skipped by the renderer entirely)
+    scene = load_scene(scene_files()[castle_id])
+    element = topmost_visible_element(scene)
+    assert element is not None, "scene must contain a fully visible background element"
+    dst_x, dst_y, w_bytes, h_lines = element_dst_rect(element)
+    reference = element_reference_bytes(mem, labels, element)
+    for row in range(h_lines):
+        base = game_vram + (dst_y + row) * 40 + dst_x
+        actual = list(mem[base : base + w_bytes])
+        assert actual == reference[row], (
+            f"element {element['id']} scanline {row} mismatch: "
+            f"{actual} != {reference[row]}"
+        )

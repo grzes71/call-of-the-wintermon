@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from PySide6.QtGui import QUndoCommand
 
 from .scene_model import (
+    BackgroundPalette,
     PlatformElement,
     PlayerSpawn,
     Position,
@@ -729,6 +730,34 @@ class ChangePlayerSpawnColorCommand(SceneBaseCommand):
     def undo(self) -> None:
         if self.scene.player_spawn:
             self.scene.player_spawn.color = self.old_color
+        self.notify()
+
+
+class SetBackgroundPaletteCommand(SceneBaseCommand):
+    """Command to set or clear the scene background palette (upper/lower zone colours)."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        new_palette: Optional[BackgroundPalette],
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        text = (
+            "Set scene background palette"
+            if new_palette is not None
+            else "Clear scene background palette"
+        )
+        super().__init__(text, callback)
+        self.scene = scene
+        self.old_palette = scene.background_palette.clone() if scene.background_palette else None
+        self.new_palette = new_palette.clone() if new_palette else None
+
+    def redo(self) -> None:
+        self.scene.background_palette = self.new_palette.clone() if self.new_palette else None
+        self.notify()
+
+    def undo(self) -> None:
+        self.scene.background_palette = self.old_palette.clone() if self.old_palette else None
         self.notify()
 
 

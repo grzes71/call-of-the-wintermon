@@ -187,7 +187,11 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
       "speed": "medium",
       "movement_strategy": "stationary"
     }
-  ]
+  ],
+  "background_palette": {
+    "upper": [148, 214, 234],
+    "lower": [196, 200, 220]
+  }
 }
 ```
 
@@ -197,6 +201,7 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
 - **`elements`**: Lista zwykłych elementów kafelków w kolejności rysowania.
 - **`platforms`**: Lista platform sprzętowych PMG z pozycją `x`, `y` (`y % 16 == 8`), szerokością i wysokością 4 px.
 - **`objects`**: Lista instancji obiektów na scenie wskazujących `definition_id` z kartoteki oraz `platform_id`.
+- **`background_palette`** (opcjonalne): Kolory tła sceny dla dwóch stref ekranu. `upper` i `lower` to po 3 kody kolorów Atari (COLPF0..COLPF2, wartości `0..254`, parzyste — GTIA ignoruje bit 0); kolor piksela 0 to zawsze czerń (COLBK). Wartości mogą być liczbami lub łańcuchami hex (`"$94"`, `"0x94"`, `"94"`). Gdy klucz jest nieobecny, kompilator wyprowadza kolory z tilesetów sceny (zachowanie wsteczne).
 - **Zapis atomowy:** Wszystkie pliki (sceny oraz kartoteki `enemies.json` i `secrets.json`) zapisywane są atomowo z użyciem plików tymczasowych.
 
 ---
@@ -208,6 +213,11 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
    - Wyświetla listę plików graficznych z katalogu `tiles/` z miniaturami.
 2. **Edytor wycinania (lewy dolny róg):**
    - Umożliwia zaznaczanie kafelków myszą i dodawanie do sceny.
+   - **Siatka bajtowa dla wycinka (`source_rect.x` i `source_rect.width`):** ANTIC Mode E pakuje 4 piksele w jeden bajt, a silnik gry czyta bitmapy tilesetów **całymi bajtami** (`src_x_byte = src_x // 4`, `w_bytes = (w + 3) // 4`). Dlatego:
+     - **`X`** jest przyciągane **w dół** do wielokrotności 4 (mysz i pole `X:`, krok strzałek = 4) — inaczej gra rysowałaby fragment od piksela `76` przy wycinku `x = 79`.
+     - **`W`** jest przyciągane **w górę** do wielokrotności 4 (mysz i pole `W:`, krok strzałek = 4) — gra i tak czyta całe bajty, więc wycinek `77 px` jest rysowany jako `80 px`; zaokrąglenie w górę nie gubi zaznaczonych pikseli i sprawia, że podgląd = obraz w grze.
+     - Ograniczeniem pozostaje rozmiar grafiki: jeśli `x + w` przekracza szerokość PNG, przycinanie do granic obrazu ma pierwszeństwo nad siatką (przy szerokościach PNG będących wielokrotnością 4 nie występuje).
+   - **Automatyczne wyrównanie przy wczytywaniu i zapisie:** starsze sceny z `x`/`W` spoza siatki są wyrównywane automatycznie (z ostrzeżeniem w logu, z listą poprawionych elementów). Nie zmienia to obrazu w grze (renderer i tak czyta te same bajty), a jedynie sprawia, że podgląd zgadza się z ROM-em.
 3. **Płótno sceny (środek):**
    - Obszar sceny z siatką pomocniczą i subtelnymi prowadnicami dozwolonych wierszy platform (`y = 8, 24, 40...`).
    - Przesuwanie elementów i platform myszą lub klawiaturą.
@@ -215,6 +225,7 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
    - **Zakładka "Tiles & Elements":** rozdzielczość sceny, właściwości zaznaczonego kafelka, odbicie `flip_x`, warstwy i lista elementów.
    - **Zakładka "Hardware Platforms":** tworzenie nowej platformy (wybór typu sprite/missile, dozwolonej szerokości, wiersza, pozycji X), edycja właściwości zaznaczonej platformy, licznik użycia zasobów w wierszu oraz lista platform.
    - **Zakładka "Objects":** zarządzanie kartotekami (`Ctrl+K`), dodawanie instancji wrogów i sekretów na wybrane platformy, wybór definicji z listy, podgląd właściwości definicji oraz edycja pozycji X.
+   - **Zakładka "Background Colors":** kolory tła sceny dla **górnej** i **dolnej** strefy ekranu (po 3 kolory: `COLPF0`, `COLPF1`, `COLPF2`). Każdy kolor ma pole z kodem Atari (`$00-$FE`, krok 2, wartość nieparzysta jest przycinana do parzystej — GTIA ignoruje bit 0), etykietę hex (`$94`) oraz **próbnik otwierający paletę GTIA** (16 odcieni × 8 luminancji). Kolor piksela 0 to zawsze czerń (COLBK) i nie wymaga definiowania. Zmiany są w pełni cofalne (`Ctrl+Z`). Przycisk *Clear (derive colours from the tilesets)* usuwa zapisaną paletę — kompilator wraca wtedy do wyprowadzania kolorów z tilesetów.
 
 ### Skróty klawiszowe:
 - `Ctrl+N` — Nowa scena (okno wyboru nazwy i rozdzielczości).

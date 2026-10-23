@@ -13,6 +13,7 @@ from scripts.convert_tiles import (
     convert_tiles,
     DEFAULT_PALETTES,
 )
+from tests.tile_expectations import expected_tileset_metrics
 
 
 def test_pack_antic_e_bytes_exact_multiples() -> None:
@@ -126,11 +127,13 @@ def test_convert_tiles_integration(tmp_path: Path) -> None:
         assert p.is_file(), f"Expected {ef} to exist"
         assert p.stat().st_size > 0, f"Expected {ef} to be non-empty"
 
-    # Verify exact binary sizes
-    assert (gen_dir / "tiles_castles.bin").stat().st_size == 2992
-    assert (gen_dir / "tiles_depths.bin").stat().st_size == 6480
-    assert (gen_dir / "tiles_hell.bin").stat().st_size == 4161
-    assert (gen_dir / "tiles_trees.bin").stat().st_size == 2604
+    # Verify binary sizes are exactly the packed source dimensions (derived, Rule 05)
+    for metrics in expected_tileset_metrics():
+        bin_path = gen_dir / f"tiles_{metrics['name']}.bin"
+        assert bin_path.stat().st_size == metrics["size"], (
+            f"{bin_path.name}: expected {metrics['size']} bytes "
+            f"({metrics['w_bytes']} bytes/line x {metrics['h_lines']} lines) from {metrics['path']}"
+        )
 
     # Verify ASM contents
     asm_content = (gen_dir / "tiles_data.asm").read_text(encoding="utf-8")
@@ -159,9 +162,12 @@ def test_compiled_xex_tiles_layout() -> None:
     assert tiles_seg is not None, "Segment starting at $8000 not found"
 
     start, end, size = tiles_seg
+    expected_total = sum(metrics["size"] for metrics in expected_tileset_metrics())
     assert start == 0x8000
-    assert size == 16237
-    assert end == 0xBF6C
+    assert size == expected_total, (
+        f"tiles payload is {size} bytes, expected {expected_total} from the source PNGs"
+    )
+    assert end == 0x8000 + expected_total - 1
     assert end <= 0xBFFF, f"Tiles segment exceeds $BFFF limit: ${end:04X}"
 
 
@@ -214,40 +220,40 @@ def test_py65_tiles_metadata_and_tables() -> None:
         mem[start : start + size] = data[pos : pos + size]
         pos += size
 
-    # Verify width in bytes: castles=68, depths=90, hell=73, trees=62
+    metrics = expected_tileset_metrics()
+
+    # Width in bytes and height in lines must match the source PNGs (Rule 05)
     wb_addr = labels["TILESET_W_BYTES"]
-    assert list(mem[wb_addr : wb_addr + 4]) == [68, 90, 73, 62]
+    assert list(mem[wb_addr : wb_addr + len(metrics)]) == [m["w_bytes"] for m in metrics]
 
-    # Verify height in lines: castles=44, depths=72, hell=57, trees=42
     h_addr = labels["TILESET_H_LINES"]
-    assert list(mem[h_addr : h_addr + 4]) == [44, 72, 57, 42]
+    assert list(mem[h_addr : h_addr + len(metrics)]) == [m["h_lines"] for m in metrics]
 
-    # Verify data pointers in SoA table
+    # Verify data pointers in SoA table: emission order with cumulative sizes
     dlo_addr = labels["TILESET_DATA_LO"]
     dhi_addr = labels["TILESET_DATA_HI"]
-    ptrs = [mem[dlo_addr + i] | (mem[dhi_addr + i] << 8) for i in range(4)]
-    assert ptrs == [
-        labels["TILES_CASTLES_DATA"],
-        labels["TILES_DEPTHS_DATA"],
-        labels["TILES_HELL_DATA"],
-        labels["TILES_TREES_DATA"],
-    ]
-    assert ptrs[0] == 0x8000
-    assert ptrs[1] == 0x8000 + 2992
-    assert ptrs[2] == 0x8000 + 2992 + 6480
-    assert ptrs[3] == 0x8000 + 2992 + 6480 + 4161
+    ptrs = [mem[dlo_addr + i] | (mem[dhi_addr + i] << 8) for i in range(len(metrics))]
 
-    # Verify row offset calculation for trees (stride 62, line 10 -> 620 = $026C)
-    rlo_trees = labels["TILES_TREES_ROW_LO"]
-    rhi_trees = labels["TILES_TREES_ROW_HI"]
-    offset_10 = mem[rlo_trees + 10] | (mem[rhi_trees + 10] << 8)
-    assert offset_10 == 620
+    expected_ptrs: list[int] = []
+    running = 0x8000
+    for metrics_entry in metrics:
+        expected_ptrs.append(running)
+        running += metrics_entry["size"]
+    assert ptrs == expected_ptrs
 
-    # Verify row offset calculation for depths (stride 90, line 50 -> 4500 = $1194)
-    rlo_depths = labels["TILES_DEPTHS_ROW_LO"]
-    rhi_depths = labels["TILES_DEPTHS_ROW_HI"]
-    offset_50 = mem[rlo_depths + 50] | (mem[rhi_depths + 50] << 8)
-    assert offset_50 == 4500
+    for metrics_entry, ptr in zip(metrics, ptrs):
+        assert ptr == labels[f"TILES_{metrics_entry['name'].upper()}_DATA"]
+
+    # Row offset tables: line y must map to y * stride for every tileset
+    for metrics_entry in metrics:
+        row_lo = labels[f"TILES_{metrics_entry['name'].upper()}_ROW_LO"]
+        row_hi = labels[f"TILES_{metrics_entry['name'].upper()}_ROW_HI"]
+        for line in (0, 1, metrics_entry["h_lines"] // 2, metrics_entry["h_lines"] - 1):
+            offset = mem[row_lo + line] | (mem[row_hi + line] << 8)
+            assert offset == line * metrics_entry["w_bytes"], (
+                f"{metrics_entry['name']} row {line}: expected "
+                f"{line * metrics_entry['w_bytes']}, got {offset}"
+            )
 
 
 def test_gameplay_vram_and_pmg_reservation() -> None:
