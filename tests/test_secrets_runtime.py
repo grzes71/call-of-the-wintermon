@@ -17,6 +17,7 @@ import pytest
 from py65.devices.mpu6502 import MPU
 
 from tests.scene_expectations import (
+    SPRITE_TAIL_MARGIN,
     SecretProgressionModel,
     complete_victory_hold,
     dli_secret_color_slots,
@@ -86,10 +87,10 @@ def test_secrets_init_scene0():
         assert mem[y_addr + i] == expected_pmg_y(secret["platform_y"], height), (
             f"secret {i} pmg_y mismatch"
         )
-        # A 3-scanline DLI transition window must stay free above the platform pas
+        # The sprite must end exactly SPRITE_TAIL_MARGIN scanlines above the platform pas base
         pas_base = 32 + secret["platform_y"] * 2
-        assert pas_base - (mem[y_addr + i] + height) >= 3, (
-            f"secret {i} must leave a clean DLI window above its platform"
+        assert pas_base - (mem[y_addr + i] + height) == SPRITE_TAIL_MARGIN, (
+            f"secret {i} must end {SPRITE_TAIL_MARGIN} scanline(s) above its platform pas"
         )
 
         if mem[act_addr + i]:

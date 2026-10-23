@@ -231,6 +231,13 @@ class SceneEnemyData:
 
 PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
 
+# Vertical PMG geometry: a platform's pas base scanline is 32 + platform_y * 2 and its first
+# visible scanline is that base. engine/dli.asm commits the platform's HPOSP/SIZEP/colour on the
+# guard line two scanlines above that base, and the enemies share the player channels with the
+# platforms, so a sprite standing on a platform must end at least 3 scanlines above the base -
+# otherwise its last rows are drawn with the platform's values (visible as flickering feet).
+SPRITE_TAIL_MARGIN = 3
+
 TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
     0: (0x94, 0xD6, 0xEA),  # castles
     1: (0xA2, 0xA6, 0xBA),  # depths
@@ -624,21 +631,36 @@ def compile_scene_dli_data(
                     f"missile platform '{p.id}' has unsupported width {p.width} px (supported: 8, 32)."
                 )
 
-    # 3. Compile enemies and secrets for the 6 pas.
-    # The DLI reads the zone tables with the pas index (0..5) and both runtimes write that same
-    # slot, so `zone` in the engine tables IS the pas index (0 = the platform row at y = 8).
-    def object_zone(obj: SceneObjectData) -> int:
-        plat_y = platforms[obj.platform_idx].y if obj.platform_idx < len(platforms) else 8
-        return max(0, min(5, (plat_y - 8) // 16))
+    # 3. Compile enemies and secrets for the 7 zone table slots.
+    # The DLI applies slot `s` on the guard line of pas `s`, i.e. one platform row *before* the
+    # row whose sprites stand on it, so an object on the platform row with pas `p` must be
+    # stored in slot `p - 1`; the first platform row (y = 8) uses the pre-frame `z0_*` values.
+    def get_zone_idx(y: int) -> int:
+        if y < 8:
+            return 0
+        elif y < 24:
+            return 1
+        elif y < 40:
+            return 2
+        elif y < 56:
+            return 3
+        elif y < 72:
+            return 4
+        elif y < 88:
+            return 5
+        else:
+            return 6
 
-    zone_objects: dict[int, list[SceneObjectData]] = {z: [] for z in range(6)}
+    zone_objects: dict[int, list[SceneObjectData]] = {z: [] for z in range(7)}
     for obj in objects:
-        zone_objects[object_zone(obj)].append(obj)
+        zid = get_zone_idx(obj.y)
+        zone_objects[zid].append(obj)
 
-    # Zone 0 initial values (applied in VBLANK before Pas 0) describe the strip above the first
-    # platform row, where no object can be placed, so they stay neutral.
-    z0_enemies: list[SceneObjectData] = []
-    z0_secrets: list[SceneObjectData] = []
+    # Zone 0 initial values (applied in VBLANK before Pas 0): objects of the first platform row
+    # (y = 8), whose sprites are already visible above that row.
+    z0_objs = zone_objects[0]
+    z0_enemies = [o for o in z0_objs if o.type_code == 0][:3]
+    z0_secrets = [o for o in z0_objs if o.type_code == 1 and o.dependency_id == 0][:1]
 
     z0_hpos_p1 = min(255, max(0, 48 + z0_enemies[0].x)) if len(z0_enemies) > 0 else 0
     z0_col_p1  = z0_enemies[0].atari_color if len(z0_enemies) > 0 else 0
@@ -679,7 +701,10 @@ def compile_scene_dli_data(
     zone_prior = [0x11] * 6
 
     for z_idx in range(6):
-        objs = zone_objects[z_idx]
+        # Slot z_idx carries the objects of the platform row whose pas is z_idx + 1, so their
+        # sprites are set up one zone before the row they stand on.
+        target_zone = z_idx + 1
+        objs = zone_objects[target_zone]
         enemies = [o for o in objs if o.type_code == 0][:3]
         secrets = [o for o in objs if o.type_code == 1 and o.dependency_id == 0][:1]
 
@@ -1261,11 +1286,11 @@ def parse_scene_json(
                         f"skompilowany w formacie '{spr_fmt}' (Player), a sekrety wymagają formatu 'missiles'."
                     )
 
-            # Platform base scanline in PMG: 32 + (plat_y * 2)
-            # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
-            # Secrets end at p_base - 4, so pmg_y = p_base - spr_h - 3.
+            # Platform base scanline in PMG: 32 + (plat_y * 2) (its first visible scanline;
+            # the DLI sets the platform sprites up on p_base - 3 .. p_base - 1).
+            # Secrets end SPRITE_TAIL_MARGIN scanlines above the base.
             p_base = 32 + (plat_y * 2)
-            pmg_y = max(0, p_base - spr_h - 3)
+            pmg_y = max(0, p_base - spr_h - SPRITE_TAIL_MARGIN)
             active = (dep_id == 0)
             zid = (plat_y - 8) // 16 if plat_y >= 8 else 0
 
@@ -1329,11 +1354,11 @@ def parse_scene_json(
             max_x = max(min_x, plat_x + plat_w - 8)
             clamped_x = min(max_x, max(min_x, ox))
 
-            # Platform base scanline in PMG: 32 + (plat_y * 2)
-            # DLI setup occurs on scanlines p_base - 3 .. p_base - 1.
-            # Enemies end at p_base - 4, so pmg_y = p_base - spr_h - 3.
+            # Platform base scanline in PMG: 32 + (plat_y * 2) (its first visible scanline;
+            # the DLI sets the platform sprites up on p_base - 3 .. p_base - 1).
+            # Enemies end SPRITE_TAIL_MARGIN scanlines above the base.
             p_base = 32 + (plat_y * 2)
-            pmg_y = max(0, p_base - spr_h - 3)
+            pmg_y = max(0, p_base - spr_h - SPRITE_TAIL_MARGIN)
 
             initial_dir = 1 if strat_code in (1, 3) else 0
 

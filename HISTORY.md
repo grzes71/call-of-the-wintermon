@@ -2,6 +2,34 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - SPRITE_TAIL_MARGIN Back to 3 (The DLI Commits Platform PMG Values on the Guard Line)
+
+- **Reported**: with `SPRITE_TAIL_MARGIN = 1` the enemies were visible again but showed flickering lines at their feet.
+- **Cause**: `engine/dli.asm` commits the platform's HPOSP/SIZEP/colour profile on the guard line before each pas (two scanlines above the platform's pas base), and enemies share the player channels P1..P3 with the platforms. A sprite whose tail reaches that line is drawn there with the platform's values, which shows up as flickering rows at the feet (they change as the enemy patrols).
+- **Change**: `SPRITE_TAIL_MARGIN` is back to 3 ([scripts/compile_scenes.py](scripts/compile_scenes.py)) - sprites end three scanlines above the platform pas base again (scene 02 enemies: `pmg_y` 59/91 -> 57/89).
+- **Guard against regression** ([tests/test_scanline_pmg_invariants.py](tests/test_scanline_pmg_invariants.py)): the strict PMG invariant (the three transition scanlines and the guard lines must be 0x00) is restored, and it now asserts `SPRITE_TAIL_MARGIN >= 3` with an explanation, so lowering the margin fails the suite instead of only showing up on screen.
+- **Verification**: 599 tests passing, `check_memory.py` SUCCESS, 5,757 bytes of headroom below `$C000`.
+
+## [2026-10-22] - Revert Zone Slot Change (Enemies/Secrets Invisible on Scene 1)
+
+- **Reported**: after the enemy-placement change, enemies and secrets were invisible on scene 1 - only flickering black lines appeared near the platform floors.
+- **Cause**: the "zone table slot off-by-one" change from the previous entry was wrong. `engine/dli.asm` applies zone slot `s` on the guard line of pas `s`, i.e. one platform row *before* the row whose sprites stand on it - and a sprite stands *above* its platform. The original `slot = zone - 1` (in the compiler's DLI block and in both runtimes) deliberately sets HPOS/colour about 13 scanlines before the sprite's first row. Aligning the slots with the platform row moved every value one zone too late, so sprites were drawn with the previous zone's values (HPOS 0 + colour $00 = black): invisible sprites plus black rows over the platforms.
+- **Revert**: `get_zone_idx` / `target_zone` / the `z0_*` grouping restored in [scripts/compile_scenes.py](scripts/compile_scenes.py); `slot = zone - 1` and the zone-0 branches restored in [engine/enemies.asm](engine/enemies.asm) and [engine/secrets.asm](engine/secrets.asm); the `dli_*_slots` helpers in [tests/scene_expectations.py](tests/scene_expectations.py) restored.
+- **Kept**: the real fix from that entry - `enemies_init` remembers the requested scene (`sta active_scene_id`) instead of indexing scene 0's tables after the clear loop clobbered A.
+- **Regression test** ([tests/test_enemies_runtime.py](tests/test_enemies_runtime.py)): `test_enemy_zone_slot_matches_its_platform_row` now encodes the *design* - slot `pas - 1` (with the pre-frame `z0_*` values for the first platform row), the runtime zone/x taken from the requested scene's tables, and the HPOS present in the slot the DLI applies in time.
+- **Verified with a py65 probe**: for scene 0 the DLI applies HPOSP1=168/COLPM1=$42 at pas 0 (enemy 1 sprite rows 59-78) and HPOSP1=53/HPOSP2=126/COLPM=$84 at pas 2 (sprites at 123-142) - about 13 scanlines of lead.
+- **Verification**: 599 tests passing, `check_memory.py` SUCCESS.
+
+## [2026-10-22] - SPRITE_TAIL_MARGIN Constant (Sprite-to-Platform Gap)
+
+- **Change**: the vertical gap between a standing sprite (enemy/secret) and its platform's first visible scanline is now a single named constant, `SPRITE_TAIL_MARGIN = 1` ([scripts/compile_scenes.py](scripts/compile_scenes.py)), down from a hardcoded 3 in two places. `pmg_y = 32 + platform_y * 2 - sprite_height - SPRITE_TAIL_MARGIN`.
+- **Effect**: enemies and secrets now end 1 scanline above the platform pas base instead of 3 (scene 02 enemies: `pmg_y` 57/89 -> 59/91).
+- **Test model** ([tests/scene_expectations.py](tests/scene_expectations.py)): imports `SPRITE_TAIL_MARGIN` from the compiler instead of duplicating the value.
+- **Test updates**:
+  - `tests/test_secrets_runtime.py` asserts the exact margin (`== SPRITE_TAIL_MARGIN`) instead of a hardcoded `>= 3`.
+  - `tests/test_scanline_pmg_invariants.py`: the DLI pre-pas window (`p_base - 3 .. p_base - 1`) may now hold rows of sprites that actually stand on that platform (`sprite_scanlines()` collects them from the runtime state); the top guard line (`p_base - 24`) must still be empty, so stray PMG data is still caught.
+- **Verification**: 599 tests passing, `check_memory.py` SUCCESS, 5,907 bytes of headroom below `$C000`.
+
 ## [2026-10-22] - Enemy Placement Fixed: Scene Selection + Zone Table Slot Off-By-One
 
 - **Reported**: in scene 02 the enemies appeared at positions that did not match the Scene Editor JSON, and some did not stand on any platform.

@@ -3,9 +3,10 @@
 Invariants (Section 2 of specification):
 1. In Enemies/Secrets zones between platforms, PMG data (Players 1-3, Missiles)
    can be non-zero ONLY on valid sprite rows assigned to that channel.
-2. All transition scanlines (the 3 DLI setup scanlines p_base - 3 .. p_base - 1
-   before each platform pas) and top guard lines (p_base - 24) MUST have 0x00
-   in Players 1-3 and Missiles.
+2. All transition scanlines (the three DLI setup scanlines p_base - 3 .. p_base - 1 before each
+   platform pas) and top guard lines (p_base - 24) MUST have 0x00 in Players 1-3 and Missiles.
+   Sprites standing on a platform must therefore end at least SPRITE_TAIL_MARGIN (= 3)
+   scanlines above the base, or their tail rows get the platform's HPOSP/SIZEP/colour.
 3. Platform scanlines (p_base .. p_base + 7) contain ONLY platform patterns.
 4. Sprite height + guard/transition lines (4) <= zone height (24). Max sprite height is 20.
    compile_scenes.py must raise an error for oversized sprites.
@@ -25,6 +26,7 @@ from scripts.compile_scenes import (
     CatalogueItem,
 )
 from scripts.compile_sprites import parse_sprites_json
+from tests.scene_expectations import SPRITE_TAIL_MARGIN
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
@@ -49,6 +51,13 @@ def get_pmg_snapshot(mem, labels) -> dict[str, list[int]]:
 
 def assert_pmg_invariants(snapshot: dict[str, list[int]], scene_id: int, context_msg: str):
     """Enforces that transition scanlines and guard lines are strictly zero."""
+    # The DLI commits the platform HPOSP/SIZEP/colour on these lines; a sprite reaching into
+    # them is drawn with the platform's values (flickering feet), so the margin must stay >= 3.
+    assert SPRITE_TAIL_MARGIN >= 3, (
+        f"SPRITE_TAIL_MARGIN must stay >= 3: the DLI commits the platform's PMG values on the "
+        f"three scanlines before each pas (got {SPRITE_TAIL_MARGIN})"
+    )
+
     errors = []
 
     for k, p_base in enumerate(PLATFORM_BASES):

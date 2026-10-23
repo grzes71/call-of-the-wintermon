@@ -472,14 +472,16 @@ def test_player_no_collision_preserves_lives():
 
 
 # ==============================================================================
-# 7. Zone slot placement (regression: enemies must sit on their platform row)
+# 7. Zone slot placement (regression: enemies must use their own scene and zone)
 # ==============================================================================
 def test_enemy_zone_slot_matches_its_platform_row():
-    """Enemy HPOS must land in the DLI zone slot of the enemy's own platform row.
+    """Enemy HPOS must be set up one zone before the platform row its sprite stands on.
 
-    engine/dli.asm applies zone slot `p` on the platform row at y = 8 + 16*p, so an enemy
-    standing on that row must be stored in slot `p`. Any other slot draws it one row off its
-    platform - exactly the bug this test guards against.
+    engine/dli.asm applies zone slot `s` on the guard line of pas `s`, i.e. one platform row
+    *before* the row whose sprites stand on it, so an enemy on the platform row with pas `p`
+    belongs to slot `p - 1` (the first platform row uses the pre-frame `dli_z0_*` values).
+    The runtime must follow the compiled zone field and the scene's own coordinates - reading
+    another scene's tables (the old `tax` bug) put scene 0's enemies on every screen.
     """
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
@@ -504,39 +506,51 @@ def test_enemy_zone_slot_matches_its_platform_row():
         )
         dli = compiled.dli_data
         tables = (dli.zone_hpos_p1, dli.zone_hpos_p2, dli.zone_hpos_p3)
+        z0_tables = (dli.z0_hpos_p1, dli.z0_hpos_p2, dli.z0_hpos_p3)
 
-        # 1. Compiled DLI block: the initial HPOS must already sit in the platform row's slot
+        # 1. Compiled DLI block: the HPOS must sit in the slot the DLI applies in time
         for enemy in enemies:
             data = next(e for e in compiled.enemies if e.id == enemy["id"])
-            slot = (enemy["platform_y"] - 8) // 16
-            assert data.zone_idx == slot, (
-                f"{scene_file}: enemy {enemy['id']} zone must be the pas index of its platform row"
-            )
+            pas = (enemy["platform_y"] - 8) // 16
             assert data.min_x <= data.x <= data.max_x, (
                 f"{scene_file}: enemy {enemy['id']} x={data.x} is outside its platform "
                 f"[{data.min_x}, {data.max_x}]"
             )
-            assert tables[data.channel][slot] == 48 + data.x, (
-                f"{scene_file}: enemy {enemy['id']} (platform row {enemy['platform_y']}) must be "
-                f"compiled into zone slot {slot} of channel {data.channel}"
-            )
+            if pas == 0:
+                assert data.zone_idx == 0
+                assert z0_tables[data.channel] == 48 + data.x, (
+                    f"{scene_file}: enemy {enemy['id']} on the first platform row must be in the "
+                    f"pre-frame zone-0 values"
+                )
+            else:
+                assert data.zone_idx == pas, (
+                    f"{scene_file}: enemy {enemy['id']} zone field must be the pas index of its row"
+                )
+                assert tables[data.channel][pas - 1] == 48 + data.x, (
+                    f"{scene_file}: enemy {enemy['id']} (platform row {enemy['platform_y']}) must "
+                    f"be compiled into zone slot {pas - 1} of channel {data.channel}"
+                )
 
-        # 2. Runtime: after staging the scene and running enemies_init the same slot must hold 48 + x
+        # 2. Runtime: staging the scene + enemies_init must reproduce the same scene's data
         mem[labels["ACTIVE_SCENE_ID"]] = scene_index
         mpu.a = scene_index
         run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
         mpu.a = scene_index
         run_subroutine(mpu, labels["ENEMIES_INIT"])
         for i, enemy in enumerate(enemies):
-            slot = (enemy["platform_y"] - 8) // 16
-            assert mem[labels["ENEMIES_ZONE"] + i] == slot, (
-                f"{scene_file}: enemy {enemy['id']} zone field must be the pas index of its row"
+            data = next(e for e in compiled.enemies if e.id == enemy["id"])
+            assert mem[labels["ENEMIES_ZONE"] + i] == data.zone_idx, (
+                f"{scene_file}: enemy {enemy['id']} zone field must come from this scene's tables"
+            )
+            assert mem[labels["ENEMIES_X"] + i] == data.x, (
+                f"{scene_file}: enemy {enemy['id']} x must come from this scene's tables "
+                f"(got {mem[labels['ENEMIES_X'] + i]}, expected {data.x})"
             )
             hpos = 48 + mem[labels["ENEMIES_X"] + i]
             channel = mem[labels["ENEMIES_CHANNEL"] + i]
-            slots = dli_enemy_hpos_slots(labels, slot, channel)
+            slots = dli_enemy_hpos_slots(labels, mem[labels["ENEMIES_ZONE"] + i], channel)
             assert all(mem[addr] == hpos for addr in slots), (
-                f"{scene_file}: enemy {enemy['id']} HPOS {hpos} missing from zone slot {slot} "
+                f"{scene_file}: enemy {enemy['id']} HPOS {hpos} missing from its zone slot "
                 f"(channel {channel})"
             )
             checked += 1
