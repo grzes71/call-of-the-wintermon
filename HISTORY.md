@@ -2,6 +2,18 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Enemy Placement Fixed: Scene Selection + Zone Table Slot Off-By-One
+
+- **Reported**: in scene 02 the enemies appeared at positions that did not match the Scene Editor JSON, and some did not stand on any platform.
+- **Root cause 1 - `enemies_init` always loaded scene 0** ([engine/enemies.asm](engine/enemies.asm)): the "clear previous enemies" loop clobbers A (`lda enemies_active,x`, `lda #0`), and the code then used `tax` to index the SoA tables. Every scene therefore initialised scene 0's enemies (count, definition ids, x, pmg_y, zone), so on scene 02 the player saw scene 01's enemies - with scene 01's zone rows - which is exactly "wrong positions, not on platforms".
+  - Fix: remember the requested scene first (`sta active_scene_id`) and index with `ldx active_scene_id`.
+- **Root cause 2 - zone table slot off by one**: `engine/dli.asm` reads the enemy/secret zone tables with the pas index (0..5, `lda dli_zone_hpos_p1,y`), the compiler grouped objects by `(platform_y - 8) // 16` (0-based) but wrote them into `zone_hpos_p*[key - 1]`, and both runtimes (`update_enemy_hpos`, `update_secret_hpos`, `clear_secret_hpos`, the secret blink pulse) also wrote `slot = zone - 1`. Everything landed one platform row too high, and the old "zone 0" special cases wrote the pre-frame values instead.
+  - Fix ([scripts/compile_scenes.py](scripts/compile_scenes.py)): `object_zone()` derives the pas index from the object's platform and the DLI block is filled slot by slot; the `z0_*` initial values are now neutral (nothing can stand above the first platform row).
+  - Fix ([engine/enemies.asm](engine/enemies.asm), [engine/secrets.asm](engine/secrets.asm)): the zone field is used directly as the table index (with a `>= 6` guard) and the zone-0 special cases are gone.
+- **Test model** ([tests/scene_expectations.py](tests/scene_expectations.py)): `dli_enemy_hpos_slots`, `dli_secret_hpos_slots` and `dli_secret_color_slots` now take the pas index directly instead of mirroring the old `zone - 1`.
+- **New regression test** ([tests/test_enemies_runtime.py](tests/test_enemies_runtime.py)): `test_enemy_zone_slot_matches_its_platform_row` derives everything from the scene JSONs - compiled slot/channel/HPOS, the enemy x staying inside its platform bounds, the runtime `ENEMIES_ZONE` field and the staged DLI HPOS slots for every game scene (it fails on both bugs above).
+- **Verification**: 599 tests passing, `check_memory.py` SUCCESS, 5,907 bytes of headroom below `$C000`.
+
 ## [2026-10-22] - Scene Data Relocation Above the Tilesets + Dead Table Cleanup (Room for 7+ Scenes)
 
 - **Motivation**: the scene data shared the $5000 block with the DLI data and the scene runtime engine (secrets/enemies/SFX). The block had 4 bytes *less* than it needed and overlapped the title display list at $6000, and only 2 scenes fitted. Seven scenes are planned.

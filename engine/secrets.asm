@@ -119,12 +119,11 @@ secrets_blink       :MAX_SECRETS .byte 0
     adc #48
     sta zp_temp_a       ; M0 = 48 + X
 
+    ; `secrets_zone` is the pas index the DLI uses to read the zone tables (0..5)
     lda secrets_zone,x
-    beq @zone_0
+    cmp #6
+    bcs @hpos_done      ; out of range: nothing to update
 
-    ; Zones 1..6: table offset = zone - 1 (0..5)
-    sec
-    sbc #1
     tay
 
     ; Buffer 0 (+0) and Buffer 1 (+8)
@@ -156,39 +155,7 @@ secrets_blink       :MAX_SECRETS .byte 0
     lda #$11
     sta dli_zone_prior,y
     sta dli_zone_prior+8,y
-    rts
-
-@zone_0
-    ; Zone 0: Buffer 0 (+0) and Buffer 1 (+1)
-    lda zp_temp_a
-    sta dli_z0_hpos_m0
-    sta dli_z0_hpos_m0+1
-    clc
-    adc #2
-    sta dli_z0_hpos_m1
-    sta dli_z0_hpos_m1+1
-    adc #2
-    sta dli_z0_hpos_m2
-    sta dli_z0_hpos_m2+1
-    adc #2
-    sta dli_z0_hpos_m3
-    sta dli_z0_hpos_m3+1
-
-    lda secrets_blink,x
-    beq @solid_color_z0
-    lda secrets_color,x
-    and #$F0
-    ora secrets_blink_lum
-    jmp @apply_color_z0
-@solid_color_z0
-    lda secrets_color,x
-@apply_color_z0
-    sta dli_z0_secret_col
-    sta dli_z0_secret_col+1
-    sta COLPF3
-    lda #$11
-    sta dli_z0_prior
-    sta dli_z0_prior+1
+@hpos_done
     rts
 .endp
 
@@ -200,11 +167,11 @@ secrets_blink       :MAX_SECRETS .byte 0
 ; Preserves: X
 ; ==============================================================================
 .proc clear_secret_hpos
+    ; `secrets_zone` is the pas index the DLI uses to read the zone tables (0..5)
     lda secrets_zone,x
-    beq @zone_0
+    cmp #6
+    bcs @clear_done
 
-    sec
-    sbc #1
     tay
 
     lda #$FF
@@ -216,18 +183,7 @@ secrets_blink       :MAX_SECRETS .byte 0
     sta dli_zone_hpos_m2+8,y
     sta dli_zone_hpos_m3,y
     sta dli_zone_hpos_m3+8,y
-    rts
-
-@zone_0
-    lda #$FF
-    sta dli_z0_hpos_m0
-    sta dli_z0_hpos_m0+1
-    sta dli_z0_hpos_m1
-    sta dli_z0_hpos_m1+1
-    sta dli_z0_hpos_m2
-    sta dli_z0_hpos_m2+1
-    sta dli_z0_hpos_m3
-    sta dli_z0_hpos_m3+1
+@clear_done
     rts
 .endp
 
@@ -517,22 +473,15 @@ secrets_blink       :MAX_SECRETS .byte 0
     ora secrets_blink_lum
     sta zp_temp_a
 
+    ; `secrets_zone` is the pas index the DLI uses to read the zone tables (0..5)
     lda secrets_zone,x
-    beq @blink_z0
+    cmp #6
+    bcs @next_blink
 
-    sec
-    sbc #1
     tay
     lda zp_temp_a
     sta dli_zone_secret_col,y
     sta dli_zone_secret_col+8,y
-    jmp @next_blink
-
-@blink_z0
-    lda zp_temp_a
-    sta dli_z0_secret_col
-    sta dli_z0_secret_col+1
-    sta COLPF3
 
 @next_blink
     inx

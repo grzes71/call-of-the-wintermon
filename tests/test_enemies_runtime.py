@@ -469,3 +469,77 @@ def test_player_no_collision_preserves_lives():
     run_subroutine(mpu, labels["ENEMIES_CHECK_PLAYER_COLLISION"])
 
     assert mem[lives_addr] == 3, "Non-overlapping Hero must keep lives unchanged"
+
+
+# ==============================================================================
+# 7. Zone slot placement (regression: enemies must sit on their platform row)
+# ==============================================================================
+def test_enemy_zone_slot_matches_its_platform_row():
+    """Enemy HPOS must land in the DLI zone slot of the enemy's own platform row.
+
+    engine/dli.asm applies zone slot `p` on the platform row at y = 8 + 16*p, so an enemy
+    standing on that row must be stored in slot `p`. Any other slot draws it one row off its
+    platform - exactly the bug this test guards against.
+    """
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    run_subroutine(mpu, labels["DLI_INIT"])
+
+    enemies_catalogue, secrets_catalogue = load_catalogues(
+        Path("scenes/definitions.json"), Path("scenes/definitions.json")
+    )
+
+    checked = 0
+    for scene_index, scene_file in enumerate(scene_files()):
+        enemies = scene_objects(scene_file, "enemy")
+        if not enemies:
+            continue
+
+        compiled = parse_scene_json(
+            Path("scenes") / scene_file, enemies_catalogue, secrets_catalogue
+        )
+        dli = compiled.dli_data
+        tables = (dli.zone_hpos_p1, dli.zone_hpos_p2, dli.zone_hpos_p3)
+
+        # 1. Compiled DLI block: the initial HPOS must already sit in the platform row's slot
+        for enemy in enemies:
+            data = next(e for e in compiled.enemies if e.id == enemy["id"])
+            slot = (enemy["platform_y"] - 8) // 16
+            assert data.zone_idx == slot, (
+                f"{scene_file}: enemy {enemy['id']} zone must be the pas index of its platform row"
+            )
+            assert data.min_x <= data.x <= data.max_x, (
+                f"{scene_file}: enemy {enemy['id']} x={data.x} is outside its platform "
+                f"[{data.min_x}, {data.max_x}]"
+            )
+            assert tables[data.channel][slot] == 48 + data.x, (
+                f"{scene_file}: enemy {enemy['id']} (platform row {enemy['platform_y']}) must be "
+                f"compiled into zone slot {slot} of channel {data.channel}"
+            )
+
+        # 2. Runtime: after staging the scene and running enemies_init the same slot must hold 48 + x
+        mem[labels["ACTIVE_SCENE_ID"]] = scene_index
+        mpu.a = scene_index
+        run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+        mpu.a = scene_index
+        run_subroutine(mpu, labels["ENEMIES_INIT"])
+        for i, enemy in enumerate(enemies):
+            slot = (enemy["platform_y"] - 8) // 16
+            assert mem[labels["ENEMIES_ZONE"] + i] == slot, (
+                f"{scene_file}: enemy {enemy['id']} zone field must be the pas index of its row"
+            )
+            hpos = 48 + mem[labels["ENEMIES_X"] + i]
+            channel = mem[labels["ENEMIES_CHANNEL"] + i]
+            slots = dli_enemy_hpos_slots(labels, slot, channel)
+            assert all(mem[addr] == hpos for addr in slots), (
+                f"{scene_file}: enemy {enemy['id']} HPOS {hpos} missing from zone slot {slot} "
+                f"(channel {channel})"
+            )
+            checked += 1
+
+    assert checked > 0, "no game scene defines an enemy to verify"
+

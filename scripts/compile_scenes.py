@@ -624,32 +624,21 @@ def compile_scene_dli_data(
                     f"missile platform '{p.id}' has unsupported width {p.width} px (supported: 8, 32)."
                 )
 
-    # 3. Compile enemies and secrets for 7 zones
-    def get_zone_idx(y: int) -> int:
-        if y < 8:
-            return 0
-        elif y < 24:
-            return 1
-        elif y < 40:
-            return 2
-        elif y < 56:
-            return 3
-        elif y < 72:
-            return 4
-        elif y < 88:
-            return 5
-        else:
-            return 6
+    # 3. Compile enemies and secrets for the 6 pas.
+    # The DLI reads the zone tables with the pas index (0..5) and both runtimes write that same
+    # slot, so `zone` in the engine tables IS the pas index (0 = the platform row at y = 8).
+    def object_zone(obj: SceneObjectData) -> int:
+        plat_y = platforms[obj.platform_idx].y if obj.platform_idx < len(platforms) else 8
+        return max(0, min(5, (plat_y - 8) // 16))
 
-    zone_objects: dict[int, list[SceneObjectData]] = {z: [] for z in range(7)}
+    zone_objects: dict[int, list[SceneObjectData]] = {z: [] for z in range(6)}
     for obj in objects:
-        zid = get_zone_idx(obj.y)
-        zone_objects[zid].append(obj)
+        zone_objects[object_zone(obj)].append(obj)
 
-    # Zone 0 initial values (applied in VBLANK before Pas 0)
-    z0_objs = zone_objects[0]
-    z0_enemies = [o for o in z0_objs if o.type_code == 0][:3]
-    z0_secrets = [o for o in z0_objs if o.type_code == 1 and o.dependency_id == 0][:1]
+    # Zone 0 initial values (applied in VBLANK before Pas 0) describe the strip above the first
+    # platform row, where no object can be placed, so they stay neutral.
+    z0_enemies: list[SceneObjectData] = []
+    z0_secrets: list[SceneObjectData] = []
 
     z0_hpos_p1 = min(255, max(0, 48 + z0_enemies[0].x)) if len(z0_enemies) > 0 else 0
     z0_col_p1  = z0_enemies[0].atari_color if len(z0_enemies) > 0 else 0
@@ -690,8 +679,7 @@ def compile_scene_dli_data(
     zone_prior = [0x11] * 6
 
     for z_idx in range(6):
-        target_zone = z_idx + 1  # Zones 1..6
-        objs = zone_objects[target_zone]
+        objs = zone_objects[z_idx]
         enemies = [o for o in objs if o.type_code == 0][:3]
         secrets = [o for o in objs if o.type_code == 1 and o.dependency_id == 0][:1]
 

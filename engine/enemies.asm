@@ -152,14 +152,12 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     adc #48
     sta zp_temp_a
 
+    ; `enemies_zone` is the pas index the DLI uses to read the zone tables (0..5)
     lda enemies_zone,x
-    beq @zone_0
+    cmp #6
+    bcs @hpos_done          ; out of range: nothing to update
 
-    ; Zones 1..6: table offset = zone - 1 (0..5)
-    sec
-    sbc #1
     tay
-
     lda enemies_channel,x
     bne @z_check_p2
     ; Channel 0: Player 1
@@ -182,28 +180,7 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     lda zp_temp_a
     sta dli_zone_hpos_p3,y
     sta dli_zone_hpos_p3+8,y
-    rts
-
-@zone_0
-    lda enemies_channel,x
-    bne @z0_check_p2
-    lda zp_temp_a
-    sta dli_z0_hpos_p1
-    sta dli_z0_hpos_p1+1
-    rts
-
-@z0_check_p2
-    cmp #1
-    bne @z0_use_p3
-    lda zp_temp_a
-    sta dli_z0_hpos_p2
-    sta dli_z0_hpos_p2+1
-    rts
-
-@z0_use_p3
-    lda zp_temp_a
-    sta dli_z0_hpos_p3
-    sta dli_z0_hpos_p3+1
+@hpos_done
     rts
 .endp
 
@@ -213,6 +190,11 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 ; Input: A = active_scene_id (0..SCENE_COUNT-1)
 ; ==============================================================================
 .proc enemies_init
+    ; 0. Remember the requested scene: the clear loop below clobbers A, and the SoA tables
+    ;    are indexed by the scene id (reading scene 0's enemies for every scene was the bug
+    ;    that put the wrong enemies - with their own zones - on screen).
+    sta active_scene_id
+
     ; 1. Clear PMG rows for any previous active enemies and reset active flags
     ldx #0
 @clear_prev_loop
@@ -229,7 +211,7 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 @clear_done
 
     ; 2. Read enemy count for new scene
-    tax
+    ldx active_scene_id
     lda scene_enemy_count,x
     sta enemies_count
     bne @has_enemies

@@ -144,29 +144,24 @@ def secret_frame_bytes(mem, labels, index: int, frame: int = 0) -> list[int]:
 
 
 def dli_secret_hpos_slots(labels, zone: int, channel: int) -> list[int]:
-    """Both double-buffer HPOSM<channel> addresses used for `zone`."""
-    if zone == 0:
-        base = labels[f"DLI_Z0_HPOS_M{channel}"]
-        return [base, base + 1]
-    base = labels[f"DLI_ZONE_HPOS_M{channel}"] + (zone - 1)
+    """Both double-buffer HPOSM<channel> addresses for zone-table slot `zone`.
+
+    `zone` is the pas index (0..5) stored in the engine tables: engine/dli.asm reads
+    `dli_zone_hpos_m*` with that same index, so slot 0 is the platform row at y = 8.
+    """
+    base = labels[f"DLI_ZONE_HPOS_M{channel}"] + zone
     return [base, base + 8]
 
 
 def dli_secret_color_slots(labels, zone: int) -> list[int]:
-    """Both double-buffer 5th-player colour addresses used for `zone`."""
-    if zone == 0:
-        base = labels["DLI_Z0_SECRET_COL"]
-        return [base, base + 1]
-    base = labels["DLI_ZONE_SECRET_COL"] + (zone - 1)
+    """Both double-buffer 5th-player colour addresses used for zone-table slot `zone`."""
+    base = labels["DLI_ZONE_SECRET_COL"] + zone
     return [base, base + 8]
 
 
 def dli_enemy_hpos_slots(labels, zone: int, channel: int) -> list[int]:
-    """Both double-buffer HPOSP<channel+1> addresses used for `zone`."""
-    if zone == 0:
-        base = labels[f"DLI_Z0_HPOS_P{channel + 1}"]
-        return [base, base + 1]
-    base = labels[f"DLI_ZONE_HPOS_P{channel + 1}"] + (zone - 1)
+    """Both double-buffer HPOSP<channel+1> addresses for zone-table slot `zone` (pas index)."""
+    base = labels[f"DLI_ZONE_HPOS_P{channel + 1}"] + zone
     return [base, base + 8]
 
 
