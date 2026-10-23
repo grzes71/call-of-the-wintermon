@@ -1527,8 +1527,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             "; " + "=" * 78,
             f"; SCENE {idx}: {sc.name} ({sc.file_stem}.json)",
             "; " + "=" * 78,
-            f"scene_{sym}_name",
-            f"    dta c'{sc.name}', 0",
             f"scene_{sym}_name_line",
             f"    .byte {sc_bytes}",
             "",
@@ -1566,71 +1564,26 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             ])
         lines.append("")
 
-        # Scene platforms
+        # Scene platforms (geometry only: platform type, height and the per-row colour profiles are
+        # compiled into gen/scenes_dli_data.asm, which the DLI reads at runtime)
         lines.append(f"; --- Platforms ({len(sc.platforms)}) ---")
         if sc.platforms:
-            lines.append(f"scene_{sym}_plat_type")
-            lines.append("    .byte " + ", ".join(str(p.type_code) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_x")
             lines.append("    .byte " + ", ".join(str(p.x) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_y")
             lines.append("    .byte " + ", ".join(str(p.y) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_w")
             lines.append("    .byte " + ", ".join(str(p.width) for p in sc.platforms))
-            lines.append(f"scene_{sym}_plat_h")
-            lines.append("    .byte " + ", ".join(str(p.height) for p in sc.platforms))
-            for sl in range(8):
-                lines.append(f"scene_{sym}_plat_color_sl{sl + 1}")
-                lines.append("    .byte " + ", ".join(f"${p.colors[sl]:02X}" for p in sc.platforms))
         else:
             lines.extend([
-                f"scene_{sym}_plat_type      .byte 0",
                 f"scene_{sym}_plat_x         .byte 0",
                 f"scene_{sym}_plat_y         .byte 0",
                 f"scene_{sym}_plat_w         .byte 0",
-                f"scene_{sym}_plat_h         .byte 0",
             ])
-            for sl in range(8):
-                lines.append(f"scene_{sym}_plat_color_sl{sl + 1} .byte 0")
         lines.append("")
 
-        # Scene objects
-        lines.append(f"; --- Objects ({len(sc.objects)}) ---")
-        if sc.objects:
-            lines.append(f"scene_{sym}_obj_type")
-            lines.append("    .byte " + ", ".join(str(o.type_code) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_def_id")
-            lines.append("    .byte " + ", ".join(str(o.def_id) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_plat_idx")
-            lines.append("    .byte " + ", ".join(str(o.platform_idx) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_x")
-            lines.append("    .byte " + ", ".join(str(o.x) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_y")
-            lines.append("    .byte " + ", ".join(str(o.y) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_speed")
-            lines.append("    .byte " + ", ".join(str(o.speed_code) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_strat")
-            lines.append("    .byte " + ", ".join(str(o.strategy_code) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_dep")
-            lines.append("    .byte " + ", ".join(str(o.dependency_id) for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_color")
-            lines.append("    .byte " + ", ".join(f"${o.atari_color:02X}" for o in sc.objects))
-            lines.append(f"scene_{sym}_obj_flags")
-            lines.append("    .byte " + ", ".join(str(1 if o.blink else 0) for o in sc.objects))
-        else:
-            lines.extend([
-                f"scene_{sym}_obj_type     .byte 0",
-                f"scene_{sym}_obj_def_id   .byte 0",
-                f"scene_{sym}_obj_plat_idx .byte 0",
-                f"scene_{sym}_obj_x        .byte 0",
-                f"scene_{sym}_obj_y        .byte 0",
-                f"scene_{sym}_obj_speed    .byte 0",
-                f"scene_{sym}_obj_strat    .byte 0",
-                f"scene_{sym}_obj_dep      .byte 0",
-                f"scene_{sym}_obj_color    .byte 0",
-                f"scene_{sym}_obj_flags    .byte 0",
-            ])
-        lines.append("")
+        # Scene objects: the enemy_*/secret_* tables carry everything the engine reads, so no
+        # object mirror tables are emitted (no engine module ever referenced them).
 
         # Scene secrets
         lines.append(f"; --- Secrets ({len(sc.secrets)}) ---")
@@ -1731,10 +1684,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "; " + "=" * 78,
         "; MASTER SCENE INDEX TABLES (Structure-of-Arrays)",
         "; " + "=" * 78,
-        "scene_name_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_name" for sc in scenes),
-        "scene_name_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_name" for sc in scenes),
         "scene_name_line_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_name_line" for sc in scenes),
         "scene_name_line_hi",
@@ -1799,11 +1748,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "scene_elem_flags_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_elem_flags" for sc in scenes),
         "",
-        "; --- Platform Pointer Tables ---",
-        "scene_plat_type_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_type" for sc in scenes),
-        "scene_plat_type_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_type" for sc in scenes),
+        "; --- Platform Pointer Tables (geometry only: type/height/row colours live in the DLI block) ---",
         "scene_plat_x_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_x" for sc in scenes),
         "scene_plat_x_hi",
@@ -1816,62 +1761,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_w" for sc in scenes),
         "scene_plat_w_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_w" for sc in scenes),
-        "scene_plat_h_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_h" for sc in scenes),
-        "scene_plat_h_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_h" for sc in scenes),
-        *[
-            line
-            for sl in range(1, 9)
-            for line in [
-                f"scene_plat_color_sl{sl}_lo",
-                "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_color_sl{sl}" for sc in scenes),
-                f"scene_plat_color_sl{sl}_hi",
-                "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_color_sl{sl}" for sc in scenes),
-            ]
-        ],
-        "",
-        "; --- Object Pointer Tables ---",
-        "scene_obj_type_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_type" for sc in scenes),
-        "scene_obj_type_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_type" for sc in scenes),
-        "scene_obj_def_id_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_def_id" for sc in scenes),
-        "scene_obj_def_id_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_def_id" for sc in scenes),
-        "scene_obj_plat_idx_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_plat_idx" for sc in scenes),
-        "scene_obj_plat_idx_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_plat_idx" for sc in scenes),
-        "scene_obj_x_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_x" for sc in scenes),
-        "scene_obj_x_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_x" for sc in scenes),
-        "scene_obj_y_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_y" for sc in scenes),
-        "scene_obj_y_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_y" for sc in scenes),
-        "scene_obj_speed_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_speed" for sc in scenes),
-        "scene_obj_speed_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_speed" for sc in scenes),
-        "scene_obj_strat_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_strat" for sc in scenes),
-        "scene_obj_strat_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_strat" for sc in scenes),
-        "scene_obj_dep_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_dep" for sc in scenes),
-        "scene_obj_dep_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_dep" for sc in scenes),
-        "scene_obj_color_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_color" for sc in scenes),
-        "scene_obj_color_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_color" for sc in scenes),
-        "scene_obj_flags_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_obj_flags" for sc in scenes),
-        "scene_obj_flags_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_obj_flags" for sc in scenes),
         "",
         "; --- Secret Pointer Tables ---",
         "scene_secret_active_lo",

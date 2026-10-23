@@ -2,6 +2,23 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Scene Data Relocation Above the Tilesets + Dead Table Cleanup (Room for 7+ Scenes)
+
+- **Motivation**: the scene data shared the $5000 block with the DLI data and the scene runtime engine (secrets/enemies/SFX). The block had 4 bytes *less* than it needed and overlapped the title display list at $6000, and only 2 scenes fitted. Seven scenes are planned.
+- **Measured cost per scene**: SoA tables 579 B, pointer tables 120 B, DLI block 241 B; scene runtime engine is a fixed 2,435 B.
+- **Segment split ([main.asm](main.asm))**:
+  - `SCENES_DATA = $5000` now holds only the per-scene DLI blocks plus the runtime engine (secrets/enemies/SFX), keeping its 4 KB budget ($6000 is the title DL).
+  - `SCENE_TABLES = $B300` is new: it holds `gen/scenes_data.asm` (SoA tables + pointer tables) in the RAM freed by the smaller tilesets (they end at $B21F, so 224 B of tile headroom is kept). It sits after the tileset `org` so the XEX segment order stays ascending.
+- **Dead table cleanup ([scripts/compile_scenes.py](scripts/compile_scenes.py))** - every table below was verified to have zero readers across `engine/*.asm`, `scenes/*.asm` and `main.asm`:
+  - Removed `scene_*_name` (raw name string; the title card uses `scene_*_name_line`), `scene_*_plat_type`, `scene_*_plat_h`, `scene_*_plat_color_sl1..8` (the DLI reads the row profiles from `gen/scenes_dli_data.asm`) and all ten `scene_*_obj_*` mirrors (the `enemy_*`/`secret_*` tables carry what the engine reads), together with their pointer-table pairs.
+  - Result: the tables block dropped from 1,159 B to **607 B for two scenes** (~304 B/scene, was ~700 B/scene).
+- **Memory validation ([scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - The overlap rule now compares segments in *address* order instead of XEX order (the tables segment is emitted above the tilesets).
+  - `check_memory.py` reports the new segment and prints the remaining room for additional scenes.
+- **Budget after the change**: tables block 607 B used / 2,721 B free (~8 more scenes), $5000 block 2,917 B used / 1,179 B free (~4 more scenes, i.e. 6 total today; a 7th needs 26 B, which the DLI pointer tables would free if moved into the tables block).
+- **Test updates (asset-agnostic)**: `tests/test_compile_scenes.py` (symbol list + `name_line` assertions), `tests/test_platform_profiles.py::test_export_eight_scanline_values_in_order` now checks the row colours in the *DLI* block (the real runtime contract) instead of the removed SoA mirror.
+- **Verification**: 598 tests passing, `check_memory.py` SUCCESS with 5,760 bytes of headroom below `$C000`.
+
 ## [2026-10-22] - Element Clipping (Negative Positions) + Scene Data Segment Overflow Fix
 
 - **Bug reported**: the upper tileset of `scenes/02-forest-castle.json` (castles, `element-003`/`element-004` at `y = -2` / `-1`) was invisible in game.

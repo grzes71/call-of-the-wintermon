@@ -132,10 +132,10 @@ def test_compile_scenes_full_pipeline(tmp_path):
     assert "SCENE_COUNT = 2" in content
     assert "SCENE_SC_01_FOREST_ID = 0" in content
     assert "SCENE_SC_02_FOREST_CASTLE_ID = 1" in content
-    assert "scene_sc_01_forest_name" in content
-    assert "scene_sc_02_forest_castle_name" in content
-    assert "scene_name_lo" in content
-    assert "scene_name_hi" in content
+    assert "scene_sc_01_forest_name_line" in content
+    assert "scene_sc_02_forest_castle_name_line" in content
+    assert "scene_name_line_lo" in content
+    assert "scene_name_line_hi" in content
     assert "scene_elem_count" in content
     assert "scene_plat_count" in content
     assert "scene_obj_count" in content
@@ -170,8 +170,6 @@ def test_mads_symbols_present_in_built_xex():
         "SCENE_COUNT",
         "SCENE_SC_01_FOREST_ID",
         "SCENE_SC_02_FOREST_CASTLE_ID",
-        "scene_sc_01_forest_name",
-        "scene_sc_02_forest_castle_name",
         "scene_sc_01_forest_name_line",
         "scene_sc_02_forest_castle_name_line",
         "scene_name_line_lo",
@@ -182,8 +180,8 @@ def test_mads_symbols_present_in_built_xex():
         "scene_obj_count",
         "scene_plat_x_lo",
         "scene_plat_x_hi",
-        "scene_obj_x_lo",
-        "scene_obj_x_hi",
+        "scene_secret_x_lo",
+        "scene_secret_x_hi",
     ]
     for sym in expected_symbols:
         assert sym.lower() in lab_text.lower(), f"Symbol {sym} missing from MADS labels."

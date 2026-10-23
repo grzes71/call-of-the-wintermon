@@ -60,7 +60,6 @@ def check_memory(xex_path: Path) -> int:
 
     errors: list[str] = []
     total_user_bytes = 0
-    prev_end: int | None = None
 
     for start, end, size in segments:
         seg_type = "DATA/CODE"
@@ -75,7 +74,9 @@ def check_memory(xex_path: Path) -> int:
         elif start in (0x2A30, 0x2B00):
             seg_type = "Tileset Metadata, Status Line & SFX Engine"
         elif start in (0x5000, 0x2C30, 0x2D00):
-            seg_type = "Scene Definitions, Objects & DLI Data"
+            seg_type = "Scene DLI Data & Runtime Engine (secrets/enemies/sfx)"
+        elif start == 0xB300:
+            seg_type = "Scene SoA Tables & Pointer Tables (grows with scene count)"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
         elif start == 0x3F00:
@@ -112,13 +113,6 @@ def check_memory(xex_path: Path) -> int:
         if start == 0x02E0 or start == 0x02E2:
             continue
 
-        # Rule 3: Strictly ascending segments (prevent XEX segment overwrites)
-        if prev_end is not None and start <= prev_end:
-            errors.append(
-                f"Segment ${start:04X}-${end:04X} overlaps or backtracks over previous segment ending at ${prev_end:04X}!"
-            )
-        prev_end = end
-
         # Rule 1 & 2: Boundary checks
         if start >= 0xC000:
             errors.append(
@@ -132,6 +126,26 @@ def check_memory(xex_path: Path) -> int:
             errors.append(
                 f"Segment ${start:04X}-${end:04X} overlaps Hardware Registers ($D000-$DFFF)!"
             )
+
+    # Rule 3: no two payload segments may overlap. Checked in address order, because the XEX
+    # may emit segments out of address order (e.g. the scene tables above the tilesets).
+    prev_end: int | None = None
+    for start, end, size in sorted(seg for seg in segments if seg[0] not in (0x02E0, 0x02E2)):
+        if prev_end is not None and start <= prev_end:
+            errors.append(
+                f"Segment ${start:04X}-${end:04X} overlaps the previous segment ending at ${prev_end:04X}!"
+            )
+        prev_end = end
+
+    # Scene SoA tables headroom: how much room is left for additional scenes ($B300-$BFFF)
+    scene_tables_seg = next((s for s in segments if s[0] == 0xB300), None)
+    if scene_tables_seg:
+        _, st_end, st_size = scene_tables_seg
+        st_headroom = 0xBFFF - st_end
+        print(
+            f"Scene SoA Tables ($B300-$BFFF) used {st_size} bytes, "
+            f"{st_headroom} bytes left for additional scenes"
+        )
 
     # Dedicated check for Render Code / Sprites segment ($7A00-$7FFF) headroom before $8000
     # Cost of a typical sprite: 20 rows/frame * 2 frames + 2 frames * 2 bytes pointer = 44 bytes (or 48 bytes with SoA tables)

@@ -408,19 +408,28 @@ def test_export_eight_scanline_values_in_order(tmp_path: Path):
     assert ret == 0
     asm = out_asm.read_text(encoding="utf-8")
 
-    # Verify that each scanline table exists and has the exact color byte in order
-    for idx, expected_color in enumerate(ordered_colors):
-        sl_label = f"scene_test_scene_plat_color_sl{idx + 1}"
-        assert sl_label in asm
-        expected_hex = f"${expected_color:02X}"
-        label_pos = asm.find(sl_label)
-        snippet = asm[label_pos:label_pos + 60]
-        assert expected_hex in snippet, f"Scanline {idx + 1} did not contain {expected_hex} in snippet: {snippet}"
+    # Row colour profiles are consumed by the DLI engine, so they are compiled into the DLI
+    # block (gen/scenes_dli_data.asm) instead of the SoA tables the renderer reads.
+    dli_asm = (out_asm.parent / "scenes_dli_data.asm").read_text(encoding="utf-8")
+    marker = "Platform Color Scanlines 0..7"
+    assert marker in dli_asm, "DLI block must contain the platform colour scanline tables"
+    section_lines = dli_asm[dli_asm.index(marker):].splitlines()[1:9]
+    rows = [
+        [int(value.strip().lstrip("$"), 16) for value in line.replace(".byte ", "").split(",")]
+        for line in section_lines
+    ]
+    assert all(len(row) == 6 for row in rows), f"unexpected DLI colour table layout: {rows}"
 
-    # Also check master table pointers
-    for sl in range(1, 9):
-        assert f"scene_plat_color_sl{sl}_lo" in asm
-        assert f"scene_plat_color_sl{sl}_hi" in asm
+    # The platform sits in one pas column; that column must carry all eight exported scanlines
+    matching_columns = [
+        col
+        for col in range(6)
+        if all(rows[sl][col] == expected for sl, expected in enumerate(ordered_colors))
+    ]
+    assert matching_columns, (
+        "no pas column of the DLI colour tables carries the exported scanline colours: "
+        f"expected {[f'${c:02X}' for c in ordered_colors]}, tables {rows}"
+    )
 
 
 # ------------------------------------------------------------------------------
