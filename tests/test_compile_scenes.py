@@ -103,13 +103,18 @@ def test_parse_01_forest_scene():
 
 
 def test_parse_02_forest_castle_scene():
+    """Scene 2 must compile every element/platform/object of its JSON (counts from the JSON)."""
+    scene_path = Path("scenes/02-forest-castle.json")
+    raw = json.loads(scene_path.read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
-    scene = parse_scene_json(Path("scenes/02-forest-castle.json"), enemies, secrets)
+    scene = parse_scene_json(scene_path, enemies, secrets)
 
-    assert scene.name == "Be Quick or Be Dead"
-    assert len(scene.elements) == 4
-    assert len(scene.platforms) == 14
-    assert len(scene.objects) == 4
+    assert scene.name == raw["scene"]["name"]
+    assert scene.width == raw["scene"]["width"]
+    assert scene.height == raw["scene"]["height"]
+    assert len(scene.elements) == len(raw["elements"])
+    assert len(scene.platforms) == len(raw["platforms"])
+    assert len(scene.objects) == len(raw["objects"])
 
 
 def test_compile_scenes_full_pipeline(tmp_path):

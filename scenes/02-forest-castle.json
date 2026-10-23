@@ -233,16 +233,16 @@
       "type": "enemy",
       "definition_id": 1,
       "platform_id": "platform-001",
-      "x": 69,
+      "x": 61,
       "speed": "medium",
-      "movement_strategy": "stationary"
+      "movement_strategy": "right_pause_left"
     },
     {
       "id": 3,
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-003",
-      "x": 8
+      "x": 12
     },
     {
       "id": 4,
@@ -258,6 +258,29 @@
       "platform_id": "platform-016",
       "x": 96,
       "dependency": 1
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-005",
+      "x": 115
+    },
+    {
+      "id": 6,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-001",
+      "x": 78
+    },
+    {
+      "id": 7,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-002",
+      "x": 34,
+      "speed": "medium",
+      "movement_strategy": "left_right"
     }
   ],
   "player_spawn": {

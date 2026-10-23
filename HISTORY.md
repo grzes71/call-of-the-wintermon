@@ -2,6 +2,26 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Element Clipping (Negative Positions) + Scene Data Segment Overflow Fix
+
+- **Bug reported**: the upper tileset of `scenes/02-forest-castle.json` (castles, `element-003`/`element-004` at `y = -2` / `-1`) was invisible in game.
+- **Root cause**: `engine/render.asm` skips - rather than clips - an element whose destination byte column is >= 40 or destination line >= 96. A negative `y` is stored as `$FE`/`$FF`, so those elements were silently dropped. Elements bleeding off the top/left edge are legitimate background authoring, so they must be clipped.
+- **Fix ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Elements are now clipped in the compiler, so the renderer stays untouched (no DLI cycle-budget risk): a negative `y` advances `src_y`, shrinks `h_lines` and clamps `dst_y` to 0; a negative `x` drops whole byte-aligned columns (4 px each), shrinks `w_bytes` and clamps `dst_x_byte` to 0.
+  - A flipped element is drawn from the high end of its source range, so its left clip shrinks the range instead of advancing `src_x_byte`.
+  - An element entirely off the playfield compiles to a zero extent, which is exactly what the renderer's `beq @do_skip` tests.
+- **Reference model ([tests/tile_expectations.py](tests/tile_expectations.py))**:
+  - Added `element_geometry()` implementing the same clipping; `element_dst_rect()`, `element_is_rendered()` and `element_reference_bytes()` now use it (the latter also slices each row to the clipped byte count, mirroring the renderer's right-edge clip).
+- **Scene data segment overflow (build breaker, found while verifying)**:
+  - `SCENES_DATA` ($5000) had grown to $6003 and overlapped `TITLE_DLIST` at $6000, so the title display list clobbered the tail of `engine/sfx.asm` - `sfx_update` ($5EF6) ran into `$0000` and `test_sfx.py` plus `test_scene_title_card_frame_progression` timed out.
+  - Removed the unused `scene_*_elem_src_x_px`, `scene_*_elem_w_px` and `scene_*_elem_dst_x_px` mirrors (never read by any engine module - verified by grep), freeing 24 bytes and restoring `check_memory.py` to SUCCESS ($5000 segment now ends well before $6000).
+  - Also cleared a stale `sprite_id: 8` on the enemy object of `02-forest-castle.json` that made `compile_sprites.py` reject the build (sprite 8 = Gold Key is a secret, the project forbids sharing one sprite between enemy and secret roles).
+- **Asset-agnostic test refactors**:
+  - `tests/test_compile_scenes.py::test_parse_02_forest_castle_scene` no longer hardcodes scene 2's name/element/platform/object counts; it derives them from the scene JSON.
+- **New tests ([tests/test_element_clipping.py](tests/test_element_clipping.py))**:
+  - Compiler clipping (top clip, left clip, flipped left clip, fully off-screen -> zero extent), compiled geometry vs the reference model for every game scene, "no element is silently dropped", and an end-to-end py65 test that renders each scene and compares the whole 40x96 playfield byte for byte (which is what proves the castles now reach VRAM).
+- **Verification**: 598 tests passing, `check_memory.py` SUCCESS with 5,208 bytes of headroom below `$C000`.
+
 ## [2026-10-22] - Editable Per-Scene Background Palettes (Upper / Lower Zone COLPF0..2)
 
 - **Requirement**: A scene background (tile elements) already had two colour sets - one for the upper screen zone and one for the lower one, swapped by the DLI - but those colours were derived from the tilesets in the compiler and could not be edited per scene.

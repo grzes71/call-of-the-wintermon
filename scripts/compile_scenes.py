@@ -1031,6 +1031,28 @@ def parse_scene_json(
         w_bytes = (w_px + 3) // 4
         dst_x_byte = max(0, dst_x) // 4
 
+        # Clip the element against the playfield. engine/render.asm only reduces width/height
+        # when an element runs past the right/bottom edge and skips anything whose byte column is
+        # >= 40 or whose destination line is >= 96; an element partially above or left of the screen
+        # (negative position, e.g. a tileset bleeding off the top) must therefore be clipped here:
+        # advance the source pointer and shrink the extent so the visible part lands exactly where
+        # the editor shows it.
+        if dst_y < 0:
+            clipped_lines = min(h_lines, -dst_y)
+            src_y += clipped_lines
+            h_lines -= clipped_lines
+            dst_y = 0
+
+        if dst_x < 0:
+            # Source reads are byte aligned, so only whole 4-pixel columns can be dropped.
+            # A flipped element is drawn from the high end of the source range, so clipping its
+            # left edge means shrinking the range instead of advancing the source pointer.
+            clipped_bytes = min(w_bytes, (-dst_x) // 4)
+            w_bytes -= clipped_bytes
+            if not flip_x:
+                src_x_byte += clipped_bytes
+            dst_x_byte = 0
+
         elements.append(
             SceneElementData(
                 id=elem_id,
@@ -1517,20 +1539,14 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         if sc.elements:
             lines.append(f"scene_{sym}_elem_tileset")
             lines.append("    .byte " + ", ".join(TILESET_ID_TO_EQUATE[e.tileset_id] for e in sc.elements))
-            lines.append(f"scene_{sym}_elem_src_x_px")
-            lines.append("    .byte " + ", ".join(str(e.src_x_px) for e in sc.elements))
             lines.append(f"scene_{sym}_elem_src_x_byte")
             lines.append("    .byte " + ", ".join(str(e.src_x_byte) for e in sc.elements))
             lines.append(f"scene_{sym}_elem_src_y")
             lines.append("    .byte " + ", ".join(str(e.src_y) for e in sc.elements))
-            lines.append(f"scene_{sym}_elem_w_px")
-            lines.append("    .byte " + ", ".join(str(e.w_px) for e in sc.elements))
             lines.append(f"scene_{sym}_elem_w_byte")
             lines.append("    .byte " + ", ".join(str(e.w_bytes) for e in sc.elements))
             lines.append(f"scene_{sym}_elem_h_lines")
             lines.append("    .byte " + ", ".join(str(e.h_lines) for e in sc.elements))
-            lines.append(f"scene_{sym}_elem_dst_x_px")
-            lines.append("    .byte " + ", ".join(f"${(e.dst_x_px & 0xFF):02X}" for e in sc.elements))
             lines.append(f"scene_{sym}_elem_dst_x_byte")
             lines.append("    .byte " + ", ".join(str(e.dst_x_byte) for e in sc.elements))
             lines.append(f"scene_{sym}_elem_dst_y")
@@ -1540,13 +1556,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         else:
             lines.extend([
                 f"scene_{sym}_elem_tileset    .byte 0",
-                f"scene_{sym}_elem_src_x_px   .byte 0",
                 f"scene_{sym}_elem_src_x_byte .byte 0",
                 f"scene_{sym}_elem_src_y      .byte 0",
-                f"scene_{sym}_elem_w_px       .byte 0",
                 f"scene_{sym}_elem_w_byte     .byte 0",
                 f"scene_{sym}_elem_h_lines    .byte 0",
-                f"scene_{sym}_elem_dst_x_px   .byte 0",
                 f"scene_{sym}_elem_dst_x_byte .byte 0",
                 f"scene_{sym}_elem_dst_y      .byte 0",
                 f"scene_{sym}_elem_flags      .byte 0",

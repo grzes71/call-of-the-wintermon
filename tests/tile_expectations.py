@@ -60,30 +60,74 @@ def load_scene(scene_file: str) -> dict[str, Any]:
     return json.loads((SCENES_DIR / scene_file).read_text(encoding="utf-8"))
 
 
-def element_dst_rect(element: dict[str, Any]) -> tuple[int, int, int, int]:
-    """(dst_x_byte, dst_y, w_bytes, h_lines) of a scene element, as compiled.
+def element_geometry(element: dict[str, Any]) -> dict[str, int]:
+    """Element geometry exactly as scripts/compile_scenes.py emits it.
 
-    scripts/compile_scenes.py emits `dst_x_byte = max(0, x) // 4` and keeps the raw
-    y, while the width is packed in bytes (4 pixels each).
+    The compiler packs the width into bytes (4 pixels each), clamps the destination column to
+    `max(0, x) // 4`, and clips elements that start above or left of the playfield: the source
+    pointer advances and the extent shrinks so the visible part keeps its editor position
+    (engine/render.asm skips - rather than clips - negative destinations on its own).
     """
     rect = element["source_rect"]
-    width_bytes = (rect["width"] + 3) // 4
+    pos = element["position"]
+
+    src_x_byte = int(rect["x"]) // 4
+    src_y = int(rect["y"])
+    w_bytes = (int(rect["width"]) + 3) // 4
+    h_lines = int(rect["height"])
+    dst_x_byte = max(0, int(pos["x"])) // 4
+    dst_y = int(pos["y"])
+
+    if dst_y < 0:
+        clipped_lines = min(h_lines, -dst_y)
+        src_y += clipped_lines
+        h_lines -= clipped_lines
+        dst_y = 0
+
+    if int(pos["x"]) < 0:
+        clipped_bytes = min(w_bytes, (-int(pos["x"])) // 4)
+        w_bytes -= clipped_bytes
+        # A flipped element is drawn from the high end of the source range, so its left edge is
+        # clipped by shrinking the range rather than advancing the source pointer.
+        if not element.get("flip_x"):
+            src_x_byte += clipped_bytes
+        dst_x_byte = 0
+
+    return {
+        "src_x_byte": src_x_byte,
+        "src_y": src_y,
+        "w_bytes": w_bytes,
+        "h_lines": h_lines,
+        "dst_x_byte": dst_x_byte,
+        "dst_y": dst_y,
+    }
+
+
+def element_dst_rect(element: dict[str, Any]) -> tuple[int, int, int, int]:
+    """(dst_x_byte, dst_y, w_bytes, h_lines) of a scene element, as compiled and clipped."""
+    geometry = element_geometry(element)
     return (
-        max(0, int(element["position"]["x"])) // 4,
-        int(element["position"]["y"]),
-        width_bytes,
-        rect["height"],
+        geometry["dst_x_byte"],
+        geometry["dst_y"],
+        geometry["w_bytes"],
+        geometry["h_lines"],
     )
 
 
 def element_is_rendered(element: dict[str, Any]) -> bool:
     """Whether render_scene_background draws this element at all.
 
-    The renderer skips an element whose destination byte column is >= 40 or whose
-    destination line is >= 96 (so negative y values are skipped, not clipped).
+    The renderer skips an element with a zero width/height (which is what an element clipped
+    completely off the playfield compiles to), a destination byte column >= 40 or a destination
+    line >= 96.
     """
-    dst_x, dst_y, _, _ = element_dst_rect(element)
-    return 0 <= dst_x < GAME_VRAM_PITCH and 0 <= dst_y < GAME_VRAM_LINES
+    geometry = element_geometry(element)
+    if geometry["w_bytes"] <= 0 or geometry["h_lines"] <= 0:
+        return False
+    return (
+        0 <= geometry["dst_x_byte"] < GAME_VRAM_PITCH
+        and 0 <= geometry["dst_y"] < GAME_VRAM_LINES
+    )
 
 
 def element_reference_bytes(mem, labels, element: dict[str, Any]) -> list[list[int]]:
@@ -95,17 +139,17 @@ def element_reference_bytes(mem, labels, element: dict[str, Any]) -> list[list[i
     byte order of each scanline while swapping the pixels inside every byte through
     the ROM flip table.
     """
-    rect = element["source_rect"]
-    width_bytes = (rect["width"] + 3) // 4
-    src_x_byte = int(rect["x"]) // 4
-    src_y = int(rect["y"])
+    geometry = element_geometry(element)
+    src_x_byte = geometry["src_x_byte"]
+    src_y = geometry["src_y"]
+    width_bytes = geometry["w_bytes"]
 
     image = Image.open(element["source"])
     stride = (image.size[0] + 3) // 4
     packed = pack_antic_e_bytes(image_to_indexed_2bit(image))
 
     rows: list[list[int]] = []
-    for line in range(rect["height"]):
+    for line in range(geometry["h_lines"]):
         start = (src_y + line) * stride + src_x_byte
         row = list(packed[start : start + width_bytes])
         if len(row) < width_bytes:  # read past the bitmap: the renderer sees zeroes
