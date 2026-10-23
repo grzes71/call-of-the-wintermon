@@ -96,6 +96,16 @@ def scene_platform_count(scene_index: int) -> int:
     return len(load_scene(scene_files()[scene_index])["platforms"])
 
 
+def scene_special_secret_count(scene_index: int) -> int:
+    """Number of secrets with "special": true placed in the scene at that index."""
+    return sum(1 for secret in scene_objects(scene_files()[scene_index], "secret") if secret["special"])
+
+
+def special_secret_total() -> int:
+    """Total number of "special" secrets across all scenes (the HUD icon capacity)."""
+    return sum(scene_special_secret_count(i) for i in range(len(scene_files())))
+
+
 
 
 def scene_background_palette(scene_index: int) -> dict[str, list[int]]:

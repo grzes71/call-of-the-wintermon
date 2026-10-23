@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-23] - Collected Special Secrets Shown as HUD Icons (Numeric CD Counter Removed)
+
+- **Change**: the two-digit CD counter at the right end of the status line is gone. Each collected secret whose catalogue definition carries `"special": true` now adds one disc glyph (screen code 61 - the CD icon in `fonts/font.fnt`) to the right end of the HUD, filled from column 39 leftwards, so the first one collected ends up rightmost.
+- **Engine** ([engine/status_line.asm](engine/status_line.asm)): `status_line_refresh_cds` / `status_line_add_cd` (divide-by-ten, `STATUS_DIGIT_BASE`, `STATUS_MAX_CDS`) were replaced by `status_line_refresh_specials` / `status_line_add_special`; both preserve X and Y. `status_line_init` and `status_line_update` refresh the icons, while `status_line_reset` (a new game) clears the counter - so icons collected earlier stay visible in every later scene. The zero-page counter was renamed `player_cds` -> `player_specials` ([zeropage.asm](zeropage.asm)).
+- **Wiring** ([scenes/game.asm](scenes/game.asm)): `secret_collect` calls `status_line_add_special` only when `secrets_special,x` is set - the same flag that selects the special collect blip.
+- **Data-driven layout** ([scripts/compile_scenes.py](scripts/compile_scenes.py)): `status_special_total(scenes)` counts the special secrets placed in all scenes and `status_name_max()` reserves exactly that many columns on the right, truncating the scene name before them; the compiler emits `SCENE_SPECIAL_TOTAL` and `STATUS_NAME_MAX` and fails with a clear error if the icon row would leave no room for the name. With the current data (2 CDs in scene 01) the row is 2 columns wide, so the HUD looks unchanged until an icon is collected.
+- **Tests** (624 total, +2 net): [tests/test_status_line.py](tests/test_status_line.py) covers the blank icon row, the right-to-left fill, persistence across a scene change, the reset on a new game and the X/Y preservation contract; [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py) asserts the counter and the glyphs while walking a full secret chain; [tests/test_compile_scenes.py](tests/test_compile_scenes.py) checks the compiler/JSON agreement and that every compiled HUD line leaves the icon row blank; the `scene_special_secret_count()` / `special_secret_total()` helpers live in [tests/scene_expectations.py](tests/scene_expectations.py).
+- **Docs**: [README.md](README.md) HUD section updated.
+- **Verification**: 624 tests passing, `check_memory.py` SUCCESS, 5,338 bytes of headroom below `$C000`; the status line was rendered in py65 for 0/1/2 collected icons and after a scene change (`|♥♥♥ The Forest Whispers My Name       ●●|`).
+
 ## [2026-10-23] - Tests Follow the Scene Data Again (No Hardcoded Catalogue/Scene Values)
 
 - **Reported**: after editing scenes and definitions, 4 tests failed - the suite had hardcoded values that the edits invalidated: enemy 1's colour (66 -> 74), secret 2's blink flag (true -> false), the new `"special": true` on the CD secret, and scene 02's platform count (14 -> 15).

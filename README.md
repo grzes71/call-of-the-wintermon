@@ -44,7 +44,7 @@ Plik wynikowy `call_of_the_wintermon.xex` został zaprojektowany z myślą o kom
   - Stały wiersz tekstu ANTIC Mode 2 na dole ekranu.
   - Licznik pozostałych żyć (serca o kodzie wewnętrznym 64).
   - Nazwa bieżącej sceny wyrównana do lewej od kolumny 4 (kolumny 0–2: życia, kolumna 3: odstęp, kolumny 38–39: licznik CD).
-  - Dwucyfrowy licznik zebranych płyt CD (`00`–`99`).
+  - Ikony zebranych sekretów specjalnych (glif o kodzie 61) dopisywane od prawej strony linii; utrzymują się między scenami, a resetują dopiero przy nowej grze.
 - **Ekran końca gry**:
   - Obsługa stanów `GAME_FAILED` (porażka) oraz `GAME_SUCCESS` (zwycięstwo) z dedykowanymi wierszami poezji i bezpiecznym powrotem do ekranu tytułowego.
 

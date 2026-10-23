@@ -236,21 +236,21 @@ def test_scene_title_card_disables_pmg_latching(emu_env):
 
 
 def test_title_init_resets_game_state_and_active_scene_id(emu_env):
-    """Verify that title_init resets active_scene_id to 0, lives to 3, cds to 0, and game_result to 0."""
+    """Verify that title_init resets active_scene_id to 0, lives to 3, specials to 0, and game_result to 0."""
     mpu, labels = emu_env
 
     # Simulate game won state after completing all scenes
     mpu.memory[labels["ACTIVE_SCENE_ID"]] = labels["SCENE_COUNT"]
     mpu.memory[labels["GAME_RESULT"]] = labels["GAME_SUCCESS"]
     mpu.memory[labels["PLAYER_LIVES"]] = 1
-    mpu.memory[labels["PLAYER_CDS"]] = 42
+    mpu.memory[labels["PLAYER_SPECIALS"]] = 42
 
     # Call title_init
     run_subroutine(mpu, labels["TITLE_INIT"])
 
     assert mpu.memory[labels["ACTIVE_SCENE_ID"]] == 0
     assert mpu.memory[labels["PLAYER_LIVES"]] == 3
-    assert mpu.memory[labels["PLAYER_CDS"]] == 0
+    assert mpu.memory[labels["PLAYER_SPECIALS"]] == 0
     assert mpu.memory[labels["GAME_RESULT"]] == labels["GAME_RESULT_NONE"]
 
 
@@ -275,5 +275,3 @@ def test_subroutines_reject_out_of_bounds_scene_id(emu_env):
     mpu.a = labels["SCENE_COUNT"]
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
     assert mpu.memory[labels["STATUS_LINE_VRAM"]] == 0xAA
-
-

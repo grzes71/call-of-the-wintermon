@@ -4,18 +4,22 @@
 ; Layout (40 chars):
 ; - Columns 0..2: Player lives (initially 3), displayed as heart glyphs (code 64)
 ; - Column 3: spacer
-; - Columns 4..37: Scene name, left-aligned from column 4 - pre-formatted by the
+; - Columns 4..N: Scene name, left-aligned from column 4 - pre-formatted by the
 ;   compiler in scene_<scene>_hud_line. The centred scene_<scene>_name_line is
 ;   only used by the scene title card (dlist_scene_title).
-; - Columns 38..39: Collected CDs count (0..99, 2-digit number in screen codes $10..$19)
+; - Right end (columns N+1..39): one disc glyph (code 61) per collected secret whose
+;   catalogue definition carries "special": true, filled from column 39 leftwards.
+;   The counter (player_specials) survives scene changes - only status_line_reset
+;   (a new game) clears it. The compiler reserves exactly as many columns as there
+;   are special secrets in all scenes (SCENE_SPECIAL_TOTAL) and truncates the scene
+;   name before them, so the icons can never reach the name.
 ; ==============================================================================
 
-STATUS_LINE_WIDTH   = 40
-STATUS_GLYPH_HEART  = 64    ; Decimal 64 (heart icon in intro_font)
-STATUS_GLYPH_SPACE  = 0     ; Blank space in Atari screen codes
-STATUS_DIGIT_BASE   = $10   ; Screen code offset for '0'..'9' ($10 = '0')
-STATUS_MAX_CDS      = 99
-STATUS_INIT_LIVES   = 3
+STATUS_LINE_WIDTH    = 40
+STATUS_GLYPH_HEART   = 64    ; Decimal 64 (heart icon in intro_font)
+STATUS_GLYPH_SPECIAL = 61    ; Decimal 61 (disc icon in intro_font)
+STATUS_GLYPH_SPACE   = 0     ; Blank space in Atari screen codes
+STATUS_INIT_LIVES    = 3
 
 ; ==============================================================================
 ; STATUS LINE RESET
@@ -26,7 +30,7 @@ STATUS_INIT_LIVES   = 3
     lda #STATUS_INIT_LIVES
     sta player_lives
     lda #0
-    sta player_cds
+    sta player_specials
     sta game_result
     rts
 .endp
@@ -35,8 +39,8 @@ STATUS_INIT_LIVES   = 3
 ; STATUS LINE INIT
 ; Initializes status line for the specified scene.
 ; Copies the pre-formatted HUD line (scene name left-aligned from column 4) into
-; status_line_vram, then writes player lives (hearts) at columns 0..2 and collected
-; CDs at columns 38..39.
+; status_line_vram, then writes player lives (hearts) at columns 0..2 and the
+; collected-special icons at the right end.
 ; Input: A = scene_id (0..SCENE_COUNT-1)
 ; Preserves: X
 ; ==============================================================================
@@ -68,8 +72,8 @@ STATUS_INIT_LIVES   = 3
     ; 3. Render lives (hearts) at left (columns 0..2)
     jsr status_line_refresh_lives
 
-    ; 4. Render CD count at right (columns 38..39)
-    jsr status_line_refresh_cds
+    ; 4. Render collected-special icons at the right end (columns 39, 38, ...)
+    jsr status_line_refresh_specials
 
     pla
     tax
@@ -100,45 +104,50 @@ STATUS_INIT_LIVES   = 3
 .endp
 
 ; ==============================================================================
-; STATUS LINE REFRESH CDS
-; Formats player_cds (clamped to 99) as two decimal digits at columns 38..39.
+; STATUS LINE REFRESH SPECIALS
+; Draws one disc glyph (code 61) per collected special secret, filling the right end
+; of the status line from column 39 leftwards - the first one collected ends up
+; rightmost. The counter survives scene changes, so icons collected earlier stay
+; visible in later scenes; only status_line_reset (a new game) clears them.
+; Preserves: X, Y
 ; ==============================================================================
-.proc status_line_refresh_cds
-    lda player_cds
-    cmp #STATUS_MAX_CDS
-    bcc @clamp_ok
-    lda #STATUS_MAX_CDS
-@clamp_ok
-    ldx #0
-@div10
-    cmp #10
-    bcc @got_digits
-    sec
-    sbc #10
-    inx
-    bne @div10
-
-@got_digits
-    ; A = units (0..9), X = tens (0..9)
-    ora #STATUS_DIGIT_BASE  ; Screen code for '0'..'9'
-    sta status_line_vram + 39
+.proc status_line_refresh_specials
     txa
-    ora #STATUS_DIGIT_BASE
-    sta status_line_vram + 38
+    pha
+    tya
+    pha
+
+    lda player_specials
+    beq @done
+    ldx #STATUS_LINE_WIDTH - 1      ; rightmost status line column
+    tay
+@draw
+    lda #STATUS_GLYPH_SPECIAL
+    sta status_line_vram,x
+    dex
+    bmi @done                       ; never write left of the status line
+    dey
+    bne @draw
+
+@done
+    pla
+    tay
+    pla
+    tax
     rts
 .endp
 
 ; ==============================================================================
-; STATUS LINE ADD CD
-; Increments player_cds (max 99) and updates status line display.
+; STATUS LINE ADD SPECIAL
+; Marks one collected special secret: increments the counter and redraws the icons.
+; Called from secret_collect (scenes/game.asm) only for secrets whose catalogue
+; definition carries "special": true. The compiler guarantees that the number of
+; special secrets in all scenes never exceeds the reserved status line columns.
+; Preserves: X, Y
 ; ==============================================================================
-.proc status_line_add_cd
-    lda player_cds
-    cmp #STATUS_MAX_CDS
-    bcs @done
-    inc player_cds
-    jsr status_line_refresh_cds
-@done
+.proc status_line_add_special
+    inc player_specials
+    jsr status_line_refresh_specials
     rts
 .endp
 
@@ -157,10 +166,10 @@ STATUS_INIT_LIVES   = 3
 
 ; ==============================================================================
 ; STATUS LINE UPDATE
-; Refreshes both lives and CD counters.
+; Refreshes both lives and collected-special icons.
 ; ==============================================================================
 .proc status_line_update
     jsr status_line_refresh_lives
-    jsr status_line_refresh_cds
+    jsr status_line_refresh_specials
     rts
 .endp

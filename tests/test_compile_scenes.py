@@ -16,13 +16,16 @@ from scripts.compile_scenes import (
     char_to_atari_screencode,
     text_to_screencodes_line,
     text_to_screencodes_line_at,
+    STATUS_LINE_WIDTH,
     STATUS_NAME_COL,
-    STATUS_NAME_MAX,
+    status_name_max,
+    status_special_total,
     PAS_Y_COORDS,
     PlatformData,
     SceneDliCompiledData,
     validate_scene_dli_platforms,
 )
+from tests.scene_expectations import special_secret_total
 
 
 def test_char_to_atari_screencode():
@@ -48,24 +51,59 @@ def test_text_to_screencodes_line():
 
 
 def test_text_to_screencodes_line_at_status_line_layout():
-    """Status-line variant: left-aligned at STATUS_NAME_COL, never touching the CD digits."""
-    line = text_to_screencodes_line_at("Forest", start_col=STATUS_NAME_COL, width=40,
-                                       max_len=STATUS_NAME_MAX)
-    assert len(line) == 40
+    """Status-line variant: left-aligned at STATUS_NAME_COL, truncated to `max_len`."""
+    max_len = 8
+    line = text_to_screencodes_line_at("Forest", start_col=STATUS_NAME_COL,
+                                       width=STATUS_LINE_WIDTH, max_len=max_len)
+    assert len(line) == STATUS_LINE_WIDTH
     # Columns 0..2 hold the lives and column 3 the spacer, so the name starts at column 4.
     assert line[:STATUS_NAME_COL] == [0] * STATUS_NAME_COL
     assert line[STATUS_NAME_COL] == char_to_atari_screencode("F")
     assert line[STATUS_NAME_COL:STATUS_NAME_COL + 6] == [
         char_to_atari_screencode(c) for c in "Forest"
     ]
-    # Everything after the text is blank - including the CD counter columns 38..39.
-    assert line[STATUS_NAME_COL + 6:] == [0] * (40 - STATUS_NAME_COL - 6)
+    # Everything after the text is blank - including the icon row on the right.
+    assert line[STATUS_NAME_COL + 6:] == [0] * (STATUS_LINE_WIDTH - STATUS_NAME_COL - 6)
 
-    # A name longer than the reserved area is truncated before the counter.
+    # A name longer than the reserved area is truncated at `max_len`.
     long_line = text_to_screencodes_line_at("X" * 60, start_col=STATUS_NAME_COL,
-                                            width=40, max_len=STATUS_NAME_MAX)
-    assert long_line[STATUS_NAME_COL:38] == [char_to_atari_screencode("X")] * STATUS_NAME_MAX
-    assert long_line[38:] == [0, 0], "the name must never overwrite the CD counter"
+                                            width=STATUS_LINE_WIDTH, max_len=max_len)
+    assert long_line[STATUS_NAME_COL:STATUS_NAME_COL + max_len] == (
+        [char_to_atari_screencode("X")] * max_len
+    )
+    assert long_line[STATUS_NAME_COL + max_len:] == [0] * (
+        STATUS_LINE_WIDTH - STATUS_NAME_COL - max_len
+    )
+
+
+def test_status_line_reserves_columns_for_special_icons():
+    """The HUD scene name must stop before the special-secret icon row (Rule 05).
+
+    The icon row is as wide as the number of special secrets placed in all scenes, and
+    the compiled HUD line must leave those columns blank - otherwise a collected icon
+    would overwrite the scene name.
+    """
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    scenes = [
+        parse_scene_json(Path("scenes") / name, enemies, secrets) for name in manifest["scenes"]
+    ]
+
+    total = status_special_total(scenes)
+    assert total == special_secret_total(), "compiler total must match the raw scene JSON"
+    name_max = status_name_max(total)
+    assert name_max == STATUS_LINE_WIDTH - STATUS_NAME_COL - total
+    assert name_max >= 1, "the status line must still have room for the scene name"
+
+    icon_start = STATUS_LINE_WIDTH - total
+    for scene in scenes:
+        hud = text_to_screencodes_line_at(
+            scene.name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH, max_len=name_max
+        )
+        assert hud[icon_start:] == [0] * total, (
+            f"{scene.file_stem}: the HUD line must leave the icon row blank"
+        )
+        assert hud[STATUS_NAME_COL] != 0, f"{scene.file_stem}: the scene name must be present"
 
 
 def test_sanitize_symbol():
@@ -617,6 +655,10 @@ def test_generated_asm_contains_secret_special_tables():
     assert "scene_secret_special_hi" in asm_text
     assert "scene_hud_line_lo" in asm_text
     assert "scene_hud_line_hi" in asm_text
+    assert f"SCENE_SPECIAL_TOTAL = {special_secret_total()}" in asm_text, (
+        "the compiled status-line layout must match the scene data"
+    )
+    assert f"STATUS_NAME_MAX = {status_name_max(special_secret_total())}" in asm_text
     for scene_file_name in manifest["scenes"]:
         scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
         assert f"scene_{scene_data.symbol_name}_secret_special" in asm_text, (

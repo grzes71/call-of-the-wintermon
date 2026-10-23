@@ -82,7 +82,7 @@ JUMP_TYPE_LONG      = 2
 
 ; --- Gameplay Status Variables ($C1-$C2) ---
 player_lives        = $C1   ; Remaining player lives (initially 3, displayed as heart glyphs 64)
-player_cds          = $C2   ; Collected CDs count (0..99, displayed as 2-digit number)
+player_specials     = $C2   ; Collected "special" secrets (one HUD disc glyph 61 each)
 
 ; --- Player 0 Engine Zero Page Variables ($C3-$CF) ---
 player_x            = $C3   ; Player horizontal position on canvas (0..152)
@@ -122,5 +122,3 @@ title_gen_x         = $E3   ; 1 byte: Horizontal offset in bytes from row start 
 ; --- Secret Animation & Blinking Zero Page ($E4-$E5) ---
 secrets_blink_lum   = $E4   ; Secret blinking luminance counter ($00-$0E, step 2)
 secrets_blink_timer = $E5   ; Frame divider: frames to hold current luminance step
-
-

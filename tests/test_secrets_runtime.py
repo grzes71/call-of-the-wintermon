@@ -27,7 +27,9 @@ from tests.scene_expectations import (
     expected_pmg_y,
     scene_files,
     scene_objects,
+    scene_special_secret_count,
     secret_frame_bytes,
+    special_secret_total,
     secret_pmg_rows,
     sprite_height,
 )
@@ -477,7 +479,9 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
       - `secrets_special` mirrors the catalogue "special" flag;
       - every collected secret triggers the blip with that flag (different sound),
         except the one that completes the scene - that path plays the victory fanfare
-        instead and must not start the blip at all.
+        instead and must not start the blip at all;
+      - special secrets also add one disc glyph (code 61) to the status line, filled
+        from the right end (engine/status_line.asm).
     """
     scene_file = scene_files()[0]
     secrets = scene_objects(scene_file, "secret")
@@ -497,6 +501,9 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     run_subroutine(mpu, labels["SECRETS_INIT"])
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
+    run_subroutine(mpu, labels["STATUS_LINE_RESET"])
+    mpu.a = 0
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     count = len(secrets)
     coll_addr = labels["SECRETS_COLLECTED"]
@@ -505,6 +512,9 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     spec_addr = labels["SECRETS_SPECIAL"]
     blip_timer = labels["SFX_SECRET_TIMER"]
     fanfare_timer = labels["SFX_VICTORY_TIMER"]
+    hud = labels["STATUS_LINE_VRAM"]
+    icon_capacity = special_secret_total()
+    icon_start = 40 - icon_capacity
 
     # 1. Engine flag table mirrors the catalogue (compiler -> ROM -> secrets_init)
     for i, secret in enumerate(secrets):
@@ -514,6 +524,7 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     model = SecretProgressionModel(secrets)
     played = 0
     silent = 0
+    specials_collected = 0
     while model.pending:
         target = model.pending[0]
         hits = engine_colliding_secrets(mem, labels, mem[x_addr + target], mem[y_addr + target])
@@ -530,6 +541,17 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
         assert mem[coll_addr + expected] == 1, "the collided secret must be collected"
         assert mem[labels["SECRET_COLL_SPECIAL"]] == int(secrets[expected]["special"]), (
             f"secret {expected}: blip variant must follow the catalogue 'special' flag"
+        )
+
+        # HUD: one disc glyph (code 61) per collected special secret, filled right to left.
+        if secrets[expected]["special"]:
+            specials_collected += 1
+        assert mem[labels["PLAYER_SPECIALS"]] == specials_collected, (
+            f"secret {expected}: the HUD counter must follow the collected special secrets"
+        )
+        icon_area = [mem[hud + icon_start + k] for k in range(icon_capacity)]
+        assert icon_area == [0] * (icon_capacity - specials_collected) + [61] * specials_collected, (
+            f"secret {expected}: collected special secrets must be drawn at the right end"
         )
 
         model.collect(expected)
@@ -555,3 +577,6 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
 
     assert played == count - 1, f"every secret but the last must play a blip (count={count})"
     assert silent == 1, "exactly one secret finishes the scene"
+    assert specials_collected == scene_special_secret_count(0), (
+        "the HUD must show exactly the special secrets placed in the scene"
+    )

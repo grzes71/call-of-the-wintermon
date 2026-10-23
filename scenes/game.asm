@@ -446,6 +446,15 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     ;    (that path plays the victory fanfare instead - see @all_cleared).
     lda secrets_special,x
     sta secret_coll_special
+    cmp #0
+    beq @no_special_icon
+
+    ; 4b. Special secrets also get a permanent HUD icon (one disc glyph per secret,
+    ;     filled from the right). The counter survives scene changes - only a new
+    ;     game (status_line_reset) clears it.
+    jsr status_line_add_special
+
+@no_special_icon
     lda #1
     sta secret_coll_sfx
 

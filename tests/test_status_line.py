@@ -5,10 +5,10 @@ Validates:
 2. Initial player lives: 3 characters of decimal code 64 (heart glyphs) at columns 0..2.
 3. Scene name left-aligned from column 4 (the centred variant is reserved for the
    scene title card, dlist_scene_title).
-4. Collected CDs counter on far right (columns 38..39) as 2 decimal digits ($10..$19).
-5. Incrementation and clamping of CD count (max 99).
-6. Decrementation of player lives (clearing hearts).
-7. Full scene change integration (Scene 0 vs Scene 1).
+4. Collected *special* secrets as disc glyphs (code 61) at the right end, filled from
+   column 39 leftwards; the icons survive scene changes and only a new game clears them.
+5. Decrementation of player lives (clearing hearts).
+6. Full scene change integration (Scene 0 vs Scene 1).
 """
 
 from __future__ import annotations
@@ -19,16 +19,24 @@ from py65.devices.mpu6502 import MPU
 
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 from scripts.compile_scenes import (
+    STATUS_LINE_WIDTH,
     STATUS_NAME_COL,
-    STATUS_NAME_MAX,
+    status_name_max,
     text_to_screencodes_line,
     text_to_screencodes_line_at,
 )
-from tests.scene_expectations import load_scene, scene_files
+from tests.scene_expectations import (
+    load_scene,
+    scene_files,
+    scene_special_secret_count,
+    special_secret_total,
+)
+
+STATUS_GLYPH_SPECIAL = 61
 
 
 def test_status_line_reset_and_init_scene0():
-    """Verify status_line_init correctly sets up hearts, centered scene name, and 00 CDs for Scene 0."""
+    """Verify status_line_init sets up hearts, the left-aligned scene name and no icons."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -38,7 +46,7 @@ def test_status_line_reset_and_init_scene0():
     # Reset game status line
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     assert mem[labels["PLAYER_LIVES"]] == 3, "Initial player lives must be 3"
-    assert mem[labels["PLAYER_CDS"]] == 0, "Initial CD count must be 0"
+    assert mem[labels["PLAYER_SPECIALS"]] == 0, "No special secret collected yet"
 
     # Initialize for Scene 0 (Forest: "The Forest Whispers My Name")
     mem[labels["ACTIVE_SCENE_ID"]] = 0
@@ -58,11 +66,14 @@ def test_status_line_reset_and_init_scene0():
     # 2. Scene name: left-aligned from column 4 (columns 0..2 lives, column 3 spacer).
     #    Expected bytes come from the scene JSON through the compiler helper (Rule 05).
     scene_name = load_scene(scene_files()[0])["scene"]["name"]
+    capacity = special_secret_total()
+    name_end = STATUS_LINE_WIDTH - capacity
     exp_hud = text_to_screencodes_line_at(
-        scene_name, start_col=STATUS_NAME_COL, width=40, max_len=STATUS_NAME_MAX
+        scene_name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH,
+        max_len=status_name_max(capacity),
     )
-    assert status_bytes[4:38] == exp_hud[4:38]
-    assert status_bytes[4] == exp_hud[4] != 0, (
+    assert status_bytes[STATUS_NAME_COL:name_end] == exp_hud[STATUS_NAME_COL:name_end]
+    assert status_bytes[STATUS_NAME_COL] == exp_hud[STATUS_NAME_COL] != 0, (
         "the scene name must start exactly at column 4 (no leading blank)"
     )
 
@@ -73,21 +84,23 @@ def test_status_line_reset_and_init_scene0():
     )
     assert title_bytes == exp_title
 
-    # 3. Far right: 2 digits "00" in screen codes ($10, $10)
-    assert status_bytes[38] == 0x10, f"Column 38 must be '0' ($10), got ${status_bytes[38]:02X}"
-    assert status_bytes[39] == 0x10, f"Column 39 must be '0' ($10), got ${status_bytes[39]:02X}"
+    # 3. Nothing collected yet: the special-secret icon area at the right end is blank.
+    assert status_bytes[name_end:] == [0] * capacity
 
 
 def test_status_line_init_scene1():
-    """Verify status_line_init correctly sets up centered scene name for Scene 1 (Be Quick or Be Dead)."""
+    """Verify the collected special icons survive a scene change (Scene 1)."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
+    collected = scene_special_secret_count(0)
+    assert collected > 0, "scene 0 must place at least one special secret"
+
     mem[labels["PLAYER_LIVES"]] = 3
-    mem[labels["PLAYER_CDS"]] = 7
+    mem[labels["PLAYER_SPECIALS"]] = collected
     mem[labels["ACTIVE_SCENE_ID"]] = 1
     mpu.a = 1
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
@@ -100,57 +113,79 @@ def test_status_line_init_scene1():
 
     # Scene name: left-aligned from column 4 (no leading blank there)
     scene_name = load_scene(scene_files()[1])["scene"]["name"]
+    capacity = special_secret_total()
+    name_end = STATUS_LINE_WIDTH - capacity
     exp_hud = text_to_screencodes_line_at(
-        scene_name, start_col=STATUS_NAME_COL, width=40, max_len=STATUS_NAME_MAX
+        scene_name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH,
+        max_len=status_name_max(capacity),
     )
-    assert status_bytes[4:38] == exp_hud[4:38]
-    assert status_bytes[4] == exp_hud[4] != 0
+    assert status_bytes[STATUS_NAME_COL:name_end] == exp_hud[STATUS_NAME_COL:name_end]
+    assert status_bytes[STATUS_NAME_COL] == exp_hud[STATUS_NAME_COL] != 0
 
-    # Right: 07 CDs ($10, $17)
-    assert status_bytes[38] == 0x10  # '0'
-    assert status_bytes[39] == 0x17  # '7'
+    # Right end: one disc glyph (61) per collected special secret, filled right to left.
+    icon_area = status_bytes[STATUS_LINE_WIDTH - collected:]
+    assert icon_area == [STATUS_GLYPH_SPECIAL] * collected, (
+        "special icons collected in an earlier scene must stay visible"
+    )
 
 
-def test_status_line_cd_counter_and_clamping():
-    """Verify CD collection increments score up to 99 and correctly displays digits."""
+def test_status_line_special_icons_fill_right_to_left():
+    """status_line_add_special draws one disc glyph (code 61) per special secret.
+
+    Contract (engine/status_line.asm): the icons fill the right end of the status line
+    from column 39 leftwards - the first one collected ends up rightmost - and they can
+    never reach the scene name area reserved by the compiler.
+    """
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
+    capacity = special_secret_total()
+    assert capacity > 0, "the project must place at least one special secret"
+    name_end = STATUS_LINE_WIDTH - capacity
+
     mem[labels["ACTIVE_SCENE_ID"]] = 0
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     vram = labels["STATUS_LINE_VRAM"]
+    name_bytes = list(mem[vram + STATUS_NAME_COL:vram + name_end])
+    assert name_bytes[0] != 0, "the scene name must be present before collecting"
 
-    # Initial: 00
-    assert mem[vram + 38] == 0x10 and mem[vram + 39] == 0x10
+    # 1. Collect icons one by one: they appear from column 39 leftwards.
+    for count in range(1, capacity + 1):
+        run_subroutine(mpu, labels["STATUS_LINE_ADD_SPECIAL"])
+        assert mem[labels["PLAYER_SPECIALS"]] == count
+        rightmost = list(mem[vram + STATUS_LINE_WIDTH - count:vram + STATUS_LINE_WIDTH])
+        assert rightmost == [STATUS_GLYPH_SPECIAL] * count, f"{count} icons must sit at the right end"
+        # The icon row is exactly `count` wide - the column left of it stays blank.
+        assert mem[vram + STATUS_LINE_WIDTH - count - 1] == 0
+        # The icons must never touch the scene name.
+        assert list(mem[vram + STATUS_NAME_COL:vram + name_end]) == name_bytes
 
-    # Add 1 CD
-    run_subroutine(mpu, labels["STATUS_LINE_ADD_CD"])
-    assert mem[labels["PLAYER_CDS"]] == 1
-    assert mem[vram + 38] == 0x10 and mem[vram + 39] == 0x11  # "01"
+    # 2. A new game clears the icons again (a scene change must not).
+    run_subroutine(mpu, labels["STATUS_LINE_RESET"])
+    assert mem[labels["PLAYER_SPECIALS"]] == 0
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+    assert list(mem[vram + name_end:vram + STATUS_LINE_WIDTH]) == [0] * capacity
 
-    # Set CDs to 42 and refresh
-    mem[labels["PLAYER_CDS"]] = 42
-    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_CDS"])
-    assert mem[vram + 38] == 0x14  # '4'
-    assert mem[vram + 39] == 0x12  # '2'
 
-    # Set CDs to 98 and add 1
-    mem[labels["PLAYER_CDS"]] = 98
-    run_subroutine(mpu, labels["STATUS_LINE_ADD_CD"])
-    assert mem[labels["PLAYER_CDS"]] == 99
-    assert mem[vram + 38] == 0x19  # '9'
-    assert mem[vram + 39] == 0x19  # '9'
+def test_status_line_refresh_specials_preserves_registers():
+    """The icon refresh documents "Preserves: X, Y" - secret_collect relies on it."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
 
-    # Add 1 more CD: must clamp to 99
-    run_subroutine(mpu, labels["STATUS_LINE_ADD_CD"])
-    assert mem[labels["PLAYER_CDS"]] == 99
-    assert mem[vram + 38] == 0x19
-    assert mem[vram + 39] == 0x19
+    mem[labels["PLAYER_SPECIALS"]] = special_secret_total()
+    mpu.x = 0x5A
+    mpu.y = 0x3C
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_SPECIALS"])
+    assert mpu.x == 0x5A, f"X must be preserved, got ${mpu.x:02X}"
+    assert mpu.y == 0x3C, f"Y must be preserved, got ${mpu.y:02X}"
 
 
 def test_status_line_player_lives_and_loss():
