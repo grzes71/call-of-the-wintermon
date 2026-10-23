@@ -4,7 +4,8 @@
 ; Mode: ANTIC Mode D ($0D, 160x96 2bpp, 2 scanlines/line)
 ; Features:
 ; - Single shared DLI handler for all scenes (no scene-specific logic/branches)
-; - 3-phase execution: Faza A (pre-WSYNC setup), Faza B (8 scanlines color profile),
+; - 3-phase execution: Faza A (entry) + A2 (platform PMG state committed on the last pre-pas
+;   scanline), Faza B (8 scanlines color profile),
 ;   Faza C (palette update + next zone PMG setup in guard line)
 ; - Strict hardware isolation: Player 0 (Hero) never touched (HPOSP0, SIZEP0, COLPM0)
 ; - COLBK strictly black ($00)
@@ -450,7 +451,8 @@ dli_table_ptrs_hi
     ldy dli_pas_idx        ; [3] Active table offset + pas index
 
     ; --------------------------------------------------------------------------
-    ; FAZA A: Executed during pre-pas line (2 scanlines before pas)
+    ; FAZA A: Executed on the DLI trigger line (2 scanlines before the pas). Only the register
+    ; save + pas index happen here; the platform's PMG state is committed in A2/A3 below.
     ; Set PMG player widths (x4), missile widths from table, and positions.
     ;
     ; BUDGET (hard limit ~57 cycles): a DLI fires at cycle ~22 of the last
@@ -461,6 +463,20 @@ dli_table_ptrs_hi
     ; pushes the first WSYNC past the end of the trigger scanline, which slips
     ; the whole kernel by one scanline (platform colours then appear one line
     ; late: stale enemy/secret colour on top, row profile shifted down).
+    ; --------------------------------------------------------------------------
+    ; --------------------------------------------------------------------------
+    ; FAZA A: The platform's PMG state is committed as *late* as possible (Faza A2 below), in the
+    ; last scanline of the pre-pas line, so it becomes active exactly on p_base. A sprite
+    ; standing on the platform reaches down to p_base - SPRITE_TAIL_MARGIN; committing earlier
+    ; drew its last row with the platform's 4x width (the line at the feet).
+    ; --------------------------------------------------------------------------
+    sta WSYNC             ; [4] Wait for end of trigger line (2L-2, scanline 1)
+    sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 0)
+
+    ; --------------------------------------------------------------------------
+    ; FAZA A2: platform PMG state - widths, missile width and player positions. Committed in the
+    ; second half of the pre-pas line -> active from scanline 2L (the platform's first row).
+    ; 46 cycles + WSYNC = 50, inside the ~57 cycle Mode D DMA budget.
     ; --------------------------------------------------------------------------
     lda #3                ; [2] Quad width (32px) for platform players
     sta SIZEP1            ; [4]
@@ -476,14 +492,6 @@ dli_table_ptrs_hi
     lda dli_hpos_p3,y      ; [4]
     sta HPOSP3            ; [4]
 
-    ; --------------------------------------------------------------------------
-    ; SYNC: 3 scanlines between DLI trigger (line 2L-2, scanline 1) and Pas (line 2L).
-    ; 1st WSYNC halts to end of line 2L-2, scanline 1.
-    ; 2nd WSYNC halts to end of line 2L-1, scanline 0.
-    ; 3rd WSYNC halts to end of line 2L-1, scanline 1 -> CPU resumes at cycle 0 of scanline 2L!
-    ; --------------------------------------------------------------------------
-    sta WSYNC             ; [4] Wait for end of trigger line (2L-2, scanline 1)
-    sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 0)
     sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 1 -> aligns to scanline 2L)
 
     ; --------------------------------------------------------------------------

@@ -2,6 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-22] - Platform PMG Commits Moved to the Last Pre-Pas Scanline (Sprites Stand on Their Platform)
+
+- **Goal**: let a sprite stand directly on its platform (no flickering feet) without the 3-scanline margin.
+- **Cause of the flicker**: `engine/dli.asm` committed the platform's `SIZEM` / `SIZEP1..3` / `HPOSP1..3` on the DLI trigger line - three scanlines before the platform's first visible scanline - while the enemy/secret sprites share those player channels and stand *above* the platform. Their tail rows were therefore drawn with the platform's position/size (4x wide), which showed up as flickering lines at the feet.
+- **Change ([engine/dli.asm](engine/dli.asm))**: the platform commits now happen in the *last* scanline of the pre-pas line, so they become active exactly on the platform's first visible scanline (`p_base`):
+  - Faza A (on the DLI trigger line) = register save + pas index only;
+  - two `WSYNC`s skip the trigger line and the first half of the pre-pas line;
+  - Faza A2 (second half of the pre-pas line, 46 cycles + WSYNC = 50, inside the ~57-cycle Mode D DMA budget) commits `SIZEP1..3 = 3`, `SIZEM` and `HPOSP1..3`.
+  The first attempt split this into two phases (widths in the first half, positions in the second); on real hardware that still left `SIZEP = 3` active on the sprite's last row, which showed up as a single 4x-wide line at the feet spanning the platform. Committing everything in the last scanline removes it.
+- **`SPRITE_TAIL_MARGIN` = 1** ([scripts/compile_scenes.py](scripts/compile_scenes.py)): one scanline of clearance above the platform's first row, i.e. the sprite visually stands on the platform (scene 02 enemies: `pmg_y` 57/89 -> 59/91).
+- **No channel separation needed**: because the platform's commits are late, an enemy may keep sharing a player channel with a platform on its row. (The alternative - assigning enemies only free channels - was implemented and dropped: it would have rejected crowded rows such as scene 01's row y=24, which carries three platform segments.)
+- **Test updates**: `tests/test_dli_system.py::test_dli_faza_a_cycle_budget_and_faza_b_iter0` now measures Faza A, A2 and A3 separately against the DMA budget; `tests/test_scanline_pmg_invariants.py` allows the DLI transition window to hold rows of a sprite that actually stands on that platform (everything else must still be zero).
+- **Verification**: 599 tests passing, `check_memory.py` SUCCESS, 5,750 bytes of headroom below `$C000`. Visual confirmation on emulator/hardware pending.
+
 ## [2026-10-22] - SPRITE_TAIL_MARGIN Back to 3 (The DLI Commits Platform PMG Values on the Guard Line)
 
 - **Reported**: with `SPRITE_TAIL_MARGIN = 1` the enemies were visible again but showed flickering lines at their feet.

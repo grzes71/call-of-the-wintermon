@@ -3,10 +3,12 @@
 Invariants (Section 2 of specification):
 1. In Enemies/Secrets zones between platforms, PMG data (Players 1-3, Missiles)
    can be non-zero ONLY on valid sprite rows assigned to that channel.
-2. All transition scanlines (the three DLI setup scanlines p_base - 3 .. p_base - 1 before each
-   platform pas) and top guard lines (p_base - 24) MUST have 0x00 in Players 1-3 and Missiles.
-   Sprites standing on a platform must therefore end at least SPRITE_TAIL_MARGIN (= 3)
-   scanlines above the base, or their tail rows get the platform's HPOSP/SIZEP/colour.
+2. Top guard lines (p_base - 24) MUST have 0x00 in Players 1-3 and Missiles. Inside the three
+   DLI setup scanlines before a pas (p_base - 3 .. p_base - 1) only rows belonging to a sprite
+   that stands on that platform (enemy/secret tail) may be non-zero: the DLI commits the
+   platform's HPOSP/SIZEP only for the platform's own channels (enemies use the free ones) and
+   the runtime mirrors the enemy HPOS into the platform table, so those rows keep the sprite's
+   own position and size.
 3. Platform scanlines (p_base .. p_base + 7) contain ONLY platform patterns.
 4. Sprite height + guard/transition lines (4) <= zone height (24). Max sprite height is 20.
    compile_scenes.py must raise an error for oversized sprites.
@@ -26,7 +28,6 @@ from scripts.compile_scenes import (
     CatalogueItem,
 )
 from scripts.compile_sprites import parse_sprites_json
-from tests.scene_expectations import SPRITE_TAIL_MARGIN
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
@@ -49,15 +50,36 @@ def get_pmg_snapshot(mem, labels) -> dict[str, list[int]]:
     }
 
 
-def assert_pmg_invariants(snapshot: dict[str, list[int]], scene_id: int, context_msg: str):
-    """Enforces that transition scanlines and guard lines are strictly zero."""
-    # The DLI commits the platform HPOSP/SIZEP/colour on these lines; a sprite reaching into
-    # them is drawn with the platform's values (flickering feet), so the margin must stay >= 3.
-    assert SPRITE_TAIL_MARGIN >= 3, (
-        f"SPRITE_TAIL_MARGIN must stay >= 3: the DLI commits the platform's PMG values on the "
-        f"three scanlines before each pas (got {SPRITE_TAIL_MARGIN})"
-    )
+def sprite_scanlines(mem, labels) -> dict[str, set[int]]:
+    """PMG scanlines legitimately covered by an active enemy or secret sprite, per channel.
 
+    Enemies use players 1..3 (`ENEMIES_CHANNEL`), secrets are grouped on the missiles.
+    """
+    covered: dict[str, set[int]] = {"P1": set(), "P2": set(), "P3": set(), "M": set()}
+    for i in range(mem[labels["ENEMIES_COUNT"]]):
+        if not mem[labels["ENEMIES_ACTIVE"] + i]:
+            continue
+        channel = mem[labels["ENEMIES_CHANNEL"] + i]
+        top = mem[labels["ENEMIES_PMG_Y"] + i]
+        covered[f"P{channel + 1}"].update(
+            range(top, top + mem[labels["ENEMIES_HEIGHT"] + i])
+        )
+    for i in range(mem[labels["SECRETS_COUNT"]]):
+        if not mem[labels["SECRETS_ACTIVE"] + i]:
+            continue
+        top = mem[labels["SECRETS_PMG_Y"] + i]
+        covered["M"].update(range(top, top + mem[labels["SECRETS_HEIGHT"] + i]))
+    return covered
+
+
+def assert_pmg_invariants(
+    snapshot: dict[str, list[int]],
+    scene_id: int,
+    context_msg: str,
+    covered: dict[str, set[int]] | None = None,
+):
+    """Enforces that guard lines stay zero and that only active sprites touch the DLI window."""
+    covered = covered or {"P1": set(), "P2": set(), "P3": set(), "M": set()}
     errors = []
 
     for k, p_base in enumerate(PLATFORM_BASES):
@@ -72,15 +94,17 @@ def assert_pmg_invariants(snapshot: dict[str, list[int]], scene_id: int, context
                         f"has non-zero byte in {ch}: 0x{val:02X}"
                     )
 
-        # 2. DLI Pre-pas transition window (3 scanlines: p_base - 3 .. p_base - 1)
+        # 2. DLI Pre-pas transition window (3 scanlines: p_base - 3 .. p_base - 1).
+        #    Only rows of a sprite standing on this platform may be non-zero here.
         for t_offset in (3, 2, 1):
             trans_sl = p_base - t_offset
             for ch in ("P1", "P2", "P3", "M"):
                 val = snapshot[ch][trans_sl]
-                if val != 0:
+                if val != 0 and trans_sl not in covered[ch]:
                     errors.append(
                         f"Scene {scene_id} ({context_msg}): DLI transition line SL {trans_sl} "
-                        f"(p_base {p_base} - {t_offset}) has non-zero byte in {ch}: 0x{val:02X}"
+                        f"(p_base {p_base} - {t_offset}) has non-zero byte in {ch}: 0x{val:02X} "
+                        f"but no active sprite covers it"
                     )
 
     if errors:
@@ -105,14 +129,20 @@ def test_scene0_forest_pmg_scanline_invariants():
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     snap_init = get_pmg_snapshot(mem, labels)
-    assert_pmg_invariants(snap_init, scene_id=0, context_msg="after enemies_init")
+    assert_pmg_invariants(
+        snap_init, scene_id=0, context_msg="after enemies_init",
+        covered=sprite_scanlines(mem, labels),
+    )
 
     # Run 10 frames of enemies_update
     for frame in range(10):
         run_subroutine(mpu, labels["ENEMIES_UPDATE"])
 
     snap_update = get_pmg_snapshot(mem, labels)
-    assert_pmg_invariants(snap_update, scene_id=0, context_msg="after 10 frames of enemies_update")
+    assert_pmg_invariants(
+        snap_update, scene_id=0, context_msg="after 10 frames of enemies_update",
+        covered=sprite_scanlines(mem, labels),
+    )
 
 
 def test_all_scenes_pmg_scanline_invariants():
@@ -136,7 +166,10 @@ def test_all_scenes_pmg_scanline_invariants():
         run_subroutine(mpu, labels["ENEMIES_INIT"])
 
         snap = get_pmg_snapshot(mem, labels)
-        assert_pmg_invariants(snap, scene_id=sc_id, context_msg="after init")
+        assert_pmg_invariants(
+            snap, scene_id=sc_id, context_msg="after init",
+            covered=sprite_scanlines(mem, labels),
+        )
 
 
 def test_compiler_rejects_oversized_sprite(tmp_path: Path):

@@ -578,7 +578,7 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
     mpu.pc = dli_addr
     mpu.x = 0x42  # Distinct value to ensure X preservation
 
-    # --- Faza A cycle budget (pre-pas scanline) -------------------------------
+    # --- Faza A (entry only) ---------------------------------------------------
     faza_a_start = mpu.processorCycles
     while not (mem[mpu.pc] == 0x8D and (mem[mpu.pc + 1] | (mem[mpu.pc + 2] << 8)) == wsync_addr):
         mpu.step()
@@ -592,16 +592,24 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
     # Step over 1st STA WSYNC (end of line 2L-2 scanline 1)
     mpu.step()
 
-    # Next instruction must be 2nd STA WSYNC (end of line 2L-1 scanline 0)
+    # 2nd STA WSYNC must follow immediately (end of line 2L-1 scanline 0)
     pc_before = mpu.pc
     opcode = mem[pc_before]
     assert opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr, "2nd WSYNC required"
     mpu.step()
 
-    # Next instruction must be 3rd STA WSYNC (end of line 2L-1 scanline 1 -> enters scanline 2L)
-    pc_before = mpu.pc
-    opcode = mem[pc_before]
-    assert opcode == 0x8D and (mem[pc_before + 1] | (mem[pc_before + 2] << 8)) == wsync_addr, "3rd WSYNC required to align to scanline 2L"
+    # --- Faza A2: platform PMG state, last scanline of the pre-pas line --------------
+    # Committed here (not on the trigger line) so it becomes active exactly on scanline 2L:
+    # a sprite standing on the platform keeps its own HPOSP/SIZEP on the rows above it.
+    a2_start = mpu.processorCycles
+    while not (mem[mpu.pc] == 0x8D and (mem[mpu.pc + 1] | (mem[mpu.pc + 2] << 8)) == wsync_addr):
+        mpu.step()
+    a2_cycles = mpu.processorCycles - a2_start
+    assert a2_cycles <= MODE_D_DMA_CYCLE_BUDGET, (
+        f"Faza A2 took {a2_cycles} cycles; it must fit the ~{MODE_D_DMA_CYCLE_BUDGET} cycle budget"
+    )
+
+    # Step over 3rd STA WSYNC (end of line 2L-1 scanline 1 -> enters scanline 2L)
     mpu.step()
 
     # We are now in Faza B Iteration 0 (scanline 2L)

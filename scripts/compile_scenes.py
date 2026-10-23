@@ -232,11 +232,11 @@ class SceneEnemyData:
 PAS_Y_COORDS = [8, 24, 40, 56, 72, 88]
 
 # Vertical PMG geometry: a platform's pas base scanline is 32 + platform_y * 2 and its first
-# visible scanline is that base. engine/dli.asm commits the platform's HPOSP/SIZEP/colour on the
-# guard line two scanlines above that base, and the enemies share the player channels with the
-# platforms, so a sprite standing on a platform must end at least 3 scanlines above the base -
-# otherwise its last rows are drawn with the platform's values (visible as flickering feet).
-SPRITE_TAIL_MARGIN = 3
+# visible scanline is that base. engine/dli.asm commits the platform's HPOSP/SIZEP/SIZEM on the
+# two scanlines *just before* that base (Faza A2/A3), so they become active exactly on it - a
+# sprite standing on the platform keeps its own values on the rows above, and one scanline of
+# clearance (SPRITE_TAIL_MARGIN = 1) is enough.
+SPRITE_TAIL_MARGIN = 1
 
 TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
     0: (0x94, 0xD6, 0xEA),  # castles
@@ -1287,10 +1287,11 @@ def parse_scene_json(
                     )
 
             # Platform base scanline in PMG: 32 + (plat_y * 2) (its first visible scanline;
-            # the DLI sets the platform sprites up on p_base - 3 .. p_base - 1).
+            # the DLI commits the platform's HPOSP/SIZEP on the two scanlines just before it).
             # Secrets end SPRITE_TAIL_MARGIN scanlines above the base.
             p_base = 32 + (plat_y * 2)
             pmg_y = max(0, p_base - spr_h - SPRITE_TAIL_MARGIN)
+
             active = (dep_id == 0)
             zid = (plat_y - 8) // 16 if plat_y >= 8 else 0
 
