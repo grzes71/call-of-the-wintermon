@@ -832,7 +832,9 @@ class TestSecretSpecialFlag:
         for entry in secrets:
             defn = cats.get_secret(entry["id"])
             assert defn is not None, f"secret {entry['id']} missing after load"
-            assert defn.special is False
+            # The model must reproduce the file exactly - including the flag, which must
+            # never be invented for entries that do not use it (Rule 05).
+            assert defn.special is bool(entry.get("special", False))
             assert defn.to_dict() == entry
 
     def test_gui_secret_special_checkbox_is_unchecked_by_default(self, qapp):

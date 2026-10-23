@@ -13,6 +13,7 @@ import pytest
 from py65.devices.mpu6502 import MPU
 
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
+from tests.scene_expectations import player_spawn, scene_platform_count
 
 
 def test_player_init_scene0():
@@ -23,15 +24,16 @@ def test_player_init_scene0():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Initialize Player 0 on Scene 0 (Forest: start_x=96, start_y=68)
+    # Initialize Player 0 on Scene 0 (spawn read from the scene JSON, Rule 05)
+    spawn = player_spawn(0)
     mem[labels["ACTIVE_SCENE_ID"]] = 0
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # 1. Canvas position and PMG scanline
-    assert mem[labels["PLAYER_X"]] == 96
-    # pmg_y = 68 * 2 + 52 = 188
-    assert mem[labels["PLAYER_PMG_Y"]] == 188
+    assert mem[labels["PLAYER_X"]] == spawn["x"]
+    # pmg_y = scene_y * 2 + 52 (sprite offset)
+    assert mem[labels["PLAYER_PMG_Y"]] == spawn["y"] * 2 + 52
 
     # 2. State & Direction: facing right (0), idle (0), frame 0
     assert mem[labels["PLAYER_DIR"]] == 0
@@ -82,18 +84,18 @@ def test_player_init_scene1_custom_color():
     # Verify that Scene 1 has a distinct color configured compared to Scene 0
     assert scene1_color != scene0_color
 
-    # Initialize Player 0 on Scene 1 (Forest Castle: start_x=90, start_y=68)
+    # Initialize Player 0 on Scene 1 (spawn read from the scene JSON, Rule 05)
     mem[labels["ACTIVE_SCENE_ID"]] = 1
     mpu.a = 1
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    assert mem[labels["PLAYER_X"]] == 90
+    assert mem[labels["PLAYER_X"]] == player_spawn(1)["x"]
     assert mem[labels["COLPM0"]] == scene1_color
     assert mem[labels["PCOLR0"]] == scene1_color
     assert mem[labels["PLAYER_COLOR"]] == scene1_color
 
-    # Verify platform tables for Scene 1 (14 platforms vs 11 on Scene 0)
-    expected_plat_count = mem[labels["SCENE_PLAT_COUNT"] + 1]
+    # Verify platform tables for Scene 1 (count comes from its scene JSON, Rule 05)
+    expected_plat_count = scene_platform_count(1)
     expected_ptr_x = mem[labels["SCENE_PLAT_X_LO"] + 1] | (mem[labels["SCENE_PLAT_X_HI"] + 1] << 8)
     expected_ptr_y = mem[labels["SCENE_PLAT_Y_LO"] + 1] | (mem[labels["SCENE_PLAT_Y_HI"] + 1] << 8)
     expected_ptr_w = mem[labels["SCENE_PLAT_W_LO"] + 1] | (mem[labels["SCENE_PLAT_W_HI"] + 1] << 8)
@@ -102,8 +104,10 @@ def test_player_init_scene1_custom_color():
     actual_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
     actual_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
 
+    assert mem[labels["SCENE_PLAT_COUNT"] + 1] == expected_plat_count, (
+        "the compiled platform count must match the scene JSON"
+    )
     assert mem[labels["ZP_PLAT_COUNT"]] == expected_plat_count
-    assert expected_plat_count == 14
     assert actual_ptr_x == expected_ptr_x
     assert actual_ptr_y == expected_ptr_y
     assert actual_ptr_w == expected_ptr_w
@@ -1107,4 +1111,3 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
     assert mem[labels["PLAYER_STATE"]] == 0, "Hero must land in IDLE state"
     assert mem[labels["PLAYER_Y"]] == 36, "Hero must land at platform surface y=36"
     assert 73 <= mem[labels["PLAYER_X"]] <= 105, "Hero must be within platform-012 x bounds"
-

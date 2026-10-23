@@ -83,15 +83,32 @@ def test_resolve_tileset_id():
 
 
 def test_load_catalogues():
+    """Catalogues must mirror scenes/definitions.json (Rule 05: no hardcoded values)."""
+    raw = json.loads(Path("scenes/definitions.json").read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
-    assert 1 in enemies
-    assert enemies[1].name == "Azathoth"
-    assert enemies[1].atari_color == 66  # $42
-    assert 1 in secrets
-    assert secrets[1].name == "Gold Key"
-    assert secrets[1].atari_color == 26  # $1A
-    assert 2 in secrets
-    assert secrets[2].blink is True
+
+    raw_enemies = {item["id"]: item for item in raw.get("enemies", [])}
+    raw_secrets = {item["id"]: item for item in raw.get("secrets", [])}
+    assert raw_enemies, "definitions.json must define enemies"
+    assert raw_secrets, "definitions.json must define secrets"
+
+    for defn_id, item in raw_enemies.items():
+        assert defn_id in enemies, f"enemy {defn_id} missing from the loaded catalogue"
+        assert enemies[defn_id].name == item["name"]
+        assert enemies[defn_id].blink is bool(item.get("blink", False))
+        assert enemies[defn_id].sprite_id == item.get("sprite_id")
+        if "atari_color" in item:
+            assert enemies[defn_id].atari_color == item["atari_color"]
+
+    for defn_id, item in raw_secrets.items():
+        assert defn_id in secrets, f"secret {defn_id} missing from the loaded catalogue"
+        assert secrets[defn_id].name == item["name"]
+        assert secrets[defn_id].blink is bool(item.get("blink", False))
+        assert secrets[defn_id].sprite_id == item.get("sprite_id")
+        assert secrets[defn_id].dependency == item.get("dependency")
+        assert secrets[defn_id].special is bool(item.get("special", False))
+        if "atari_color" in item:
+            assert secrets[defn_id].atari_color == item["atari_color"]
 
 
 def test_parse_01_forest_scene():
@@ -117,13 +134,20 @@ def test_parse_01_forest_scene():
     assert obj1.def_id == raw_obj1["definition_id"]
     assert obj1.speed_code == speed_map.get(raw_obj1.get("speed", "slow"), 0)
     assert obj1.strategy_code == strat_map.get(raw_obj1.get("movement_strategy", "stationary"), 0)
-    assert obj1.atari_color == 66
+    assert obj1.atari_color == enemies[obj1.def_id].atari_color
 
-    # Verify secret with blink
-    exit_doors = [o for o in scene.objects if o.def_id == 2 and o.type_code == 1]
-    if exit_doors:
-        assert exit_doors[0].blink is True
-        assert exit_doors[0].atari_color == secrets[2].atari_color
+    # Secrets inherit blink and colour from their catalogue definitions - whatever the
+    # current values are (no hardcoded definition ids or colours, Rule 05).
+    for obj in scene.objects:
+        if obj.type_code != 1:
+            continue
+        catalogue_secret = secrets[obj.def_id]
+        assert obj.blink is catalogue_secret.blink, (
+            f"secret def {obj.def_id}: compiled blink flag must match the catalogue"
+        )
+        assert obj.atari_color == catalogue_secret.atari_color, (
+            f"secret def {obj.def_id}: compiled colour must match the catalogue"
+        )
 
 
 def test_parse_02_forest_castle_scene():

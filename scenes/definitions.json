@@ -7,10 +7,10 @@
       "blink": false,
       "rgb_color": [
         255,
-        0,
-        0
+        85,
+        127
       ],
-      "atari_color": 66,
+      "atari_color": 74,
       "sprite_id": 1
     },
     {
@@ -22,7 +22,7 @@
         0,
         255
       ],
-      "atari_color": 132,
+      "atari_color": 140,
       "sprite_id": 2
     },
     {
@@ -34,7 +34,7 @@
         170,
         0
       ],
-      "atari_color": 195,
+      "atari_color": 204,
       "sprite_id": 3
     },
     {
@@ -44,9 +44,9 @@
       "rgb_color": [
         255,
         170,
-        0
+        127
       ],
-      "atari_color": 252,
+      "atari_color": 60,
       "sprite_id": 4
     },
     {
@@ -58,7 +58,7 @@
         255,
         0
       ],
-      "atari_color": 254,
+      "atari_color": 28,
       "sprite_id": 5
     }
   ],
@@ -78,13 +78,13 @@
     {
       "id": 2,
       "name": "Skull",
-      "blink": true,
+      "blink": false,
       "rgb_color": [
-        0,
+        170,
         255,
         255
       ],
-      "atari_color": 140,
+      "atari_color": 252,
       "sprite_id": 7
     },
     {
@@ -94,10 +94,11 @@
       "rgb_color": [
         85,
         170,
-        0
+        127
       ],
       "atari_color": 214,
-      "sprite_id": 6
+      "sprite_id": 6,
+      "special": true
     },
     {
       "id": 4,

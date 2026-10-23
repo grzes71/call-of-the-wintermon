@@ -81,7 +81,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-002",
@@ -92,7 +92,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 4
     },
     {
       "id": "platform-003",
@@ -103,7 +103,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-004",
@@ -125,7 +125,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 5
     },
     {
       "id": "platform-006",
@@ -147,7 +147,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 5
     },
     {
       "id": "platform-009",
@@ -158,7 +158,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-012",
@@ -169,7 +169,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 4
     },
     {
       "id": "platform-013",
@@ -180,7 +180,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-014",
@@ -191,7 +191,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 5
     },
     {
       "id": "platform-015",
@@ -202,7 +202,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-016",
@@ -213,7 +213,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 1
     },
     {
       "id": "platform-017",
@@ -223,6 +223,17 @@
         "y": 72
       },
       "width": 32,
+      "height": 4,
+      "color_profile_id": 2
+    },
+    {
+      "id": "platform-018",
+      "type": "missile",
+      "position": {
+        "x": 24,
+        "y": 72
+      },
+      "width": 8,
       "height": 4,
       "color_profile_id": 2
     }
@@ -281,6 +292,15 @@
       "x": 34,
       "speed": "medium",
       "movement_strategy": "left_right"
+    },
+    {
+      "id": 8,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-017",
+      "x": 55,
+      "speed": "medium",
+      "movement_strategy": "stationary"
     }
   ],
   "player_spawn": {
@@ -289,10 +309,10 @@
     "color": 222
   },
   "row_color_profiles": [
+    5,
     1,
-    2,
-    3,
-    2,
+    4,
+    1,
     2,
     1
   ],

@@ -86,6 +86,17 @@ def scene_engine_index(scene_file: str) -> int:
     """Engine scene index of a scene file (its position in scenes/scenes.json)."""
     return scene_files().index(scene_file)
 
+def player_spawn(scene_index: int) -> dict[str, Any]:
+    """`player_spawn` block (x/y/color) of the scene at that engine index."""
+    return load_scene(scene_files()[scene_index])["player_spawn"]
+
+
+def scene_platform_count(scene_index: int) -> int:
+    """Number of platforms defined by the scene at that engine index."""
+    return len(load_scene(scene_files()[scene_index])["platforms"])
+
+
+
 
 def scene_background_palette(scene_index: int) -> dict[str, list[int]]:
     """Background palette (upper/lower COLPF0..2) of the scene at that engine index.

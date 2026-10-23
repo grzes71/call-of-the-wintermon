@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-23] - Tests Follow the Scene Data Again (No Hardcoded Catalogue/Scene Values)
+
+- **Reported**: after editing scenes and definitions, 4 tests failed - the suite had hardcoded values that the edits invalidated: enemy 1's colour (66 -> 74), secret 2's blink flag (true -> false), the new `"special": true` on the CD secret, and scene 02's platform count (14 -> 15).
+- **Fixed by deriving the expectations from the data** (Rule 05) instead of patching the numbers:
+  - [tests/test_compile_scenes.py](tests/test_compile_scenes.py): `test_load_catalogues` now walks `scenes/definitions.json` and compares every field the loader reads (name, blink, sprite_id, atari_color, dependency, special) for every enemy and secret; `test_parse_01_forest_scene` takes the enemy colour from the catalogue and checks blink/colour for *all* compiled secrets instead of one hardcoded definition id.
+  - [tests/test_player_movement.py](tests/test_player_movement.py): the spawn point and the platform count come from the new `player_spawn()` / `scene_platform_count()` helpers in [tests/scene_expectations.py](tests/scene_expectations.py); the compiled platform table is asserted against the scene JSON instead of against `14`.
+  - [tests/test_catalogues.py](tests/test_catalogues.py): `test_project_definitions_are_not_rewritten_by_the_new_flag` compares each secret's `special` flag with the file instead of asserting that no secret is flagged.
+- **Verified**: `make all` green again - 622 tests passing, `check_memory.py` SUCCESS, 5,334 bytes of headroom below `$C000`.
+- **Still hardcoded (known risk)**: [tests/test_player_movement.py](tests/test_player_movement.py) keeps ~30 absolute player positions (`PLAYER_X == 96`, `PLAYER_Y == 68`, `== 152`, ...) that encode "scene 0 spawn" or movement results. They pass today, but moving a spawn point or a platform row will break them; converting them to spawn-relative expectations is a follow-up.
+
 ## [2026-10-23] - Intro Screen Extended to 12 Lines
 
 - **Change**: the intro screen shows 12 text lines instead of 10 (the intro text was already written for 12), so `texts/intro.txt` and the display list agree again - `make all` and `tests/test_intro_screen.py` were failing on the 10-line limit.
