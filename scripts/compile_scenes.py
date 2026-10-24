@@ -647,10 +647,12 @@ def compile_scene_dli_data(
     # Pas 2 (line 40): lower (swapped in Faza C at line 44)
     # Pas 3 (line 56): lower
     # Pas 4 (line 72): lower
-    # Pas 5 (line 88): upper (restored in Faza C at line 92)
-    bg_colpf0 = [upper_palette[0], upper_palette[0], lower_palette[0], lower_palette[0], lower_palette[0], upper_palette[0]]
-    bg_colpf1 = [upper_palette[1], upper_palette[1], lower_palette[1], lower_palette[1], lower_palette[1], upper_palette[1]]
-    bg_colpf2 = [upper_palette[2], upper_palette[2], lower_palette[2], lower_palette[2], lower_palette[2], upper_palette[2]]
+    # Pas 5 (line 88): lower (the lower scheme owns everything below line 44, including the
+    # strip under the lowest platform row - the upper palette is never restored on screen;
+    # the status line is drawn separately, with its own black background)
+    bg_colpf0 = [upper_palette[0], upper_palette[0], lower_palette[0], lower_palette[0], lower_palette[0], lower_palette[0]]
+    bg_colpf1 = [upper_palette[1], upper_palette[1], lower_palette[1], lower_palette[1], lower_palette[1], lower_palette[1]]
+    bg_colpf2 = [upper_palette[2], upper_palette[2], lower_palette[2], lower_palette[2], lower_palette[2], lower_palette[2]]
 
     # 2. Compile platforms for the 6 pas
     hpos_p1 = [0] * 6

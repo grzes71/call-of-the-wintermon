@@ -473,12 +473,12 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mem[labels["DLI_PAS_IDX"]] == 13
     assert mem[labels["COLPF0"]] == lower[0], f"Pas 4 must keep lower palette (${lower[0]:02X})"
 
-    # --- DLI 6 (Pas 5, line 88) -> RESTORES UPPER PALETTE AT LINE 92 ---
+    # --- DLI 6 (Pas 5, line 88) -> the lower palette owns the whole bottom of the screen ---
     invoke_dli(mpu, labels["DLI_HANDLER"])
     assert mem[labels["DLI_PAS_IDX"]] == 14
-    assert mem[labels["COLPF0"]] == upper[0], f"Pas 5 must restore background palette to upper (${upper[0]:02X}) at line 92"
-    assert mem[labels["COLPF1"]] == upper[1]
-    assert mem[labels["COLPF2"]] == upper[2]
+    assert mem[labels["COLPF0"]] == lower[0], f"Pas 5 must keep the lower palette (${lower[0]:02X})"
+    assert mem[labels["COLPF1"]] == lower[1]
+    assert mem[labels["COLPF2"]] == lower[2]
 
     # Verify VDSLST was hooked to DLI_STATUS_LINE on DLI 6
     vdslst_dli7 = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)

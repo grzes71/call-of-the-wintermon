@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-24] - Lower Background Palette Owns the Whole Bottom of the Screen
+
+- **Reported** (scene `04-castle-hell.json`, "Hell Awaits"): the colours in the lower part of the screen did not match the authored `background_palette` (`lower` = `$32, $36, $FC`) and below the lowest platform row (row 5, y=88) the *upper* scheme came back.
+- **Cause**: the compiler deliberately restored the upper palette for the last zone - `scripts/compile_scenes.py` emitted `bg_colpf*` as `upper, upper, lower, lower, lower, **upper**` ("Pas 5 (line 88): upper (restored in Faza C at line 92)"), so playfield lines 80-95 (everything below the y=88 platform row) were drawn with the upper triple. The authored palette itself was in the ROM correctly; only that one zone was wrong.
+- **Fix**: pas 5 now keeps the lower palette (`upper, upper, lower, lower, lower, lower`), i.e. the lower zone owns everything below line 44 down to the status line - which is drawn separately with its own black background (`dli_status_line`), so nothing depended on the restore.
+- **Tests**: [tests/scene_expectations.py](tests/scene_expectations.py) `BG_ZONE_ORDER` mirror updated; [tests/test_dli_system.py](tests/test_dli_system.py) `test_dli_handler_full_execution_and_palette_transition` now asserts pas 5 keeps the lower palette instead of restoring the upper one.
+- **Verified**: `make data xex` regenerates the scene DLI data as `$D2,$D2,$32,$32,$32,$32` / `$D6,$D6,$36,$36,$36,$36` / `$DC,$DC,$FC,$FC,$FC,$FC` for scene 04 (was `...,$D2` / `...,$D6` / `...,$DC` in the last zone), and `pytest` - **677 passed**. Not verified visually (no emulator run).
+
+
 ## [2026-10-24] - Scene Data Tables Moved Down to $A800 (Reclaims the Tileset Gap)
 
 - **Trigger**: the tileset sheets were shrunk, which freed 4,156 B (`$8000-$A1E3` = 8,676 B instead of `$8000-$B21F` = 12,832 B) and left a 4,380 B hole (`$A1E4-$B2FF`) unused right below the scene tables, while those tables (`$B300-$BBFF`, 2,304 B window) had only **898 B** of room left - roughly one more scene (a scene costs ~241 B of DLI blocks plus ~600 B of SoA tables).

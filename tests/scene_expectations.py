@@ -97,9 +97,9 @@ def zone_index(platform_y: int) -> int:
 
 
 # Background palette: engine/dli.asm swaps COLPF0..2 once per zone. Per frame the zone order is
-# upper, upper, lower, lower, lower, upper (the lower zone starts at playfield line 44 and the
-# upper palette is restored at line 92).
-BG_ZONE_ORDER = ("upper", "upper", "lower", "lower", "lower", "upper")
+# upper, upper, lower, lower, lower, lower (the lower zone starts at playfield line 44 and owns
+# everything below it - the strip under the lowest platform row included).
+BG_ZONE_ORDER = ("upper", "upper", "lower", "lower", "lower", "lower")
 
 
 def scene_index_with_enemies(min_count: int = 1) -> int:
