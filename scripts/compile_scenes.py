@@ -145,6 +145,11 @@ def text_to_screencodes_line(text: str, width: int = 40) -> list[int]:
 # The icon area width follows the data, so the name limit is computed per project with
 # status_name_max(status_special_total(scenes)) instead of being a fixed constant.
 STATUS_LINE_WIDTH = 40
+
+# Playfield geometry (engine/render.asm + main.asm GAME_VRAM): 40 bytes per line (160 px at
+# 2 bpp), 96 lines. Used to clip elements against the visible screen when compiling scenes.
+GAME_VRAM_PITCH = 40
+GAME_VRAM_LINES = 96
 STATUS_NAME_COL = 4
 
 
@@ -1148,6 +1153,18 @@ def parse_scene_json(
             if not flip_x:
                 src_x_byte += clipped_bytes
             dst_x_byte = 0
+
+        # Clip the right edge here as well. engine/render.asm shrinks the width to
+        # `40 - dst_x_byte` but always reads the source range from its start, so for a flipped
+        # element (drawn right-to-left from the high end) the visible leftmost bytes are the
+        # *high* end of the source: advance the source pointer so the emitted range begins at
+        # the byte that must appear leftmost. Non-flipped elements need no shift (the engine
+        # simply stops earlier).
+        if dst_x_byte + w_bytes > GAME_VRAM_PITCH:
+            clipped_bytes = (dst_x_byte + w_bytes) - GAME_VRAM_PITCH
+            w_bytes -= clipped_bytes
+            if flip_x:
+                src_x_byte += clipped_bytes
 
         elements.append(
             SceneElementData(

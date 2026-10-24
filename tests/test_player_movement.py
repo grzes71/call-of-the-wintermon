@@ -18,6 +18,7 @@ from tests.scene_expectations import (
     jump_apex_dy,
     jump_dx_total,
     jump_dy_total,
+    physics_fixture_scene,
     platform_supporting,
     player_spawn,
     player_spawn_pmg_y,
@@ -27,12 +28,14 @@ from tests.scene_expectations import (
 )
 
 # ---------------------------------------------------------------------------
-# Scene-derived fixtures (Rule 05): every scene coordinate used below comes from
-# scenes/01-forest.json, so moving or resizing platforms in the scene editor cannot
-# break the physics assertions. Engine constants (PLAYER_MAX_X, PLAYER_HPOS_OFFSET,
-# JUMP_*_LEN, PLAYER_SPRITE_HEIGHT, ...) are read from the compiled MADS labels.
+# Scene-derived fixtures (Rule 05): the physics scenarios run on the first scene in
+# scenes/scenes.json that provides the platform roles they need (floor under the spawn, a row
+# above it, a ceiling two rows above, both screen edges, the top row, a missile platform with a
+# sprite platform to its left and a spare slot). Reordering scenes - or adding a new level as
+# the first entry - therefore cannot break these tests. Engine constants (PLAYER_MAX_X,
+# PLAYER_HPOS_OFFSET, JUMP_*_LEN, PLAYER_SPRITE_HEIGHT, ...) are read from the compiled labels.
 # ---------------------------------------------------------------------------
-SCENE0 = 0
+SCENE0, PLAT_ROLES = physics_fixture_scene()
 SPAWN0_X = player_spawn(SCENE0)["x"]
 SPAWN0_Y = player_spawn(SCENE0)["y"]
 SPAWN0_PMG_Y = player_spawn_pmg_y(SCENE0)
@@ -40,26 +43,32 @@ SPAWN0_PMG_Y = player_spawn_pmg_y(SCENE0)
 # The engine clips PMG writes at the status-line area (player.asm compares against 224).
 PMG_STATUS_LINE_TOP = 224
 
+
+def _role_index(role: str) -> int:
+    """Engine platform index of a role resolved by physics_fixture_scene()."""
+    return scene_platform_index(SCENE0, PLAT_ROLES[role]["id"])
+
+
 # The platform the hero spawns on, plus the platforms the physics scenarios use.
-PLAT_FLOOR = platform_supporting(SCENE0, SPAWN0_X + 4, SPAWN0_Y + 20)
-PLAT_FLOOR_IDX = scene_platform_index(SCENE0, PLAT_FLOOR["id"])
-PLAT_UPPER = scene_platform(SCENE0, "platform-004")          # one platform row above the floor
-PLAT_UPPER_IDX = scene_platform_index(SCENE0, "platform-004")
-PLAT_LEFT_EDGE = scene_platform(SCENE0, "platform-006")      # platform touching x = 0
-PLAT_LEFT_EDGE_IDX = scene_platform_index(SCENE0, "platform-006")
-PLAT_RIGHT_EDGE = scene_platform(SCENE0, "platform-005")     # platform touching the right edge
-PLAT_RIGHT_EDGE_IDX = scene_platform_index(SCENE0, "platform-005")
-PLAT_CEILING = scene_platform(SCENE0, "platform-008")        # ceiling row above the floor
-PLAT_TOP_ROW = scene_platform(SCENE0, "platform-010")        # top platform row (y = 24)
-PLAT_TOP_ROW_IDX = scene_platform_index(SCENE0, "platform-010")
-PLAT_GAP_LEFT = scene_platform(SCENE0, "platform-014")       # missile platform left of the floor
-PLAT_GAP_LEFT_IDX = scene_platform_index(SCENE0, "platform-014")
-PLAT_JUMP_FROM = scene_platform(SCENE0, "platform-016")      # missile platform on its row
-PLAT_JUMP_FROM_IDX = scene_platform_index(SCENE0, "platform-016")
-PLAT_JUMP_TO = scene_platform(SCENE0, "platform-012")        # sprite platform left of it
-# A platform slot far from the floor/target rows, reused to build synthetic geometry in RAM
+PLAT_FLOOR = PLAT_ROLES["floor"]
+PLAT_FLOOR_IDX = _role_index("floor")
+PLAT_UPPER = PLAT_ROLES["upper"]                             # one platform row above the floor
+PLAT_UPPER_IDX = _role_index("upper")
+PLAT_LEFT_EDGE = PLAT_ROLES["left_edge"]                     # platform touching x = 0
+PLAT_LEFT_EDGE_IDX = _role_index("left_edge")
+PLAT_RIGHT_EDGE = PLAT_ROLES["right_edge"]                   # platform touching the right edge
+PLAT_RIGHT_EDGE_IDX = _role_index("right_edge")
+PLAT_CEILING = PLAT_ROLES["ceiling"]                         # ceiling row above the floor
+PLAT_TOP_ROW = PLAT_ROLES["top"]                             # top platform row
+PLAT_TOP_ROW_IDX = _role_index("top")
+PLAT_GAP_LEFT = PLAT_ROLES["missile_left"]                   # missile platform left of the floor
+PLAT_GAP_LEFT_IDX = _role_index("missile_left")
+PLAT_JUMP_FROM = PLAT_ROLES["jump_from"]                     # missile platform on its row
+PLAT_JUMP_FROM_IDX = _role_index("jump_from")
+PLAT_JUMP_TO = PLAT_ROLES["jump_to"]                         # sprite platform left of it
+# A platform slot on a row the roles above do not use, reused to build synthetic geometry in RAM
 # (scenarios that need a specific ceiling must not depend on the scene layout).
-PLAT_SCRATCH_IDX = scene_platform_index(SCENE0, "platform-011")
+PLAT_SCRATCH_IDX = _role_index("spare")
 
 
 def test_player_init_scene0():
@@ -70,9 +79,14 @@ def test_player_init_scene0():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Initialize Player 0 on Scene 0 (spawn derived from the scene JSON, Rule 05)
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    # Initialize Player 0 on the fixture scene (spawn derived from the scene JSON, Rule 05).
+    # The DLI buffers are pre-filled from scene 0's compiled tables, so the scene must be
+    # staged before player_init reads SCENE_PLAYER_COLOR.
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE0
+    mpu.a = SCENE0
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # 1. Canvas position and PMG scanline
@@ -88,8 +102,8 @@ def test_player_init_scene0():
     assert mem[labels["PLAYER_X_SUB"]] == 0
     assert mem[labels["PLAYER_SPEED"]] == 0
 
-    # 3. Hardware registers
-    expected_color_0 = mem[labels["SCENE_PLAYER_COLOR"]]
+    # 3. Hardware registers (SCENE_PLAYER_COLOR is the per-scene SoA table)
+    expected_color_0 = mem[labels["SCENE_PLAYER_COLOR"] + SCENE0]
     assert mem[labels["HPOSP0"]] == labels["PLAYER_HPOS_OFFSET"] + SPAWN0_X
     assert mem[labels["SIZEP0"]] == 0        # 1x normal width
     assert mem[labels["COLPM0"]] == expected_color_0
@@ -170,7 +184,7 @@ def test_player_walk_right_acceleration():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     assert mem[labels["PLAYER_X"]] == SPAWN0_X
@@ -252,7 +266,7 @@ def test_player_deceleration_and_inertia_stop():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Accelerate to max speed (8 frames right)
@@ -290,7 +304,7 @@ def test_player_walk_left_and_reversal_braking():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Accelerate left (STICK0 = 0x0B) for 8 frames
@@ -329,7 +343,7 @@ def test_player_bounds_clamping_with_inertia():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Left boundary: stand on the platform that touches x = 0
@@ -371,7 +385,7 @@ def test_player_fall_off_platform_right_edge():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # The engine tests the hero's midpoint (player_x + 4) against the platform edges, so
@@ -402,7 +416,7 @@ def test_player_fall_off_platform_left_edge():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Mirror of the right-edge scenario: standing needs midpoint >= left edge, the next
@@ -433,7 +447,7 @@ def test_player_fall_animation_frame_in_pmg():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Put player in fall state at the spawn line (coordinates from the scene JSON)
@@ -458,7 +472,7 @@ def test_player_fall_and_land_on_lower_platform():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Fall onto PLAT_UPPER: start two canvas lines above its surface, horizontally centred.
@@ -491,10 +505,10 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
     mem[0x01FF] = 0x00
 
     mem[labels["PLAYER_LIVES"]] = 3
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE0
     mpu.a = 0
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Position the hero falling past the floor row, in a column with no platform there.
@@ -573,10 +587,10 @@ def test_player_fall_death_game_over_when_zero_lives():
 
     # Start with 1 life
     mem[labels["PLAYER_LIVES"]] = 1
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE0
     mpu.a = 0
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Put the hero one canvas line above the death threshold, in a column with no platform
@@ -630,10 +644,10 @@ def test_player_death_animation_sequence():
     mem[0x01FF] = 0x00
 
     mem[labels["PLAYER_LIVES"]] = 2
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE0
     mpu.a = 0
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Trigger death explicitly
@@ -701,7 +715,7 @@ def test_player_jump_up_vertical():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero starts on the scene spawn platform (Rule 05)
@@ -776,7 +790,7 @@ def test_player_jump_short_crosses_gap():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Start on the missile platform left of the floor row, near its right edge, and jump
@@ -831,7 +845,7 @@ def test_player_jump_long_reaches_higher_platform():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero stands on the floor platform at the right end of PLAT_UPPER and jumps up-left
@@ -884,7 +898,7 @@ def test_player_jump_long_does_not_hit_ceiling_two_tiers_above():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero on the floor at the right end of PLAT_UPPER, jumping up-left onto it, while a
@@ -934,7 +948,7 @@ def test_player_jump_blocked_when_platform_directly_overhead():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero on the floor directly under PLAT_UPPER: a platform 16 canvas lines above leaves no
@@ -978,7 +992,7 @@ def test_player_jump_ceiling_collision_bounces_to_fall():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero under PLAT_CEILING: the head starts just below the ceiling bottom, so the first
@@ -1019,7 +1033,7 @@ def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero on the floor, with a ceiling two platform rows above built in RAM (a scene edit
@@ -1070,7 +1084,7 @@ def test_player_jump_animation_frames_in_pmg():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Start a jump from the scene spawn platform (Rule 05)
@@ -1113,7 +1127,7 @@ def test_player_jump_on_row_1_full_height():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero standing on the top platform row, head at the platform surface minus sprite height
@@ -1171,7 +1185,7 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = 0
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero on PLAT_JUMP_FROM (a missile platform) jumping left onto PLAT_JUMP_TO on the same

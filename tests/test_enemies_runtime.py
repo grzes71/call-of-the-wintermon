@@ -47,10 +47,16 @@ from tests.scene_expectations import (
     expected_speed_code,
     expected_strategy_code,
     scene_files,
+    scene_index_with_enemies,
     scene_objects,
     sprite_height,
 )
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
+
+
+# The runtime tests run on the first scene that carries enough enemies for their fixtures
+# (Rule 05: the fixture must not depend on which scene happens to be first in scenes.json).
+SCENE = scene_index_with_enemies(3)
 
 
 # ==============================================================================
@@ -144,7 +150,7 @@ def test_enemies_init_scene0():
     Everything (count, sprite ids, speeds, strategies, coordinates, PMG rows and DLI
     positions) is derived from scenes/*.json + definitions.json (Rule 05).
     """
-    scene_file = scene_files()[0]
+    scene_file = scene_files()[SCENE]
     enemies = scene_objects(scene_file, "enemy")
     assert enemies, f"{scene_file} must define at least one enemy"
 
@@ -156,12 +162,12 @@ def test_enemies_init_scene0():
 
     # Initialize DLI and stage Scene 0
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
 
     # Initialize Enemies
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     count = len(enemies)
@@ -220,10 +226,10 @@ def test_enemies_speed_intervals():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     x_addr = labels["ENEMIES_X"]
@@ -308,10 +314,10 @@ def test_strategy_pause_at_boundary():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     # Configure Enemy 0 specifically for pause test:
@@ -371,10 +377,10 @@ def test_strategy_without_pause_bounces_immediately():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
 
     x_addr = labels["ENEMIES_X"]
@@ -417,12 +423,12 @@ def test_player_collision_triggers_death():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # Hero starts with 3 lives
@@ -451,12 +457,12 @@ def test_player_no_collision_preserves_lives():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["ENEMIES_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     lives_addr = labels["PLAYER_LIVES"]

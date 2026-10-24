@@ -25,6 +25,8 @@ from .scene_items import (
     SceneObjectGraphicsItem,
 )
 from .scene_model import (
+    ANTIC_D_PLAYFIELD_HEIGHT,
+    ANTIC_D_PLAYFIELD_WIDTH,
     PLATFORM_HEIGHT,
     PlatformElement,
     PlayerSpawn,
@@ -40,7 +42,8 @@ class SceneCanvas(QGraphicsScene):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setSceneRect(0, 0, 160, 192)
+        # Default canvas = the ANTIC Mode D playfield the engine renders (160 x 96)
+        self.setSceneRect(0, 0, ANTIC_D_PLAYFIELD_WIDTH, ANTIC_D_PLAYFIELD_HEIGHT)
         self.setBackgroundBrush(QBrush(QColor(15, 15, 18)))
         self.grid_mode: str = "none"  # "none", "4x8", "8x8", "16x16"
         self.show_platform_guides: bool = True
@@ -188,8 +191,28 @@ class SceneView(QGraphicsView):
         self._apply_zoom()
 
     def fit_scene_in_view(self) -> None:
-        """Fit the current scene canvas cleanly inside current viewport."""
-        self.fitInView(self.canvas.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        """Fit the whole scene canvas inside the viewport at the closest integer zoom level.
+
+        The canvas is fitted (not the viewport), so a 160 x 96 ANTIC D scene fills a landscape
+        viewport while a taller scene still shows every row. Snapping the scale to ZOOM_LEVELS
+        keeps the pixel art crisp - `fitInView` alone would leave a fractional scale (e.g. 4.37x).
+        """
+        rect = self.canvas.sceneRect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+
+        viewport = self.viewport().size()
+        margin = 8  # leave the screen boundary outline visible
+        scale = min(
+            (viewport.width() - margin) / rect.width(),
+            (viewport.height() - margin) / rect.height(),
+        )
+        if scale <= 0:
+            return
+
+        factor = next((z for z in reversed(self.ZOOM_LEVELS) if z <= scale), self.ZOOM_LEVELS[0])
+        self.set_zoom_factor(factor)
+        self.centerOn(rect.center())
 
     def update_canvas_size(self, width: int, height: int) -> None:
         """Update the logical boundaries of the scene canvas."""

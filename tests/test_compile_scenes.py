@@ -224,11 +224,12 @@ def test_compile_scenes_full_pipeline(tmp_path):
     assert out_asm.is_file()
 
     content = out_asm.read_text(encoding="utf-8")
-    assert "SCENE_COUNT = 2" in content
-    assert "SCENE_SC_01_FOREST_ID = 0" in content
-    assert "SCENE_SC_02_FOREST_CASTLE_ID = 1" in content
-    assert "scene_sc_01_forest_name_line" in content
-    assert "scene_sc_02_forest_castle_name_line" in content
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))["scenes"]
+    assert f"SCENE_COUNT = {len(manifest)}" in content
+    for index, scene_file_name in enumerate(manifest):
+        symbol = sanitize_symbol(Path(scene_file_name).stem).upper()
+        assert f"SCENE_{symbol}_ID = {index}" in content
+        assert f"scene_{symbol.lower()}_name_line" in content
     assert "scene_name_line_lo" in content
     assert "scene_name_line_hi" in content
     assert "scene_sc_01_forest_hud_line" in content

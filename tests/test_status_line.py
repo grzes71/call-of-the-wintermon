@@ -28,9 +28,18 @@ from scripts.compile_scenes import (
 from tests.scene_expectations import (
     load_scene,
     scene_files,
+    scene_index_with_secrets,
     scene_special_secret_count,
+    scene_symbol,
     special_secret_total,
 )
+
+
+# The status line tests need a scene with at least one "special" secret (its icon area) and a
+# second, different scene for the "icons survive a scene change" check (Rule 05: the fixture
+# must not depend on which scene happens to be first in scenes/scenes.json).
+SCENE = scene_index_with_secrets(special=True)
+SCENE_NEXT = scene_index_with_secrets(exclude=(SCENE,))
 
 STATUS_GLYPH_SPECIAL = 61
 
@@ -48,9 +57,9 @@ def test_status_line_reset_and_init_scene0():
     assert mem[labels["PLAYER_LIVES"]] == 3, "Initial player lives must be 3"
     assert mem[labels["PLAYER_SPECIALS"]] == 0, "No special secret collected yet"
 
-    # Initialize for Scene 0 (Forest: "The Forest Whispers My Name")
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    # Initialize for the fixture scene (its name is derived from the scene JSON below)
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     vram = labels["STATUS_LINE_VRAM"]
@@ -65,7 +74,7 @@ def test_status_line_reset_and_init_scene0():
 
     # 2. Scene name: left-aligned from column 4 (columns 0..2 lives, column 3 spacer).
     #    Expected bytes come from the scene JSON through the compiler helper (Rule 05).
-    scene_name = load_scene(scene_files()[0])["scene"]["name"]
+    scene_name = load_scene(scene_files()[SCENE])["scene"]["name"]
     capacity = special_secret_total()
     name_end = STATUS_LINE_WIDTH - capacity
     exp_hud = text_to_screencodes_line_at(
@@ -79,9 +88,8 @@ def test_status_line_reset_and_init_scene0():
 
     # The centred variant is still compiled for the scene title card.
     exp_title = text_to_screencodes_line(scene_name, width=40)
-    title_bytes = list(
-        mem[labels["SCENE_SC_01_FOREST_NAME_LINE"] : labels["SCENE_SC_01_FOREST_NAME_LINE"] + 40]
-    )
+    name_line_label = labels[f"SCENE_{scene_symbol(scene_files()[SCENE]).upper()}_NAME_LINE"]
+    title_bytes = list(mem[name_line_label : name_line_label + 40])
     assert title_bytes == exp_title
 
     # 3. Nothing collected yet: the special-secret icon area at the right end is blank.
@@ -96,13 +104,13 @@ def test_status_line_init_scene1():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    collected = scene_special_secret_count(0)
+    collected = scene_special_secret_count(SCENE)
     assert collected > 0, "scene 0 must place at least one special secret"
 
     mem[labels["PLAYER_LIVES"]] = 3
     mem[labels["PLAYER_SPECIALS"]] = collected
-    mem[labels["ACTIVE_SCENE_ID"]] = 1
-    mpu.a = 1
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE_NEXT
+    mpu.a = SCENE_NEXT
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     vram = labels["STATUS_LINE_VRAM"]
@@ -112,7 +120,7 @@ def test_status_line_init_scene1():
     assert status_bytes[0:3] == [64, 64, 64]
 
     # Scene name: left-aligned from column 4 (no leading blank there)
-    scene_name = load_scene(scene_files()[1])["scene"]["name"]
+    scene_name = load_scene(scene_files()[SCENE_NEXT])["scene"]["name"]
     capacity = special_secret_total()
     name_end = STATUS_LINE_WIDTH - capacity
     exp_hud = text_to_screencodes_line_at(

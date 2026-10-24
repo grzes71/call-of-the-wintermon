@@ -29,12 +29,35 @@ from py65.memory import ObservableMemory
 
 from scripts.check_memory import parse_xex_segments
 from scripts.compile_scenes import load_catalogues, parse_scene_json
-from tests.scene_expectations import scene_files
-from tests.scene_expectations import scene_background_palette
+from tests.scene_expectations import (
+    scene_background_palette,
+    scene_files,
+    scene_index_with_missile_platform,
+    scene_index_with_platforms,
+)
 
-# The DLI tests stage the second scene of the game progression (scenes/scenes.json order);
-# the expected background colours are read from that scene's JSON, never hardcoded.
-DLI_TEST_SCENE_INDEX = 1
+# The DLI tests stage a scene that carries platforms (the expected background colours are read
+# from that scene's JSON, never hardcoded). The scene is picked by content, so reordering scenes
+# in scenes/scenes.json cannot break these tests.
+DLI_TEST_SCENE_INDEX = scene_index_with_platforms()
+
+
+def scene_with_sprite_platform_on_pas1_row() -> int:
+    """First scene with a sprite platform on the row DLI pas 1 sets up (y = 24).
+
+    The double-buffer isolation test checks that staging a scene fills the inactive buffer
+    with that scene's player data, so the fixture must actually define a player platform
+    there (a scene whose row y=24 only carries missiles would stage zeros).
+    """
+    from tests.scene_expectations import scene_platforms
+
+    for index in range(len(scene_files())):
+        if any(p["y"] == 24 and p["type_code"] == 0 for p in scene_platforms(index)):
+            return index
+    raise AssertionError(
+        "no scene in scenes/scenes.json defines a sprite platform on the first platform row "
+        "(y = 24) that DLI pas 1 sets up"
+    )
 
 # Per-scanline CPU budget on a Mode D line with SDMCTL = $3E (full playfield +
 # single-line PMG DMA): ANTIC steals 3 (DL fetch) + 40 (playfield) + 5 (PMG) +
@@ -307,8 +330,8 @@ def test_dli_stage_scene_double_buffer_isolation():
     run_subroutine(mpu, labels["DLI_INIT"])
     assert mem[labels["DLI_ACTIVE_OFFSET"]] == 0
 
-    # Stage scene 0 (Forest) into inactive buffer (offset 8)
-    mpu.a = 0  # scene 0
+    # Stage the fixture scene into the inactive buffer (offset 8)
+    mpu.a = scene_with_sprite_platform_on_pas1_row()
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
 
     # Active buffer remains 0
@@ -642,7 +665,12 @@ def test_dli_missile_platform_first_scanline_color():
     """
     missile_rows: set[tuple[int, int]] = set()
 
-    for scene_id in (0, 1):
+    # Two different scenes that both realise a platform as missiles (5th player)
+    first_missile_scene = scene_index_with_missile_platform()
+    second_missile_scene = scene_index_with_missile_platform(exclude=(first_missile_scene,))
+    missile_scene_ids = (first_missile_scene, second_missile_scene)
+
+    for scene_id in missile_scene_ids:
         mem, labels = load_xex_and_symbols()
         events: list[tuple[str, int, int]] = []
 
@@ -750,6 +778,6 @@ def test_dli_missile_platform_first_scanline_color():
 
     # The test must not be vacuous: every tested scene must realise at least one
     # platform as missiles (5th player), which is exactly the reported case.
-    assert {scene for scene, _ in missile_rows} == {0, 1}, (
+    assert {scene for scene, _ in missile_rows} == set(missile_scene_ids), (
         f"Expected missile platforms in both scenes, found {sorted(missile_rows)}"
     )

@@ -1,6 +1,6 @@
 # Atari 8-Bit Scene Editor (`atari-scene-editor`)
 
-Desktopowa aplikacja graficzna (GUI) napisana w **Pythonie (PySide6)** przeznaczona do projektowania i kompozycji ekranów (scen) platformowych dla komputerów Atari 8-bit o konfigurowalnej rozdzielczości (domyślnie **160 × 192 piksele**).
+Desktopowa aplikacja graficzna (GUI) napisana w **Pythonie (PySide6)** przeznaczona do projektowania i kompozycji ekranów (scen) platformowych dla komputerów Atari 8-bit o konfigurowalnej rozdzielczości (domyślnie **160 × 96 pikseli** — widoczny ekran gry w trybie ANTIC Mode D; patrz sekcja 2).
 
 Edytor pozwala na:
 - Wybór dowolnych grafik źródłowych z katalogu `tiles/`, wycinanie z nich prostokątnych fragmentów i swobodne rozmieszczanie ich na jednej scenie z dokładnością do jednego piksela, obsługą nakładania się grafik z wielu plików, odbicia poziomego (`flip_x`), warstw (kolejności rysowania) oraz pełną historią `Undo/Redo`.
@@ -148,7 +148,7 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
   "scene": {
     "name": "castle_ruins",
     "width": 160,
-    "height": 192,
+    "height": 96,
     "tile_source": "tiles/castles.png"
   },
   "elements": [
@@ -201,7 +201,7 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
 
 ### Reguły formatu:
 - **`schema_version`**: Liczba całkowita identyfikująca wersję (obecnie `1`).
-- **`scene`**: Obiekt definiujący metadane sceny (`name`, konfigurowalna rozdzielczość `width` i `height`, domyślnie `160 × 192`).
+- **`scene`**: Obiekt definiujący metadane sceny (`name`, konfigurowalna rozdzielczość `width` i `height`, domyślnie `160 × 96` — widoczny ekran gry w trybie ANTIC Mode D).
 - **`elements`**: Lista zwykłych elementów kafelków w kolejności rysowania.
 - **`platforms`**: Lista platform sprzętowych PMG z pozycją `x`, `y` (`y % 16 == 8`), szerokością i wysokością 4 px.
 - **`objects`**: Lista instancji obiektów na scenie wskazujących `definition_id` z kartoteki oraz `platform_id`.
@@ -225,6 +225,9 @@ Format pliku sceny jest wersjonowany (`schema_version: 1`), czytelny i wstecznie
 3. **Płótno sceny (środek):**
    - Obszar sceny z siatką pomocniczą i subtelnymi prowadnicami dozwolonych wierszy platform (`y = 8, 24, 40...`).
    - Przesuwanie elementów i platform myszą lub klawiaturą.
+   - **Rozmiar płótna = rozmiar sceny** (domyślnie `160 × 96`, czyli widoczny ekran gry w trybie ANTIC Mode D). Wiersze poniżej `96 px` pozostają w pliku i są edytowalne, ale gra ich nie wyświetla — tytuł grupy **Scene Settings** pokazuje wtedy, ile pikseli wypada poza ekran, a zmiana rozdzielczości na wyższą niż `96 px` wyświetla ostrzeżenie.
+   - **Zoom:** `Ctrl` + kółko myszy albo menu **View** (`Zoom In` / `Zoom Out`) — wyłącznie poziomy całkowite (`1x … 16x`, domyślnie `8x`), dzięki czemu piksele pozostają ostre.
+   - **Fit Scene to View** (menu **View** / pasek narzędzi): dopasowuje **całe płótno** do widoku i przycina powiększenie do największego poziomu całkowitego, który się mieści. Dla sceny `160 × 96` w poziomym oknie daje to widok poziomy (landscape) z całym ekranem gry w kadrze.
 4. **Właściwości i panele (prawy panel):**
    - **Zakładka "Tiles & Elements":** rozdzielczość sceny, właściwości zaznaczonego kafelka, odbicie `flip_x`, warstwy i lista elementów.
    - **Zakładka "Hardware Platforms":** tworzenie nowej platformy (wybór typu sprite/missile, dozwolonej szerokości, wiersza, pozycji X), edycja właściwości zaznaczonej platformy, licznik użycia zasobów w wierszu oraz lista platform.

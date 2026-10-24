@@ -98,7 +98,7 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
         return "Title VScroll VRAM & Text", "GRAPHICS", COLORS["GRAPHICS"], "Vertical scroll VRAM ($4000) + Centered text lines ($4078)"
     if start in (0x5000, 0x2C30, 0x2D00):
         return "Scene Runtime Engine", "METADATA", COLORS["METADATA"], "Secrets (+sprite channel dispatch), enemies & SFX runtime engine"
-    if start == 0xB300:
+    if start == 0xA800:
         return "Scene SoA Tables & DLI Blocks", "METADATA", COLORS["METADATA"], "Scene definitions, platforms, objects, pointer tables & per-scene DLI blocks (grows with the scene count)"
     if start == 0x6000:
         return "Title Display List", "DLIST", COLORS["DLIST"], "Procedural 2bpp Title Display List with Mode 2 VScroller"
@@ -126,8 +126,8 @@ def describe_free_gap(start: int, end: int, size: int) -> str:
         return "Low RAM gap before Gameplay VRAM ($3000) — vacated by scenes data"
     if end == 0x5FFF:
         return "Free expansion headroom in the $5000 block before Title DLIST ($6000)"
-    if start == 0xB300 or end == 0xB2FF:
-        return "Tile headroom before the Scene SoA Tables ($B300) — keep the tilesets below"
+    if start == 0xA800 or end == 0xA7FF:
+        return "Tile headroom before the Scene Data Tables ($A800) — keep the tilesets below"
     if end == 0x6AFF or start == 0x69C0:
         return "Free headroom in PMG block ($6800-$6AFF) before PMG missiles ($6B00)"
     if end == 0x7FFF:
@@ -347,7 +347,7 @@ def generate_graphical_pdf(
     ax_user.set_xlim(0, 100)
     ax_user.set_xticks([])
 
-    user_yticks = [0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x6800, 0x7000, 0x7A00, 0x8000, 0xA000, 0xB300, 0xC000]
+    user_yticks = [0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x6800, 0x7000, 0x7A00, 0x8000, 0xA000, 0xA800, 0xC000]
     ax_user.set_yticks(user_yticks)
     ax_user.set_yticklabels([f"${y:04X}" for y in user_yticks], fontsize=9, color="#94A3B8", fontfamily="monospace")
     ax_user.tick_params(axis="y", colors="#64748B", length=6)

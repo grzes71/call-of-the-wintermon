@@ -87,11 +87,18 @@ def element_geometry(element: dict[str, Any]) -> dict[str, int]:
     if int(pos["x"]) < 0:
         clipped_bytes = min(w_bytes, (-int(pos["x"])) // 4)
         w_bytes -= clipped_bytes
-        # A flipped element is drawn from the high end of the source range, so its left edge is
-        # clipped by shrinking the range rather than advancing the source pointer.
         if not element.get("flip_x"):
             src_x_byte += clipped_bytes
         dst_x_byte = 0
+
+    # Right edge: the compiler emits the clipped extent and, for a flipped element, advances the
+    # source pointer so the emitted range starts at the byte that appears leftmost (the engine
+    # reads a flipped range right-to-left from its start - see scripts/compile_scenes.py).
+    if dst_x_byte + w_bytes > GAME_VRAM_PITCH:
+        clipped_bytes = (dst_x_byte + w_bytes) - GAME_VRAM_PITCH
+        w_bytes -= clipped_bytes
+        if element.get("flip_x"):
+            src_x_byte += clipped_bytes
 
     return {
         "src_x_byte": src_x_byte,

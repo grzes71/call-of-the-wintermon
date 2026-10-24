@@ -14,7 +14,7 @@ from PIL import Image
 from PySide6.QtWidgets import QApplication
 import pytest
 from scene_editor.main_window import MainWindow
-from scene_editor.scene_model import Rect
+from scene_editor.scene_model import ANTIC_D_PLAYFIELD_HEIGHT, ANTIC_D_PLAYFIELD_WIDTH, Rect
 
 # Initialize headless QApplication once
 _qapp = QApplication.instance() or QApplication([])
@@ -35,10 +35,73 @@ class TestMainWindowIntegration:
 
     def test_window_init_and_tiles_browser(self, test_app):
         window, tmp_path, tile_path = test_app
-        assert window.scene_model.width == 160
-        assert window.scene_model.height == 192
+        # A new scene starts as the ANTIC Mode D playfield the engine renders
+        assert window.scene_model.width == ANTIC_D_PLAYFIELD_WIDTH
+        assert window.scene_model.height == ANTIC_D_PLAYFIELD_HEIGHT
         assert window.tile_browser.list_widget.count() == 1
         assert window.tile_browser.list_widget.item(0).text() == "grass.png"
+
+    def test_default_canvas_is_landscape_antic_d_playfield(self, test_app):
+        """The default canvas is the ANTIC D playfield, so the scene is landscape."""
+        window, _tmp_path, _tile_path = test_app
+        canvas = window.scene_view.canvas
+        assert canvas.canvas_width == ANTIC_D_PLAYFIELD_WIDTH
+        assert canvas.canvas_height == ANTIC_D_PLAYFIELD_HEIGHT
+        assert canvas.canvas_width > canvas.canvas_height, "the playfield is landscape"
+        assert window.scene_group.title() == (
+            f"Scene Settings ({ANTIC_D_PLAYFIELD_WIDTH} × {ANTIC_D_PLAYFIELD_HEIGHT})"
+        )
+
+    def test_fit_scene_in_view_uses_largest_integer_zoom_that_fits(self, test_app):
+        """Fit Scene to View shows the whole canvas at the largest integer zoom level."""
+        window, _tmp_path, _tile_path = test_app
+        # Give the view a realistic (landscape) viewport through the window layout
+        window.resize(1400, 900)
+        window.show()
+        QApplication.processEvents()
+
+        view = window.scene_view
+        view.fit_scene_in_view()
+
+        rect = view.canvas.sceneRect()
+        viewport = view.viewport().rect()
+        assert viewport.width() > rect.width(), "the viewport must be wider than the playfield"
+        visible = view.mapFromScene(rect).boundingRect()
+        assert visible.width() <= viewport.width()
+        assert visible.height() <= viewport.height()
+
+        # The chosen level must be an integer zoom step and the largest one that still fits
+        factor = view.ZOOM_LEVELS[view.zoom_index]
+        margin = 8
+        fit_scale = min(
+            (viewport.width() - margin) / rect.width(),
+            (viewport.height() - margin) / rect.height(),
+        )
+        assert factor <= fit_scale + 1e-6
+        if view.zoom_index + 1 < len(view.ZOOM_LEVELS):
+            assert view.ZOOM_LEVELS[view.zoom_index + 1] > fit_scale
+
+    def test_scene_settings_title_flags_playfield_overflow(self, test_app):
+        """Rows below the ANTIC D playfield are flagged in the Scene Settings title."""
+        window, _tmp_path, _tile_path = test_app
+        window.scene_model.height = 192
+        window._sync_all()
+        title = window.scene_group.title()
+        assert "192" in title
+        assert "below the visible ANTIC D playfield" in title
+
+    def test_new_scene_dialog_defaults_to_antic_d_playfield(self, test_app):
+        """The New Scene dialog offers the ANTIC D playfield as its default preset."""
+        from scene_editor.main_window import NewSceneDialog
+
+        dialog = NewSceneDialog()
+        assert dialog.preset_combo.currentData() == (
+            ANTIC_D_PLAYFIELD_WIDTH,
+            ANTIC_D_PLAYFIELD_HEIGHT,
+        )
+        assert dialog.width_spin.value() == ANTIC_D_PLAYFIELD_WIDTH
+        assert dialog.height_spin.value() == ANTIC_D_PLAYFIELD_HEIGHT
+
 
     def test_add_element_flow(self, test_app):
         window, tmp_path, tile_path = test_app

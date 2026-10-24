@@ -26,6 +26,7 @@ from tests.scene_expectations import (
     engine_colliding_secrets,
     expected_pmg_y,
     scene_files,
+    scene_index_with_secrets,
     scene_objects,
     scene_special_secret_count,
     secret_frame_bytes,
@@ -36,6 +37,18 @@ from tests.scene_expectations import (
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 
 
+# The runtime tests run on the first scene that carries what their fixtures need; the checks
+# below are per test (Rule 05: the fixture must not depend on which scene is first in
+# scenes/scenes.json). SCENE has a dependency chain and a successor scene (stage progression
+# plus the scene-transition assertions).
+SCENE = scene_index_with_secrets(with_dependency=True, require_next=True)
+# A scene with a non-blinking secret (blink-cadence reference) and one with a "special" secret.
+SCENE_STATIC = scene_index_with_secrets(static=True)
+SCENE_SPECIAL = scene_index_with_secrets(special=True)
+# A second, different scene for the tests that compare two screens.
+SCENE_NEXT = scene_index_with_secrets(exclude=(SCENE,))
+
+
 def test_secrets_init_scene0():
     """Verify secrets_init sets up Scene 0 exactly as derived from the scene JSON.
 
@@ -43,7 +56,7 @@ def test_secrets_init_scene0():
     the initially active stage are all derived from scenes/*.json + definitions.json
     (Rule 05) - editing the scene must not require touching this test.
     """
-    scene_file = scene_files()[0]
+    scene_file = scene_files()[SCENE]
     secrets = scene_objects(scene_file, "secret")
     assert secrets, f"{scene_file} must define at least one secret"
 
@@ -55,12 +68,12 @@ def test_secrets_init_scene0():
 
     # Initialize DLI and stage Scene 0
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
 
     # Initialize Secrets
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
     count = len(secrets)
@@ -128,10 +141,10 @@ def test_secrets_animation_progression():
 
     # Initialize Scene 0
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
     timer_addr = labels["SECRETS_TIMER"]
@@ -179,7 +192,7 @@ def test_secrets_animation_progression():
 
 def test_secrets_init_scene1():
     """Verify secrets_init sets up the second scene exactly as derived from its JSON."""
-    scene_file = scene_files()[1]
+    scene_file = scene_files()[SCENE_NEXT]
     secrets = scene_objects(scene_file, "secret")
     assert secrets, f"{scene_file} must define at least one secret"
 
@@ -190,10 +203,10 @@ def test_secrets_init_scene1():
     mem[0x01FF] = 0x00
 
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 1
-    mpu.a = 1
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE_NEXT
+    mpu.a = SCENE_NEXT
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 1
+    mpu.a = SCENE_NEXT
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
     assert mem[labels["SECRETS_COUNT"]] == len(secrets)
@@ -216,7 +229,7 @@ def test_secret_collection_and_stage_progression_scene0():
     and definitions.json (Rule 05); the expected progression comes from
     SecretProgressionModel, a mirror of `secret_collect` in scenes/game.asm.
     """
-    scene_file = scene_files()[0]
+    scene_file = scene_files()[SCENE]
     secrets = scene_objects(scene_file, "secret")
     assert secrets, f"{scene_file} must define at least one secret"
 
@@ -227,13 +240,13 @@ def test_secret_collection_and_stage_progression_scene0():
     mem[0x01FF] = 0x00
 
     # Initialize scene 0 and game
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
     run_subroutine(mpu, labels["DLI_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["SECRETS_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["PLAYER_INIT"])
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])  # engine-defined starting HUD state
 
@@ -324,7 +337,7 @@ def test_secret_collection_and_stage_progression_scene0():
 
     # 3. Level complete: the victory fanfare plays IN the finished scene and the engine
     #    advances only after it has finished (see complete_victory_hold)
-    scene_index = 0
+    scene_index = SCENE
     assert mem[labels["ACTIVE_SCENE_ID"]] == scene_index, (
         "the scene must not change while the victory fanfare is playing"
     )
@@ -393,7 +406,7 @@ def test_secrets_blink_cadence_and_static_colors():
     JSON + definitions.json and cross-checked against the engine tables (Rule 05).
     Cadence contract: each luminance step is held for SECRETS_BLINK_STEP_FRAMES frames.
     """
-    scene_file = scene_files()[0]
+    scene_file = scene_files()[SCENE_STATIC]
     secrets = scene_objects(scene_file, "secret")
     blinking = [i for i, secret in enumerate(secrets) if secret["blink"]]
     static = [i for i, secret in enumerate(secrets) if not secret["blink"]]
@@ -406,12 +419,12 @@ def test_secrets_blink_cadence_and_static_colors():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Initialize DLI and Secrets for Scene 0
+    # Initialize DLI and Secrets for the fixture scene
     run_subroutine(mpu, labels["DLI_INIT"])
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
-    mpu.a = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE_STATIC
+    mpu.a = SCENE_STATIC
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE_STATIC
     run_subroutine(mpu, labels["SECRETS_INIT"])
 
     count = len(secrets)
@@ -486,7 +499,7 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
       - special secrets also add one disc glyph (code 61) to the status line, filled
         from the right end (engine/status_line.asm).
     """
-    scene_file = scene_files()[0]
+    scene_file = scene_files()[SCENE_SPECIAL]
     secrets = scene_objects(scene_file, "secret")
     assert secrets, f"{scene_file} must define at least one secret"
 
@@ -496,13 +509,13 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE_SPECIAL
     run_subroutine(mpu, labels["DLI_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE_SPECIAL
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
-    mpu.a = 0
+    mpu.a = SCENE_SPECIAL
     run_subroutine(mpu, labels["SECRETS_INIT"])
-    mpu.a = 0
+    mpu.a = SCENE_SPECIAL
     run_subroutine(mpu, labels["PLAYER_INIT"])
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     mpu.a = 0

@@ -11,6 +11,8 @@ import pytest
 from scene_editor.commands import ResizeSceneCommand
 from scene_editor.json_serializer import SceneSerializer
 from scene_editor.scene_model import (
+    ANTIC_D_PLAYFIELD_HEIGHT,
+    ANTIC_D_PLAYFIELD_WIDTH,
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
     MAX_SCENE_HEIGHT,
@@ -26,12 +28,15 @@ from scene_editor.scene_model import (
 
 
 class TestSceneResolution:
-    def test_default_resolution_160x192(self):
+    def test_default_resolution_is_antic_d_playfield(self):
+        """A new scene defaults to the ANTIC Mode D playfield the engine renders (160 x 96)."""
         scene = Scene()
         assert scene.width == 160
-        assert scene.height == 192
+        assert scene.height == 96
         assert scene.width == DEFAULT_SCENE_WIDTH
         assert scene.height == DEFAULT_SCENE_HEIGHT
+        assert scene.width == ANTIC_D_PLAYFIELD_WIDTH
+        assert scene.height == ANTIC_D_PLAYFIELD_HEIGHT
         scene.validate()
 
     def test_custom_dimensions_valid(self):
@@ -174,3 +179,45 @@ class TestSceneResolution:
         assert scene.width == 160
         assert scene.height == 192
         assert len(callback_called) == 2
+
+
+# ==============================================================================
+# ANTIC D playfield defaults (editor default == engine playfield)
+# ==============================================================================
+
+def test_playfield_rows_overflow():
+    """Rows below the visible ANTIC D playfield are reported (0 = fully visible)."""
+    from scene_editor.scene_model import playfield_rows_overflow
+
+    assert playfield_rows_overflow(ANTIC_D_PLAYFIELD_HEIGHT) == 0
+    assert playfield_rows_overflow(ANTIC_D_PLAYFIELD_HEIGHT - 1) == 0
+    assert playfield_rows_overflow(192) == 192 - ANTIC_D_PLAYFIELD_HEIGHT
+    assert playfield_rows_overflow("nonsense") == 0  # type: ignore[arg-type]
+
+
+def test_editor_defaults_match_compiler_and_engine_playfield():
+    """The editor's default scene size must equal the playfield the compiler targets.
+
+    The engine renders an ANTIC Mode D playfield of 160 x 96 pixels (main.asm GAME_VRAM_LINES)
+    and the compiler defaults a scene without an explicit height to the same value; the editor
+    default must not drift back to the old full-screen 160 x 192 (which made "Fit Scene to View"
+    show a portrait canvas with 96 rows the game never displays).
+    """
+    import re
+
+    repo_root = Path(__file__).resolve().parent.parent
+    compiler = (repo_root / "scripts" / "compile_scenes.py").read_text(encoding="utf-8")
+    match = re.search(r'scene_meta\.get\("height",\s*(\d+)\)', compiler)
+    assert match, "compile_scenes.py must keep a default scene height"
+    assert int(match.group(1)) == ANTIC_D_PLAYFIELD_HEIGHT
+
+    main_asm = (repo_root / "main.asm").read_text(encoding="utf-8")
+    assert f"GAME_VRAM_LINES       = {ANTIC_D_PLAYFIELD_HEIGHT}" in main_asm
+    assert f"{ANTIC_D_PLAYFIELD_WIDTH}x{ANTIC_D_PLAYFIELD_HEIGHT}" in main_asm
+
+    # The shipped scenes use the playfield size as well
+    for scene_file in json.loads((repo_root / "scenes" / "scenes.json").read_text(encoding="utf-8"))["scenes"]:
+        scene = json.loads((repo_root / "scenes" / scene_file).read_text(encoding="utf-8"))["scene"]
+        assert scene["width"] == ANTIC_D_PLAYFIELD_WIDTH, scene_file
+        assert scene["height"] == ANTIC_D_PLAYFIELD_HEIGHT, scene_file
+

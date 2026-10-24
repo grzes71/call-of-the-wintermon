@@ -25,6 +25,8 @@ from .asset_manager import AssetManager
 from .atari_palette import atari_color_to_rgb
 from .catalogue_model import PlatformColorProfile, ProjectCatalogues
 from .scene_model import (
+    ANTIC_D_PLAYFIELD_HEIGHT,
+    ANTIC_D_PLAYFIELD_WIDTH,
     OBJECT_TYPE_ENEMY,
     OBJECT_TYPE_SECRET,
     OBJECT_TYPE_TREASURE,
@@ -127,8 +129,8 @@ class SceneGraphicsItem(QGraphicsItem):
             scene_w = int(round(scene_obj.sceneRect().width()))
             scene_h = int(round(scene_obj.sceneRect().height()))
         else:
-            scene_w = 160
-            scene_h = 192
+            scene_w = ANTIC_D_PLAYFIELD_WIDTH
+            scene_h = ANTIC_D_PLAYFIELD_HEIGHT
 
         out_of_bounds = (
             item_scene_x < 0

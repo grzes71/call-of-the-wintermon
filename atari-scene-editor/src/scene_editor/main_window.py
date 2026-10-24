@@ -92,6 +92,8 @@ from .json_serializer import (
     find_project_root,
 )
 from .scene_model import (
+    ANTIC_D_PLAYFIELD_HEIGHT,
+    ANTIC_D_PLAYFIELD_WIDTH,
     BG_PALETTE_COLORS_PER_ZONE,
     BG_PALETTE_ZONES,
     DEFAULT_PLAYER_COLOR,
@@ -145,6 +147,7 @@ from .scene_model import (
     get_required_platform_resources,
     get_row_index,
     get_row_resource_usage,
+    playfield_rows_overflow,
     platforms_overlap,
 )
 from .scene_view import SceneView
@@ -168,10 +171,11 @@ class NewSceneDialog(QDialog):
         self.name_edit = QLineEdit("untitled")
         form.addRow("Scene Name:", self.name_edit)
 
-        # Preset selector
+        # Preset selector (the engine renders the ANTIC Mode D playfield: 160 x 96, so that
+        # preset is first and therefore the default for a new scene)
         self.preset_combo = QComboBox()
+        self.preset_combo.addItem("Atari ANTIC D Playfield (160 × 96) — domyślny", (160, 96))
         self.preset_combo.addItem("Atari Standard (160 × 192)", (160, 192))
-        self.preset_combo.addItem("Atari Legacy Screen (160 × 96)", (160, 96))
         self.preset_combo.addItem("Atari Wide / Scroll (320 × 192)", (320, 192))
         self.preset_combo.addItem("Atari Tall / Tower (160 × 384)", (160, 384))
         self.preset_combo.addItem("Atari Full Area (320 × 384)", (320, 384))
@@ -199,7 +203,9 @@ class NewSceneDialog(QDialog):
         layout.addLayout(form)
 
         info_lbl = QLabel(
-            f"<small style='color: #888;'>Limits: {MIN_SCENE_WIDTH} to {MAX_SCENE_WIDTH} px. Any positive integers.</small>"
+            f"<small style='color: #888;'>Limits: {MIN_SCENE_WIDTH} to {MAX_SCENE_WIDTH} px. Any positive integers.<br>"
+            f"The game displays the ANTIC Mode D playfield ({ANTIC_D_PLAYFIELD_WIDTH} × "
+            f"{ANTIC_D_PLAYFIELD_HEIGHT} px) — rows below {ANTIC_D_PLAYFIELD_HEIGHT} px are not shown.</small>"
         )
         layout.addWidget(info_lbl)
 
@@ -414,7 +420,7 @@ class MainWindow(QMainWindow):
         t_layout.setSpacing(6)
 
         # Scene Details Group
-        self.scene_group = QGroupBox(f"Scene Settings ({self.scene_model.width} × {self.scene_model.height})")
+        self.scene_group = QGroupBox(self._scene_settings_title())
         s_layout = QFormLayout(self.scene_group)
         self.scene_name_edit = QLineEdit(self.scene_model.name)
         self.scene_name_edit.editingFinished.connect(self._on_scene_name_edited)
@@ -433,7 +439,11 @@ class MainWindow(QMainWindow):
         self.scene_h_spin.setSuffix(" px")
 
         self.btn_apply_res = QPushButton("Apply")
-        self.btn_apply_res.setToolTip("Change scene resolution (elements outside canvas will be preserved)")
+        self.btn_apply_res.setToolTip(
+            "Change scene resolution (elements outside canvas will be preserved).\n"
+            f"The game displays the ANTIC Mode D playfield: {ANTIC_D_PLAYFIELD_WIDTH} × "
+            f"{ANTIC_D_PLAYFIELD_HEIGHT} px."
+        )
         self.btn_apply_res.clicked.connect(self._on_apply_resolution_clicked)
 
         res_layout.addWidget(self.scene_w_spin)
@@ -1184,6 +1194,17 @@ class MainWindow(QMainWindow):
                 self.scene_h_spin.setValue(self.scene_model.height)
                 return
 
+        overflow = playfield_rows_overflow(new_h)
+        if overflow and new_h > self.scene_model.height:
+            QMessageBox.warning(
+                self,
+                "Scene Taller Than the Playfield",
+                f"The game displays the ANTIC Mode D playfield "
+                f"({ANTIC_D_PLAYFIELD_WIDTH} × {ANTIC_D_PLAYFIELD_HEIGHT} px).\n\n"
+                f"Rows {ANTIC_D_PLAYFIELD_HEIGHT}..{new_h} ({overflow} px) stay in the scene JSON "
+                f"and remain editable, but the engine will not display them.",
+            )
+
         cmd = ResizeSceneCommand(
             self.scene_model,
             new_w,
@@ -1191,7 +1212,6 @@ class MainWindow(QMainWindow):
             callback=lambda: self._on_command_executed(self.scene_view.get_selected_element_id()),
         )
         self.undo_stack.push(cmd)
-
     def open_scene(self, file_path: Optional[str | Path] = None) -> None:
         """Open a scene JSON file."""
         if not self._maybe_save_changes():
@@ -1390,6 +1410,17 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------------------
     # Synchronization & State
     # -------------------------------------------------------------------------
+    def _scene_settings_title(self) -> str:
+        """Scene Settings group title; flags rows the ANTIC D playfield cannot show."""
+        title = f"Scene Settings ({self.scene_model.width} × {self.scene_model.height})"
+        overflow = playfield_rows_overflow(self.scene_model.height)
+        if overflow:
+            title += (
+                f" — {overflow} px below the visible ANTIC D playfield "
+                f"({ANTIC_D_PLAYFIELD_HEIGHT} px)"
+            )
+        return title
+
     def _sync_all(self) -> None:
         """Synchronize the whole UI with current model state."""
         selected_elem_id = self.scene_view.get_selected_element_id()
@@ -1397,7 +1428,7 @@ class MainWindow(QMainWindow):
         selected_obj_id = self.scene_view.get_selected_object_id()
 
         self.scene_name_edit.setText(self.scene_model.name)
-        self.scene_group.setTitle(f"Scene Settings ({self.scene_model.width} × {self.scene_model.height})")
+        self.scene_group.setTitle(self._scene_settings_title())
 
         self.scene_w_spin.blockSignals(True)
         self.scene_h_spin.blockSignals(True)

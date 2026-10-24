@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "atari-scene-edi
 
 import pytest
 from scene_editor.scene_model import (
+    ANTIC_D_PLAYFIELD_HEIGHT,
+    ANTIC_D_PLAYFIELD_WIDTH,
     DuplicateElementIdError,
     ModelValidationError,
     Position,
@@ -63,8 +65,9 @@ class TestSceneModel:
     def test_scene_creation_defaults(self):
         scene = Scene(name="level_test")
         assert scene.name == "level_test"
-        assert scene.width == 160
-        assert scene.height == 192
+        # Defaults = the ANTIC Mode D playfield the engine renders (160 x 96)
+        assert scene.width == ANTIC_D_PLAYFIELD_WIDTH
+        assert scene.height == ANTIC_D_PLAYFIELD_HEIGHT
         assert scene.schema_version == 1
         assert len(scene.elements) == 0
         scene.validate()

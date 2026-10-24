@@ -14,6 +14,7 @@ from scripts.convert_tiles import (
     DEFAULT_PALETTES,
 )
 from tests.tile_expectations import expected_tileset_metrics
+from tests.scene_expectations import scene_files, scene_symbol
 
 
 def test_pack_antic_e_bytes_exact_multiples() -> None:
@@ -348,9 +349,10 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
     # Verify SDLSTL points to dlist_scene_title for initial scene title card
     sdlst = mem[labels["SDLSTL"]] | (mem[labels["SDLSTH"]] << 8)
     assert sdlst == labels["DLIST_SCENE_TITLE"]
-    # Verify title card LMS points to scene 0 name line (centered screencodes)
+    # Verify title card LMS points to the first scene's name line (centered screencodes)
     title_lms = mem[labels["DLIST_SCENE_TITLE_ADDR"]] | (mem[labels["DLIST_SCENE_TITLE_ADDR"] + 1] << 8)
-    assert title_lms == labels["SCENE_SC_01_FOREST_NAME_LINE"]
+    first_scene_symbol = scene_symbol(scene_files()[0]).upper()
+    assert title_lms == labels[f"SCENE_{first_scene_symbol}_NAME_LINE"]
 
 
 

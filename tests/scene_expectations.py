@@ -102,6 +102,202 @@ def zone_index(platform_y: int) -> int:
 BG_ZONE_ORDER = ("upper", "upper", "lower", "lower", "lower", "upper")
 
 
+def scene_index_with_enemies(min_count: int = 1) -> int:
+    """Engine index of the first scene with at least `min_count` enemies.
+
+    Engine tests are about the engine, not about which level happens to be first in
+    scenes/scenes.json, so they pick a scene that actually carries the content they need.
+    """
+    for index, name in enumerate(scene_files()):
+        if len(scene_objects(name, "enemy")) >= min_count:
+            return index
+    raise AssertionError(
+        f"no scene in scenes/scenes.json defines {min_count} enemy(ies) - the enemy runtime "
+        f"tests need one"
+    )
+
+
+def scene_index_with_secrets(
+    min_count: int = 1,
+    *,
+    special: bool = False,
+    static: bool = False,
+    with_dependency: bool = False,
+    require_next: bool = False,
+    exclude: tuple[int, ...] = (),
+) -> int:
+    """Engine index of the first scene with at least `min_count` secrets.
+
+    `special=True` additionally requires a secret with the catalogue `special` flag,
+    `static=True` a non-blinking one (the blink-cadence test needs a static reference),
+    `with_dependency=True` a secret that depends on another one (stage progression),
+    `require_next=True` a scene that has a successor (scene-transition assertions) and
+    `exclude` skips already used scene indices (tests that need two different scenes).
+    """
+    for index, name in enumerate(scene_files()):
+        if index in exclude:
+            continue
+        if require_next and index + 1 >= len(scene_files()):
+            continue
+        secrets = scene_objects(name, "secret")
+        selected = [
+            s
+            for s in secrets
+            if (not special or s.get("special"))
+            and (not static or not s.get("blink"))
+            and (not with_dependency or s.get("dependency"))
+        ]
+        if len(selected) >= min_count:
+            return index
+    qualifiers = "".join(
+        [
+            ", special" if special else "",
+            ", static (non-blinking)" if static else "",
+            ", with a dependency" if with_dependency else "",
+            ", with a successor scene" if require_next else "",
+            f", excluding {exclude}" if exclude else "",
+        ]
+    )
+    raise AssertionError(
+        f"no scene in scenes/scenes.json defines {min_count} secret(s){qualifiers} - the secret "
+        f"runtime tests need one"
+    )
+
+
+def scene_index_with_platforms(
+    min_count: int = 1, *, exclude: tuple[int, ...] = ()
+) -> int:
+    """Engine index of the first scene with at least `min_count` platforms."""
+    for index, name in enumerate(scene_files()):
+        if index in exclude:
+            continue
+        if len(scene_platforms(index)) >= min_count:
+            return index
+    raise AssertionError(
+        f"no scene in scenes/scenes.json defines {min_count} platform(s) "
+        f"(excluding {exclude})"
+    )
+
+
+def scene_index_with_missile_platform(exclude: tuple[int, ...] = ()) -> int:
+    """Engine index of the first scene with a missile-type platform."""
+    for index, name in enumerate(scene_files()):
+        if index in exclude:
+            continue
+        if any(p["type_code"] == 1 for p in scene_platforms(index)):
+            return index
+    raise AssertionError(
+        f"no scene in scenes/scenes.json defines a missile platform (excluding {exclude})"
+    )
+
+
+def scene_platform_roles(scene_index: int) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Platforms of a scene grouped by the roles the player/enemy physics scenarios need.
+
+    Returns (roles, missing) - `missing` lists the role names this scene cannot provide, so a
+    caller can pick another scene or fail with a precise message instead of asserting against
+    the wrong layout (Rule 05: reordering scenes in scenes/scenes.json must not silently change
+    the physics fixture).
+    """
+    platforms = scene_platforms(scene_index)
+    scene = load_scene(scene_files()[scene_index])
+    spawn = scene.get("player_spawn") or {}
+    scene_width = int(scene["scene"]["width"])
+    roles: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+
+    def add(role: str, platform: Optional[dict[str, Any]]) -> None:
+        if platform is None:
+            missing.append(role)
+        else:
+            roles[role] = platform
+
+    if "x" not in spawn or "y" not in spawn:
+        missing.append("player_spawn")
+        return roles, missing
+
+    floor = next(
+        (
+            p
+            for p in platforms
+            if p["y"] == spawn["y"] + 20 and p["x"] <= spawn["x"] + 4 < p["x"] + p["width"]
+        ),
+        None,
+    )
+    add("floor", floor)
+
+    if floor is not None:
+        add("upper", next((p for p in platforms if p["y"] == floor["y"] - 16), None))
+        # A ceiling row for the head-bump scenarios: prefer the row three tiers above the floor
+        # (the forest layout), then two tiers, then anything above the floor.
+        ceiling = next((p for p in platforms if p["y"] == floor["y"] - 48), None)
+        if ceiling is None:
+            ceiling = next((p for p in platforms if p["y"] == floor["y"] - 32), None)
+        if ceiling is None:
+            ceiling = next((p for p in platforms if p["y"] < floor["y"]), None)
+        add("ceiling", ceiling)
+        add(
+            "missile_left",
+            next(
+                (
+                    p
+                    for p in platforms
+                    if p["type_code"] == 1
+                    and p["y"] == floor["y"]
+                    and p["x"] + p["width"] <= floor["x"]
+                ),
+                None,
+            ),
+        )
+
+    add("left_edge", next((p for p in platforms if p["x"] == 0), None))
+    add("right_edge", next((p for p in platforms if p["x"] + p["width"] == scene_width), None))
+    top_row_y = min((p["y"] for p in platforms), default=None)
+    add("top", next((p for p in platforms if p["y"] == top_row_y), None))
+
+    # The sprite platform directly to the left of a missile platform on the same row, closest
+    # first (the jump scenarios must actually reach it with JUMP_SHORT_LEN).
+    jump_from = jump_to = None
+    best_gap = None
+    for platform in platforms:
+        if platform["type_code"] != 1:
+            continue
+        left = None
+        for q in platforms:
+            if q["y"] != platform["y"] or q["type_code"] != 0:
+                continue
+            gap = platform["x"] - (q["x"] + q["width"])
+            if gap < 0:
+                continue
+            if left is None or gap < best_gap:
+                left, best_gap = q, gap
+        if left is not None:
+            jump_from, jump_to = platform, left
+            break
+    add("jump_from", jump_from)
+    add("jump_to", jump_to)
+
+    used_ids = {p["id"] for p in roles.values()}
+    add("spare", next((p for p in platforms if p["id"] not in used_ids), None))
+    return roles, missing
+
+
+def physics_fixture_scene() -> tuple[int, dict[str, dict[str, Any]]]:
+    """(engine index, platform roles) of the first scene the physics scenarios can run on."""
+    report: list[str] = []
+    for index, name in enumerate(scene_files()):
+        roles, missing = scene_platform_roles(index)
+        if not missing:
+            return index, roles
+        report.append(f"    {name}: missing {', '.join(missing)}")
+    raise AssertionError(
+        "no scene in scenes/scenes.json provides the platform roles the player/enemy physics "
+        "tests need (floor under the spawn, one row above, a ceiling two rows above, both screen "
+        "edges, the top row, a missile platform with a sprite platform to its left and a spare "
+        "slot):\n" + "\n".join(report)
+    )
+
+
 def scene_engine_index(scene_file: str) -> int:
     """Engine scene index of a scene file (its position in scenes/scenes.json)."""
     return scene_files().index(scene_file)

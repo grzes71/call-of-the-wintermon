@@ -1142,12 +1142,26 @@ class BackgroundPalette:
         return palette
 
 
-DEFAULT_SCENE_WIDTH = 160
-DEFAULT_SCENE_HEIGHT = 192
+# ANTIC Mode D playfield: the engine renders 160 x 96 pixels (40 bytes x 96 lines - see
+# main.asm GAME_VRAM_SIZE / GAME_VRAM_LINES). Scenes must use this size to be fully
+# displayed; the compiler defaults to the same height (scripts/compile_scenes.py).
+ANTIC_D_PLAYFIELD_WIDTH = 160
+ANTIC_D_PLAYFIELD_HEIGHT = 96
+
+DEFAULT_SCENE_WIDTH = ANTIC_D_PLAYFIELD_WIDTH
+DEFAULT_SCENE_HEIGHT = ANTIC_D_PLAYFIELD_HEIGHT
 MIN_SCENE_WIDTH = 1
 MIN_SCENE_HEIGHT = 1
 MAX_SCENE_WIDTH = 4096
 MAX_SCENE_HEIGHT = 4096
+
+
+def playfield_rows_overflow(height: int) -> int:
+    """How many scene rows sit below the visible ANTIC D playfield (0 = fully visible)."""
+    try:
+        return max(0, int(height) - ANTIC_D_PLAYFIELD_HEIGHT)
+    except (TypeError, ValueError):
+        return 0
 
 
 @dataclass
