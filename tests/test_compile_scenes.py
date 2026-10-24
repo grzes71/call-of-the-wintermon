@@ -332,23 +332,49 @@ def test_scene_dli_data_matches_json():
                             f"with HPOS {exp_hpos}, got {hpos_p_vals[ch]}"
                         )
 
-            # 4. Verify no platform was overwritten by another
-            # In 01-forest pas 1 (y=24): exactly 3 distinct platforms (x=15, 56, 96) -> P1, P2, P3
-            if scene_file_name == "01-forest.json" and pas_y == 24:
-                assert dli.hpos_p1[1] == 48 + 15  # $3F (platform-013)
-                assert dli.hpos_p2[1] == 48 + 63  # $6F (platform-011)
-                assert dli.hpos_p3[1] == 48 + 96  # $90 (platform-010)
+            # 4. Verify no platform was overwritten by another: the compiled channel
+            #    assignment must equal the assignment the compiler derives from the JSON
+            #    (sprite platforms sorted by x, split into SUPPORTED_SPRITE_WIDTHS
+            #    segments on P1..P3; missile platforms on M0..M3). Nothing is hardcoded
+            #    here, so moving/resizing a platform in the scene editor keeps this test
+            #    meaningful instead of breaking it.
+            sprite_plats = sorted([p for p in pas_plats if p.type_code == 0], key=lambda p: p.x)
+            missile_plats = sorted([p for p in pas_plats if p.type_code == 1], key=lambda p: p.x)
 
-            # In 01-forest pas 5 (y=88): 96px sprite (P1..P3) + 32px missile (M0..M3)
-            if scene_file_name == "01-forest.json" and pas_y == 88:
-                assert dli.hpos_p1[5] == 48 + 48        # $60
-                assert dli.hpos_p2[5] == 48 + 48 + 32   # $80
-                assert dli.hpos_p3[5] == 48 + 48 + 64   # $A0
-                p14 = next(p for p in pas_plats if p.id == "platform-014")
-                assert dli.hpos_m0[5] == 48 + p14.x
-                assert dli.hpos_m1[5] == 48 + p14.x + 8
-                assert dli.hpos_m2[5] == 48 + p14.x + 16
-                assert dli.hpos_m3[5] == 48 + p14.x + 24
+            expected_player_hpos = [0, 0, 0]
+            ch = 0
+            for p in sprite_plats:
+                seg_offset = 0
+                for seg_w, _ in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                    if ch < 3:
+                        expected_player_hpos[ch] = min(255, max(0, 48 + p.x + seg_offset))
+                        ch += 1
+                    seg_offset += seg_w
+
+            compiled_player_hpos = [dli.hpos_p1[pas_idx], dli.hpos_p2[pas_idx], dli.hpos_p3[pas_idx]]
+            assert compiled_player_hpos == expected_player_hpos, (
+                f"{scene_file_name} pas {pas_idx} (y={pas_y}): player channels "
+                f"{compiled_player_hpos} must equal the JSON-derived assignment "
+                f"{expected_player_hpos} (sprite platforms: "
+                f"{[f'{p.id}@x={p.x},w={p.width}' for p in sprite_plats]})"
+            )
+
+            expected_missile_hpos = [0xFF, 0xFF, 0xFF, 0xFF]
+            ch = 0
+            for p in missile_plats:
+                offsets = (0, 8, 16, 24) if p.width == 32 else (0,)
+                for off in offsets:
+                    if ch < 4:
+                        expected_missile_hpos[ch] = min(255, max(0, 48 + p.x + off))
+                        ch += 1
+
+            compiled_missile_hpos = [dli.hpos_m0[pas_idx], dli.hpos_m1[pas_idx], dli.hpos_m2[pas_idx], dli.hpos_m3[pas_idx]]
+            assert compiled_missile_hpos == expected_missile_hpos, (
+                f"{scene_file_name} pas {pas_idx} (y={pas_y}): missile channels "
+                f"{compiled_missile_hpos} must equal the JSON-derived assignment "
+                f"{expected_missile_hpos} (missile platforms: "
+                f"{[f'{p.id}@x={p.x},w={p.width}' for p in missile_plats]})"
+            )
 
 
 def test_validate_scene_dli_platforms_rejects_invalid():

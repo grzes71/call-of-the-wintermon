@@ -13,7 +13,53 @@ import pytest
 from py65.devices.mpu6502 import MPU
 
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
-from tests.scene_expectations import player_spawn, scene_platform_count
+from tests.scene_expectations import (
+    free_x_on_row,
+    jump_apex_dy,
+    jump_dx_total,
+    jump_dy_total,
+    platform_supporting,
+    player_spawn,
+    player_spawn_pmg_y,
+    scene_platform,
+    scene_platform_count,
+    scene_platform_index,
+)
+
+# ---------------------------------------------------------------------------
+# Scene-derived fixtures (Rule 05): every scene coordinate used below comes from
+# scenes/01-forest.json, so moving or resizing platforms in the scene editor cannot
+# break the physics assertions. Engine constants (PLAYER_MAX_X, PLAYER_HPOS_OFFSET,
+# JUMP_*_LEN, PLAYER_SPRITE_HEIGHT, ...) are read from the compiled MADS labels.
+# ---------------------------------------------------------------------------
+SCENE0 = 0
+SPAWN0_X = player_spawn(SCENE0)["x"]
+SPAWN0_Y = player_spawn(SCENE0)["y"]
+SPAWN0_PMG_Y = player_spawn_pmg_y(SCENE0)
+
+# The engine clips PMG writes at the status-line area (player.asm compares against 224).
+PMG_STATUS_LINE_TOP = 224
+
+# The platform the hero spawns on, plus the platforms the physics scenarios use.
+PLAT_FLOOR = platform_supporting(SCENE0, SPAWN0_X + 4, SPAWN0_Y + 20)
+PLAT_FLOOR_IDX = scene_platform_index(SCENE0, PLAT_FLOOR["id"])
+PLAT_UPPER = scene_platform(SCENE0, "platform-004")          # one platform row above the floor
+PLAT_UPPER_IDX = scene_platform_index(SCENE0, "platform-004")
+PLAT_LEFT_EDGE = scene_platform(SCENE0, "platform-006")      # platform touching x = 0
+PLAT_LEFT_EDGE_IDX = scene_platform_index(SCENE0, "platform-006")
+PLAT_RIGHT_EDGE = scene_platform(SCENE0, "platform-005")     # platform touching the right edge
+PLAT_RIGHT_EDGE_IDX = scene_platform_index(SCENE0, "platform-005")
+PLAT_CEILING = scene_platform(SCENE0, "platform-008")        # ceiling row above the floor
+PLAT_TOP_ROW = scene_platform(SCENE0, "platform-010")        # top platform row (y = 24)
+PLAT_TOP_ROW_IDX = scene_platform_index(SCENE0, "platform-010")
+PLAT_GAP_LEFT = scene_platform(SCENE0, "platform-014")       # missile platform left of the floor
+PLAT_GAP_LEFT_IDX = scene_platform_index(SCENE0, "platform-014")
+PLAT_JUMP_FROM = scene_platform(SCENE0, "platform-016")      # missile platform on its row
+PLAT_JUMP_FROM_IDX = scene_platform_index(SCENE0, "platform-016")
+PLAT_JUMP_TO = scene_platform(SCENE0, "platform-012")        # sprite platform left of it
+# A platform slot far from the floor/target rows, reused to build synthetic geometry in RAM
+# (scenarios that need a specific ceiling must not depend on the scene layout).
+PLAT_SCRATCH_IDX = scene_platform_index(SCENE0, "platform-011")
 
 
 def test_player_init_scene0():
@@ -24,49 +70,50 @@ def test_player_init_scene0():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    # Initialize Player 0 on Scene 0 (spawn read from the scene JSON, Rule 05)
-    spawn = player_spawn(0)
+    # Initialize Player 0 on Scene 0 (spawn derived from the scene JSON, Rule 05)
     mem[labels["ACTIVE_SCENE_ID"]] = 0
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
     # 1. Canvas position and PMG scanline
-    assert mem[labels["PLAYER_X"]] == spawn["x"]
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
     # pmg_y = scene_y * 2 + 52 (sprite offset)
-    assert mem[labels["PLAYER_PMG_Y"]] == spawn["y"] * 2 + 52
+    assert mem[labels["PLAYER_PMG_Y"]] == SPAWN0_Y * 2 + 52
 
     # 2. State & Direction: facing right (0), idle (0), frame 0
     assert mem[labels["PLAYER_DIR"]] == 0
     assert mem[labels["PLAYER_STATE"]] == 0
     assert mem[labels["PLAYER_FRAME_IDX"]] == 0
-    assert mem[labels["PLAYER_FRAME_TIMER"]] == 4
+    assert mem[labels["PLAYER_FRAME_TIMER"]] == labels["PLAYER_FRAME_DUR"]
     assert mem[labels["PLAYER_X_SUB"]] == 0
     assert mem[labels["PLAYER_SPEED"]] == 0
 
     # 3. Hardware registers
     expected_color_0 = mem[labels["SCENE_PLAYER_COLOR"]]
-    assert mem[labels["HPOSP0"]] == 48 + 96  # 144 ($90)
+    assert mem[labels["HPOSP0"]] == labels["PLAYER_HPOS_OFFSET"] + SPAWN0_X
     assert mem[labels["SIZEP0"]] == 0        # 1x normal width
     assert mem[labels["COLPM0"]] == expected_color_0
     assert mem[labels["PCOLR0"]] == expected_color_0
     assert mem[labels["PLAYER_COLOR"]] == expected_color_0
 
 
-    # 4. PMG memory verification
-    # Scanlines before 188 must be $00
+    # 4. PMG memory verification (scanlines derived from the scene spawn)
     pmg_p0 = labels["PMG_PLAYER0"]
-    for y in range(0, 188):
+    pmg_y = SPAWN0_PMG_Y
+    height = labels["PLAYER_SPRITE_HEIGHT"]
+
+    for y in range(0, pmg_y):
         assert mem[pmg_p0 + y] == 0x00, f"Scanline {y} before player must be 0"
 
-    # Scanlines 188..207 must match player_anim_right_frame_0
+    # Scanlines pmg_y..pmg_y+height-1 must match player_anim_right_frame_0
     right_f0_addr = labels["PLAYER_ANIM_RIGHT_FRAME_0"]
-    for i in range(20):
+    for i in range(height):
         expected_byte = mem[right_f0_addr + i]
-        actual_byte = mem[pmg_p0 + 188 + i]
-        assert actual_byte == expected_byte, f"Byte {i} at scanline {188+i} mismatch: {actual_byte:#04x} vs {expected_byte:#04x}"
+        actual_byte = mem[pmg_p0 + pmg_y + i]
+        assert actual_byte == expected_byte, f"Byte {i} at scanline {pmg_y+i} mismatch: {actual_byte:#04x} vs {expected_byte:#04x}"
 
-    # Scanlines after 207 must be $00
-    for y in range(208, 256):
+    # Scanlines after the sprite must be $00
+    for y in range(pmg_y + height, 256):
         assert mem[pmg_p0 + y] == 0x00, f"Scanline {y} after player must be 0"
 
 
@@ -126,7 +173,7 @@ def test_player_walk_right_acceleration():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
     assert mem[labels["PLAYER_SPEED"]] == 0
 
     # STICK0 bit 3 is 0 (right pressed): %00000111 = 0x07
@@ -136,7 +183,7 @@ def test_player_walk_right_acceleration():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x10
     assert mem[labels["PLAYER_X_SUB"]] == 0x10
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
     assert mem[labels["PLAYER_STATE"]] == 1     # Walk
     assert mem[labels["PLAYER_DIR"]] == 0       # Right
 
@@ -144,57 +191,57 @@ def test_player_walk_right_acceleration():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x20
     assert mem[labels["PLAYER_X_SUB"]] == 0x30
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
 
     # Frame 3: speed = $30, x_sub = $60
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x30
     assert mem[labels["PLAYER_X_SUB"]] == 0x60
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
 
     # Frame 4: speed = $40, x_sub = $A0, animation frame advances to 1
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x40
     assert mem[labels["PLAYER_X_SUB"]] == 0xA0
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
     assert mem[labels["PLAYER_FRAME_IDX"]] == 1
 
     # Frame 5: speed = $50, x_sub = $F0
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x50
     assert mem[labels["PLAYER_X_SUB"]] == 0xF0
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
 
-    # Frame 6: speed = $60, x_sub = $F0 + $60 = $50 (carry!), steps to x=97!
+    # Frame 6: speed = $60, x_sub = $F0 + $60 = $50 (carry!), steps one pixel right
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x60
     assert mem[labels["PLAYER_X_SUB"]] == 0x50
-    assert mem[labels["PLAYER_X"]] == 97
-    assert mem[labels["HPOSP0"]] == 48 + 97
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 1
+    assert mem[labels["HPOSP0"]] == labels["PLAYER_HPOS_OFFSET"] + SPAWN0_X + 1
 
     # Frame 7: speed = $70, x_sub = $C0
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x70
     assert mem[labels["PLAYER_X_SUB"]] == 0xC0
-    assert mem[labels["PLAYER_X"]] == 97
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 1
 
-    # Frame 8: speed reaches max $80, x_sub = $C0 + $80 = $40 (carry!), steps to x=98!
+    # Frame 8: speed reaches max $80, x_sub = $C0 + $80 = $40 (carry!), two pixels right
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x80
     assert mem[labels["PLAYER_X_SUB"]] == 0x40
-    assert mem[labels["PLAYER_X"]] == 98
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 2
 
     # Frame 9: speed stays at $80, x_sub = $40 + $80 = $C0
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x80
     assert mem[labels["PLAYER_X_SUB"]] == 0xC0
-    assert mem[labels["PLAYER_X"]] == 98
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 2
 
-    # Frame 10: speed stays at $80, x_sub = $C0 + $80 = $40 (carry!), steps to x=99!
+    # Frame 10: speed stays at $80, x_sub = $C0 + $80 = $40 (carry!), three pixels right
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_SPEED"]] == 0x80
     assert mem[labels["PLAYER_X_SUB"]] == 0x40
-    assert mem[labels["PLAYER_X"]] == 99
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 3
 
 
 def test_player_deceleration_and_inertia_stop():
@@ -214,7 +261,7 @@ def test_player_deceleration_and_inertia_stop():
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     assert mem[labels["PLAYER_SPEED"]] == 0x80
-    assert mem[labels["PLAYER_X"]] == 98
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X + 2
 
     # Release joystick (STICK0 = 0x0F)
     mem[labels["STICK0"]] = 0x0F
@@ -253,7 +300,7 @@ def test_player_walk_left_and_reversal_braking():
 
     assert mem[labels["PLAYER_DIR"]] == 1       # Left
     assert mem[labels["PLAYER_SPEED"]] == 0x80  # Max speed left
-    assert mem[labels["PLAYER_X"]] == 94        # Moved left (96 -> 95 -> 94)
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X - 2  # Two sub-pixel carries to the left
 
     # Now press RIGHT while moving full speed left -> Active turnaround braking!
     mem[labels["STICK0"]] = 0x07
@@ -285,9 +332,9 @@ def test_player_bounds_clamping_with_inertia():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Set player at left boundary (x = 0) on platform 3 (plat_x=0, plat_w=32)
-    mem[labels["PLAYER_X"]] = 0
-    mem[labels["PLAYER_PLAT_IDX"]] = 3
+    # Left boundary: stand on the platform that touches x = 0
+    mem[labels["PLAYER_X"]] = labels["PLAYER_MIN_X"]
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_LEFT_EDGE_IDX
     mem[labels["PLAYER_X_SUB"]] = 0
     mem[labels["PLAYER_SPEED"]] = 0
 
@@ -295,14 +342,14 @@ def test_player_bounds_clamping_with_inertia():
     mem[labels["STICK0"]] = 0x0B
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    assert mem[labels["PLAYER_X"]] == 0
+    assert mem[labels["PLAYER_X"]] == labels["PLAYER_MIN_X"]
     assert mem[labels["PLAYER_SPEED"]] == 0
     assert mem[labels["PLAYER_STATE"]] == 0
-    assert mem[labels["HPOSP0"]] == 48
+    assert mem[labels["HPOSP0"]] == labels["PLAYER_HPOS_OFFSET"] + labels["PLAYER_MIN_X"]
 
-    # Set player at right boundary (x = 152) on platform 2 (plat_x=128, plat_w=32)
-    mem[labels["PLAYER_X"]] = 152
-    mem[labels["PLAYER_PLAT_IDX"]] = 2
+    # Right boundary: stand on the platform that touches the right screen edge
+    mem[labels["PLAYER_X"]] = labels["PLAYER_MAX_X"]
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_RIGHT_EDGE_IDX
     mem[labels["PLAYER_X_SUB"]] = 0
     mem[labels["PLAYER_SPEED"]] = 0
 
@@ -310,10 +357,10 @@ def test_player_bounds_clamping_with_inertia():
     mem[labels["STICK0"]] = 0x07
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    assert mem[labels["PLAYER_X"]] == 152
+    assert mem[labels["PLAYER_X"]] == labels["PLAYER_MAX_X"]
     assert mem[labels["PLAYER_SPEED"]] == 0
     assert mem[labels["PLAYER_STATE"]] == 0
-    assert mem[labels["HPOSP0"]] == 48 + 152
+    assert mem[labels["HPOSP0"]] == labels["PLAYER_HPOS_OFFSET"] + labels["PLAYER_MAX_X"]
 
 
 def test_player_fall_off_platform_right_edge():
@@ -327,21 +374,21 @@ def test_player_fall_off_platform_right_edge():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Platform 0 in Scene 0: plat_x = 48, plat_w = 96 -> right edge = 144
-    # Player width = 8, midpoint = player_x + 4.
-    # At player_x = 139: mid_x = 143 < 144 (still on platform)
-    mem[labels["PLAYER_X"]] = 139
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # The engine tests the hero's midpoint (player_x + 4) against the platform edges, so
+    # standing needs midpoint < right edge and the next pixel step pushes it past.
+    floor_right = PLAT_FLOOR["x"] + PLAT_FLOOR["width"]
+    mem[labels["PLAYER_X"]] = floor_right - 5      # midpoint = right - 1 (still standing)
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
     mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed right
     mem[labels["PLAYER_DIR"]] = 0       # Right
     mem[labels["STICK0"]] = 0x07        # Pressing right
 
-    # Subpixel accumulator set so next frame steps to x = 140
+    # Subpixel accumulator set so the next frame steps one pixel right
     mem[labels["PLAYER_X_SUB"]] = 0x80
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # At player_x = 140: mid_x = 144 >= 144 (>= 50% past right edge!)
-    assert mem[labels["PLAYER_X"]] == 140
+    # midpoint = right edge -> more than 50% past the edge, hero falls
+    assert mem[labels["PLAYER_X"]] == floor_right - 4
     assert mem[labels["PLAYER_STATE"]] == 2     # PLAYER_STATE_FALL
     assert mem[labels["PLAYER_PLAT_IDX"]] == 0xFF
     assert mem[labels["PLAYER_SPEED"]] == 0
@@ -358,20 +405,21 @@ def test_player_fall_off_platform_left_edge():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Platform 0 in Scene 0: plat_x = 48.
-    # At player_x = 44: mid_x = 48 >= 48 (50% on, still standing)
-    mem[labels["PLAYER_X"]] = 44
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # Mirror of the right-edge scenario: standing needs midpoint >= left edge, the next
+    # pixel step to the left pushes it past.
+    floor_left = PLAT_FLOOR["x"]
+    mem[labels["PLAYER_X"]] = floor_left - 4       # midpoint = left edge (still standing)
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
     mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed left
     mem[labels["PLAYER_DIR"]] = 1       # Left
     mem[labels["STICK0"]] = 0x0B        # Pressing left
 
-    # Subpixel accumulator set so next frame steps left to x = 43
+    # Subpixel accumulator set so the next frame steps one pixel left
     mem[labels["PLAYER_X_SUB"]] = 0x80
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # At player_x = 43: mid_x = 47 < 48 (> 50% past left edge!)
-    assert mem[labels["PLAYER_X"]] == 43
+    # midpoint = left edge - 1 -> more than 50% past the edge, hero falls
+    assert mem[labels["PLAYER_X"]] == floor_left - 5
     assert mem[labels["PLAYER_STATE"]] == 2     # PLAYER_STATE_FALL
     assert mem[labels["PLAYER_PLAT_IDX"]] == 0xFF
     assert mem[labels["PLAYER_SPEED"]] == 0
@@ -388,18 +436,18 @@ def test_player_fall_animation_frame_in_pmg():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Put player in fall state at y = 68
+    # Put player in fall state at the spawn line (coordinates from the scene JSON)
     mem[labels["PLAYER_STATE"]] = 2  # FALL
     run_subroutine(mpu, labels["PLAYER_RENDER_FRAME"])
 
     pmg_p0 = labels["PMG_PLAYER0"]
     fall_f0 = labels["PLAYER_ANIM_FALL_FRAME_0"]
 
-    # Scanlines 188..207 must match player_anim_fall_frame_0
-    for i in range(20):
+    # Scanlines SPAWN0_PMG_Y.. must match player_anim_fall_frame_0
+    for i in range(labels["PLAYER_SPRITE_HEIGHT"]):
         expected_byte = mem[fall_f0 + i]
-        actual_byte = mem[pmg_p0 + 188 + i]
-        assert actual_byte == expected_byte, f"Fall frame scanline {188+i} mismatch"
+        actual_byte = mem[pmg_p0 + SPAWN0_PMG_Y + i]
+        assert actual_byte == expected_byte, f"Fall frame scanline {SPAWN0_PMG_Y+i} mismatch"
 
 
 def test_player_fall_and_land_on_lower_platform():
@@ -413,26 +461,25 @@ def test_player_fall_and_land_on_lower_platform():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # In Scene 0: Platform 1 is at plat_x = 32, plat_y = 72, plat_w = 48 [32..80).
-    # Starting at x = 60, y = 50 (above platform 1 at plat_y = 72).
-    # feet_y will go 70 -> 71 -> 72.
-    mem[labels["PLAYER_X"]] = 60
-    mem[labels["PLAYER_Y"]] = 50
-    mem[labels["PLAYER_PMG_Y"]] = 50 * 2 + 52
+    # Fall onto PLAT_UPPER: start two canvas lines above its surface, horizontally centred.
+    start_y = PLAT_UPPER["y"] - 22                       # feet two lines above the surface
+    start_x = PLAT_UPPER["x"] + PLAT_UPPER["width"] // 2 - 4
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = start_y
+    mem[labels["PLAYER_PMG_Y"]] = start_y * 2 + 52
     mem[labels["PLAYER_STATE"]] = 2  # FALL
     mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
 
-    # Frame 1: y increases to 51, feet = 71 (not landed)
+    # Frame 1: one line down, feet still above the platform surface
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_Y"]] == 51
+    assert mem[labels["PLAYER_Y"]] == start_y + 1
     assert mem[labels["PLAYER_STATE"]] == 2
 
-    # Frame 2: y increases to 52, feet = 72. Platform 1 has plat_y = 72, plat_x = 32, plat_w = 48.
-    # mid_x = 64 is within [32..80)! Lands on platform 1!
+    # Frame 2: feet reach the platform surface (mid_x inside the platform) -> lands on it
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_Y"]] == 52
+    assert mem[labels["PLAYER_Y"]] == start_y + 2
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 1  # Platform 1
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_UPPER_IDX
 
 
 def test_player_fall_death_and_respawn_with_lives_decrement():
@@ -450,26 +497,28 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Position player falling below all platforms (x = 150 has no platform at y=88 in Scene 0)
-    # Set y = 80 (pmg_y = 212, feet = 231 > 224 -> sinking behind status line)
-    mem[labels["PLAYER_X"]] = 150
-    mem[labels["PLAYER_Y"]] = 80
-    mem[labels["PLAYER_PMG_Y"]] = 80 * 2 + 52  # 212
+    # Position the hero falling past the floor row, in a column with no platform there.
+    fall_x = free_x_on_row(SCENE0, PLAT_FLOOR["y"], PLAT_FLOOR["x"] + PLAT_FLOOR["width"])
+    fall_y = PLAT_FLOOR["y"] - 8            # feet already below the floor surface
+    mem[labels["PLAYER_X"]] = fall_x
+    mem[labels["PLAYER_Y"]] = fall_y
+    mem[labels["PLAYER_PMG_Y"]] = fall_y * 2 + 52
     mem[labels["PLAYER_STATE"]] = 2  # FALL
     mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
 
-    # Advance fall frames: y = 81..93
-    # During this time, PMG scanlines >= 224 MUST be 0 (clipped from status line)
+    # Advance fall frames up to the death threshold
+    # During this time, PMG scanlines >= PMG_STATUS_LINE_TOP MUST be 0 (clipped from status line)
+    death_y = labels["PLAYER_DEATH_Y"]
     pmg_p0 = labels["PMG_PLAYER0"]
-    for y_cur in range(81, 94):
+    for y_cur in range(fall_y + 1, death_y):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         assert mem[labels["PLAYER_Y"]] == y_cur
         assert mem[labels["PLAYER_STATE"]] == 2  # Still falling
-        # Verify clipping invariant: scanlines 224..255 must be strictly 0
-        for sl in range(224, 256):
+        # Verify clipping invariant: status-line scanlines must be strictly 0
+        for sl in range(PMG_STATUS_LINE_TOP, 256):
             assert mem[pmg_p0 + sl] == 0, f"PMG scanline {sl} on status line must be 0!"
 
-    # Frame at y = 94: triggers PLAYER_HANDLE_DEATH
+    # Frame at the death threshold: triggers PLAYER_HANDLE_DEATH
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     # Lives decremented from 3 to 2
@@ -480,37 +529,38 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
     assert mem[status_vram + 1] == 64  # Heart 2
     assert mem[status_vram + 2] == 0   # Space (lost life)
 
-    # Hero enters EMERGE state starting below status line edge (pmg_y = 224)
+    # Hero enters EMERGE state starting below the status line edge
     assert mem[labels["PLAYER_STATE"]] == 5  # PLAYER_STATE_EMERGE
-    assert mem[labels["PLAYER_PMG_Y"]] == 224
+    assert mem[labels["PLAYER_PMG_Y"]] == PMG_STATUS_LINE_TOP
 
-    # Advance 36 frames of emergence: moves up 1 scanline per frame to lowest platform height (pmg_y = 188)
+    # Advance the emergence: one scanline up per frame until the spawn scanline
+    emerge_frames = PMG_STATUS_LINE_TOP - SPAWN0_PMG_Y
     fall_f0 = labels["PLAYER_ANIM_FALL_FRAME_0"]
-    for i in range(1, 37):
+    for i in range(1, emerge_frames + 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
-        expected_pmg_y = 224 - i
+        expected_pmg_y = PMG_STATUS_LINE_TOP - i
         assert mem[labels["PLAYER_PMG_Y"]] == expected_pmg_y
-        if i < 36:
+        if i < emerge_frames:
             assert mem[labels["PLAYER_STATE"]] == 5  # Still emerging
             # Verify fall frame top line is at expected_pmg_y
             assert mem[pmg_p0 + expected_pmg_y] == mem[fall_f0]
         else:
-            # On 36th frame: reached target (188), transitioned to PLAYER_STATE_DEATH
+            # Final emergence frame: reached the spawn scanline, transitioned to DEATH
             assert mem[labels["PLAYER_STATE"]] == 4  # PLAYER_STATE_DEATH
-            assert mem[labels["PLAYER_Y"]] == 68
-            assert mem[labels["PLAYER_PMG_Y"]] == 188
+            assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
+            assert mem[labels["PLAYER_PMG_Y"]] == SPAWN0_PMG_Y
             death_f0 = labels["PLAYER_ANIM_DEATH_FRAME_0"]
-            assert mem[pmg_p0 + 188] == mem[death_f0]
+            assert mem[pmg_p0 + SPAWN0_PMG_Y] == mem[death_f0]
 
     # Advance through death sequence: 10 + 10 + 60 = 80 frames
     for _ in range(80):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # Hero respawned at start coordinates of Scene 0 (x=96, y=68)
-    assert mem[labels["PLAYER_X"]] == 96
-    assert mem[labels["PLAYER_Y"]] == 68
+    # Hero respawned at the scene spawn coordinates
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
     assert mem[labels["PLAYER_STATE"]] == 0  # IDLE
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_FLOOR_IDX
 
 
 def test_player_fall_death_game_over_when_zero_lives():
@@ -529,14 +579,16 @@ def test_player_fall_death_game_over_when_zero_lives():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Put player right at death threshold
-    mem[labels["PLAYER_X"]] = 150
-    mem[labels["PLAYER_Y"]] = 93
-    mem[labels["PLAYER_PMG_Y"]] = (93 * 2 + 52) & 0xFF
+    # Put the hero one canvas line above the death threshold, in a column with no platform
+    fall_x = free_x_on_row(SCENE0, PLAT_FLOOR["y"], PLAT_FLOOR["x"] + PLAT_FLOOR["width"])
+    death_y = labels["PLAYER_DEATH_Y"]
+    mem[labels["PLAYER_X"]] = fall_x
+    mem[labels["PLAYER_Y"]] = death_y - 1
+    mem[labels["PLAYER_PMG_Y"]] = ((death_y - 1) * 2 + 52) & 0xFF
     mem[labels["PLAYER_STATE"]] = 2  # FALL
     mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
 
-    # 1 frame: y reaches 94 -> Emergence triggered!
+    # 1 frame: y reaches the death threshold -> Emergence triggered!
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     # Lives decremented to 0
@@ -551,12 +603,13 @@ def test_player_fall_death_game_over_when_zero_lives():
     # Player is in EMERGE state (5)
     assert mem[labels["PLAYER_STATE"]] == 5
 
-    # 36 frames of emergence -> transitions to DEATH state (4) at lowest platform height
-    for _ in range(36):
+    # Emergence (one scanline per frame) ends in DEATH state at the spawn scanline
+    emerge_frames = PMG_STATUS_LINE_TOP - SPAWN0_PMG_Y
+    for _ in range(emerge_frames):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 4
-    assert mem[labels["PLAYER_Y"]] == 68
-    assert mem[labels["PLAYER_PMG_Y"]] == 188
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
+    assert mem[labels["PLAYER_PMG_Y"]] == SPAWN0_PMG_Y
 
 
     # Advance death sequence (80 frames)
@@ -634,8 +687,8 @@ def test_player_death_animation_sequence():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     assert mem[labels["PLAYER_STATE"]] == 0     # PLAYER_STATE_IDLE
-    assert mem[labels["PLAYER_X"]] == 96
-    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
     assert mem[labels["PLAYER_LIVES"]] == 1     # Still 1 life
 
 
@@ -651,9 +704,19 @@ def test_player_jump_up_vertical():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Hero starts at x=96, y=68 on Platform 0 (plat_y=88)
+    # Hero starts on the scene spawn platform (Rule 05)
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_FLOOR_IDX
+
+    # Jump profile straight from the compiled tables the engine uses
+    jump_len = labels["JUMP_UP_LEN"]
+    apex_dy = jump_apex_dy(mem, labels, "JUMP_UP_DY", jump_len)    # negative (upward)
+    apex_y = SPAWN0_Y + apex_dy
+    assert jump_dy_total(mem, labels, "JUMP_UP_DY", jump_len) == 0, (
+        "a vertical jump profile must return to its starting line"
+    )
+    first_dy = mem[labels["JUMP_UP_DY"]]
+    first_dy = first_dy - 256 if first_dy >= 128 else first_dy
 
     # Release fire first, then press Fire with neutral joystick (STICK0 = 0x0F)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -664,47 +727,45 @@ def test_player_jump_up_vertical():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
     assert mem[labels["PLAYER_JUMP_TYPE"]] == 0 # JUMP_TYPE_UP
-    assert mem[labels["PLAYER_JUMP_LEN"]] == 30
+    assert mem[labels["PLAYER_JUMP_LEN"]] == jump_len
     assert mem[labels["PLAYER_FRAME_IDX"]] == 0 # Phase 0 (Frame 0: fast ascent)
-    assert mem[labels["PLAYER_X"]] == 96        # No horizontal motion
-    assert mem[labels["PLAYER_Y"]] == 66        # First step: dy = -2
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X  # No horizontal motion
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y + first_dy
 
-    # Step through remaining frames of the ascent (steps 1..10)
-    # Fire can now be released or held:
+    # Step through the rest of the ascent (JUMP_UP_DY entries 1..10)
     mem[labels["STRIG0"]] = 1
     for _ in range(10):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         assert mem[labels["PLAYER_STATE"]] == 3 # Still in jump
-        assert mem[labels["PLAYER_X"]] == 96    # Strictly vertical
+        assert mem[labels["PLAYER_X"]] == SPAWN0_X    # Strictly vertical
 
-    # At step 10 (11 steps total, 0..10): apex reached (total dy = -18 -> y = 68 - 18 = 50)
-    assert mem[labels["PLAYER_Y"]] == 50
+    # Apex: cumulative dy of the ascent table applied to the spawn line
+    assert mem[labels["PLAYER_Y"]] == apex_y
 
-    # Step 11: apex frame (dy = 0 -> y remains 50)
+    # Apex hold step (dy = 0 -> y unchanged)
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3
-    assert mem[labels["PLAYER_Y"]] == 50
+    assert mem[labels["PLAYER_Y"]] == apex_y
 
-    # Steps 12..28: descent at 1 px/frame (17 steps: y goes 51 to 67)
-    # Verify vertical motion is exactly 1 px per frame and renders fall animation frame
+    # Descent at 1 px/frame, rendering the fall animation frame
     pmg_p0 = labels["PMG_PLAYER0"]
     fall_frame_addr = labels["PLAYER_ANIM_FALL_FRAME_0"]
-    expected_y = 50
-    for _ in range(17):
+    expected_y = apex_y
+    for _ in range(SPAWN0_Y - apex_y - 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         expected_y += 1
         assert mem[labels["PLAYER_STATE"]] == 3
-        assert mem[labels["PLAYER_X"]] == 96
+        assert mem[labels["PLAYER_X"]] == SPAWN0_X
         assert mem[labels["PLAYER_Y"]] == expected_y
         pmg_y = mem[labels["PLAYER_PMG_Y"]]
         assert mem[pmg_p0 + pmg_y] == mem[fall_frame_addr]
 
-    # Step 29: Final descent step lands back on Platform 0!
+    # Final descent step lands back on the spawn platform
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0  # Landed on Platform 0
-    assert mem[labels["PLAYER_Y"]] == 68        # Exact return to starting Y
-    assert mem[labels["PLAYER_X"]] == 96
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_FLOOR_IDX
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y   # Exact return to starting Y
+    assert mem[labels["PLAYER_X"]] == SPAWN0_X
 
 
 def test_player_jump_short_crosses_gap():
@@ -718,15 +779,24 @@ def test_player_jump_short_crosses_gap():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Position player at x=33, y=68 (standing on Platform 10 at y=88: plat_x=7..39)
-    # Right of Platform 10 is a gap (x=39..48), then Platform 0 begins at x=48..144
-    mem[labels["PLAYER_X"]] = 33
-    mem[labels["PLAYER_Y"]] = 68
-    mem[labels["PLAYER_PLAT_IDX"]] = 10         # On platform 10
+    # Start on the missile platform left of the floor row, near its right edge, and jump
+    # across the gap onto the floor platform (all geometry from the scene JSON).
+    jump_len = labels["JUMP_SHORT_LEN"]
+    start_x = PLAT_GAP_LEFT["x"] + PLAT_GAP_LEFT["width"] - 6
+    landing_x = start_x + jump_dx_total(mem, labels, "JUMP_SHORT_DX", jump_len)
+    target = platform_supporting(SCENE0, landing_x + 4, PLAT_FLOOR["y"])
+    target_idx = scene_platform_index(SCENE0, target["id"])
+    assert target["x"] > start_x + 4, (
+        f"this scenario needs a gap right of {PLAT_GAP_LEFT['id']} with {target['id']} across it"
+    )
 
-    # Ensure open sky above gap by moving Platform 1 out of the way
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = SPAWN0_Y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_GAP_LEFT_IDX
+
+    # Ensure open sky above the gap: clear the platform row above the starting platform
     plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
-    mem[plat_ptr_y + 1] = 0
+    mem[plat_ptr_y + PLAT_UPPER_IDX] = 0
 
     # Release fire, then press Fire + Right (STICK0 bit 3=0 -> 0x07)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -737,21 +807,20 @@ def test_player_jump_short_crosses_gap():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
     assert mem[labels["PLAYER_JUMP_TYPE"]] == 1 # JUMP_TYPE_SHORT
-    assert mem[labels["PLAYER_JUMP_LEN"]] == 18
+    assert mem[labels["PLAYER_JUMP_LEN"]] == jump_len
     assert mem[labels["PLAYER_DIR"]] == 0       # Facing Right
-    assert mem[labels["PLAYER_X"]] == 34        # dx = 1
+    assert mem[labels["PLAYER_X"]] == start_x + 1   # first dx step
 
-    # Advance through remaining steps (17 more steps)
+    # Advance through the remaining steps of the jump
     mem[labels["STRIG0"]] = 1
-    for _ in range(17):
+    for _ in range(jump_len - 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
-    # At the end of 18 steps: total dx = 18 px (x = 33 + 18 = 51)
-    # At x=51, Hero is on Platform 0 (x=48..144, y=88) across the gap!
-    assert mem[labels["PLAYER_X"]] == 51
-    assert mem[labels["PLAYER_Y"]] == 68
+    # Total horizontal travel comes from JUMP_SHORT_DX: the hero lands across the gap
+    assert mem[labels["PLAYER_X"]] == landing_x
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed on platform across gap!)
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0  # Platform 0
+    assert mem[labels["PLAYER_PLAT_IDX"]] == target_idx
 
 
 def test_player_jump_long_reaches_higher_platform():
@@ -765,11 +834,18 @@ def test_player_jump_long_reaches_higher_platform():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Hero on lower platform 0 (plat_y=88) at x=76, y=68
-    # Higher platform is Platform 1 at plat_x=32..80, plat_y=72 (16 lines higher)
-    mem[labels["PLAYER_X"]] = 76
-    mem[labels["PLAYER_Y"]] = 68
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # Hero stands on the floor platform at the right end of PLAT_UPPER and jumps up-left
+    # onto it (all coordinates from the scene JSON).
+    start_x = PLAT_UPPER["x"] + PLAT_UPPER["width"] - 4
+    jump_len = labels["JUMP_LONG_LEN"]
+    dx_total = jump_dx_total(mem, labels, "JUMP_LONG_DX", jump_len)
+    assert PLAT_UPPER["x"] <= start_x - dx_total, (
+        f"landing x must stay inside {PLAT_UPPER['id']} ({PLAT_UPPER['x']}..{PLAT_UPPER['x'] + PLAT_UPPER['width']})"
+    )
+
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = SPAWN0_Y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
 
     # Release fire, then press Fire + Up+Left (STICK0 bit 0=0 up, bit 2=0 left -> 0x0A)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -780,24 +856,24 @@ def test_player_jump_long_reaches_higher_platform():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3     # PLAYER_STATE_JUMP
     assert mem[labels["PLAYER_JUMP_TYPE"]] == 2 # JUMP_TYPE_LONG
-    assert mem[labels["PLAYER_JUMP_LEN"]] == 22
+    assert mem[labels["PLAYER_JUMP_LEN"]] == jump_len
     assert mem[labels["PLAYER_DIR"]] == 1       # Facing Left
 
-    # Step through frames until landing on the higher platform at plat_y=72 (y=52)
+    # Step through the jump until landing on the higher platform
     mem[labels["STRIG0"]] = 1
     landed = False
-    for step in range(2, 23):
+    for _ in range(2, jump_len + 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         if mem[labels["PLAYER_STATE"]] == 0:    # IDLE -> Landed!
             landed = True
             break
 
-    assert landed, "Hero must land on higher platform 1"
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 1  # Landed on Platform 1!
-    assert mem[labels["PLAYER_Y"]] == 52        # 72 - 20 = 52 (exact platform surface!)
-    # Horizontal displacement must be <= 8px:
-    dx_traveled = 76 - mem[labels["PLAYER_X"]]
-    assert 0 < dx_traveled <= 8, f"Horizontal displacement ({dx_traveled}) must be <= 8px"
+    assert landed, f"Hero must land on {PLAT_UPPER['id']}"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_UPPER_IDX
+    assert mem[labels["PLAYER_Y"]] == PLAT_UPPER["y"] - labels["PLAYER_SPRITE_HEIGHT"]
+    # Horizontal displacement must stay within the JUMP_LONG_DX budget:
+    dx_traveled = start_x - mem[labels["PLAYER_X"]]
+    assert 0 < dx_traveled <= dx_total, f"Horizontal displacement ({dx_traveled}) must be <= {dx_total}px"
 
 
 def test_player_jump_long_does_not_hit_ceiling_two_tiers_above():
@@ -811,20 +887,22 @@ def test_player_jump_long_does_not_hit_ceiling_two_tiers_above():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Hero on lower platform 0 (plat_y=88) at x=76, y=68
-    # Target platform: Platform 1 at plat_x=32..80, plat_y=72 (surface at y=52)
-    # Put a ceiling platform at plat_y=56 (thickness 4: lines 56..59, bottom=60, 32px above lower platform)
-    mem[labels["PLAYER_X"]] = 76
-    mem[labels["PLAYER_Y"]] = 68
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # Hero on the floor at the right end of PLAT_UPPER, jumping up-left onto it, while a
+    # ceiling two platform rows above the floor spans the jump path (built in RAM so a scene
+    # edit cannot silently remove the premise of this test).
+    start_x = PLAT_UPPER["x"] + PLAT_UPPER["width"] - 4
+    jump_len = labels["JUMP_LONG_LEN"]
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = SPAWN0_Y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
 
-    # Overwrite Platform 7 in scene data to be a ceiling directly above the jump path at y=56 (bottom=60)
     plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
     plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
     plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
-    mem[plat_ptr_x + 7] = 60
-    mem[plat_ptr_w + 7] = 30
-    mem[plat_ptr_y + 7] = 56  # Bottom is at 56 + 4 = 60
+    ceiling_y = PLAT_FLOOR["y"] - 2 * 16          # two platform rows above the floor
+    mem[plat_ptr_x + PLAT_SCRATCH_IDX] = start_x - 16
+    mem[plat_ptr_w + PLAT_SCRATCH_IDX] = 32
+    mem[plat_ptr_y + PLAT_SCRATCH_IDX] = ceiling_y
 
     # Trigger long jump Up+Left
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -836,16 +914,16 @@ def test_player_jump_long_does_not_hit_ceiling_two_tiers_above():
 
     mem[labels["STRIG0"]] = 1
     landed = False
-    for _ in range(21):
+    for _ in range(jump_len - 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         # Must NEVER bounce into fall state during this jump
-        assert mem[labels["PLAYER_STATE"]] != 2, "Must not bounce off ceiling at y=56!"
+        assert mem[labels["PLAYER_STATE"]] != 2, f"Must not bounce off the ceiling at y={ceiling_y}!"
         if mem[labels["PLAYER_STATE"]] == 0:
             landed = True
             break
 
     assert landed, "Hero must land on target platform"
-    assert mem[labels["PLAYER_Y"]] == 52
+    assert mem[labels["PLAYER_Y"]] == PLAT_UPPER["y"] - labels["PLAYER_SPRITE_HEIGHT"]
 
 
 def test_player_jump_blocked_when_platform_directly_overhead():
@@ -859,21 +937,23 @@ def test_player_jump_blocked_when_platform_directly_overhead():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Hero on lower Platform 0 (plat_y=88) at x=60 (standing under Platform 1 at plat_x=32..80, plat_y=72)
-    mem[labels["PLAYER_X"]] = 60
-    mem[labels["PLAYER_Y"]] = 68
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # Hero on the floor directly under PLAT_UPPER: a platform 16 canvas lines above leaves no
+    # headroom, so the jump must be refused (geometry from the scene JSON).
+    start_x = PLAT_UPPER["x"] + PLAT_UPPER["width"] // 2 - 4
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = SPAWN0_Y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
 
     # Fire + neutral (JUMP_UP)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
     mem[labels["STRIG0"]] = 0
     mem[labels["STICK0"]] = 0x0F
 
-    # Jump must be blocked! Hero remains standing in IDLE on Platform 0 at y=68
+    # Jump must be blocked! Hero remains standing in IDLE on the floor platform
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 0      # PLAYER_STATE_IDLE (not JUMP, not FALL!)
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0   # Still securely on Platform 0
-    assert mem[labels["PLAYER_Y"]] == 68         # Never moved down or penetrated platform
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_FLOOR_IDX
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y    # Never moved down or penetrated platform
 
     # Re-release fire and try Fire + Right (short jump attempt under ceiling)
     mem[labels["STRIG0"]] = 1
@@ -885,8 +965,8 @@ def test_player_jump_blocked_when_platform_directly_overhead():
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] != 3      # Not jumping
     assert mem[labels["PLAYER_STATE"]] != 2      # Not falling through platform!
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 0   # Still on Platform 0
-    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_FLOOR_IDX
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
 
 
 
@@ -901,18 +981,22 @@ def test_player_jump_ceiling_collision_bounces_to_fall():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # In Scene 0: Platform 4 is at plat_x=1..17, plat_y=40 (thickness 4: lines 40..43, bottom=44).
-    # Position Hero directly under Platform 4 at x=8, y=46 (head at 46, below bottom 44).
-    mem[labels["PLAYER_X"]] = 8
-    mem[labels["PLAYER_Y"]] = 46
-    mem[labels["PLAYER_PLAT_IDX"]] = 0          # On some platform below
+    # Hero under PLAT_CEILING: the head starts just below the ceiling bottom, so the first
+    # jump step bumps it and bounces straight into FALL (geometry from the scene JSON).
+    first_dy = mem[labels["JUMP_SHORT_DY"]]
+    first_dy = first_dy - 256 if first_dy >= 128 else first_dy
+    start_x = PLAT_CEILING["x"] + PLAT_CEILING["width"] // 2
+    start_y = PLAT_CEILING["y"] + PLAT_CEILING["height"] - first_dy
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = start_y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX   # standing on a platform below
 
     # Release fire, then press Fire + Right (JUMP_SHORT)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
     mem[labels["STRIG0"]] = 0
     mem[labels["STICK0"]] = 0x07                # Right active -> JUMP_TYPE_SHORT
 
-    # Frame 1: Jump triggers, dy = -2, dx = 1, player_y goes 46 -> 44 (hits bottom at 44!)
+    # Frame 1: Jump triggers, the first dy step lifts the head into the ceiling bottom
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
 
     # Hero bumps ceiling: bounces immediately into PLAYER_STATE_FALL!
@@ -924,7 +1008,7 @@ def test_player_jump_ceiling_collision_bounces_to_fall():
     # Next frame: regular fall update drops by 1 line
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 2     # Still falling
-    assert mem[labels["PLAYER_Y"]] == 45        # Dropping down
+    assert mem[labels["PLAYER_Y"]] == start_y - 1
 
 
 def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
@@ -938,18 +1022,21 @@ def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Hero on lower Platform 0 (plat_y=88) at x=76, y=68
-    mem[labels["PLAYER_X"]] = 76
-    mem[labels["PLAYER_Y"]] = 68
-    mem[labels["PLAYER_PLAT_IDX"]] = 0
+    # Hero on the floor, with a ceiling two platform rows above built in RAM (a scene edit
+    # must not silently remove the premise of this test).
+    start_x = PLAT_UPPER["x"] + PLAT_UPPER["width"] - 4
+    jump_len = labels["JUMP_UP_LEN"]
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = SPAWN0_Y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_FLOOR_IDX
 
-    # Overwrite Platform 7 in scene data to be directly above Hero at y=56 (bottom=60, 32px above floor)
     plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
     plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
     plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
-    mem[plat_ptr_x + 7] = 60
-    mem[plat_ptr_w + 7] = 30
-    mem[plat_ptr_y + 7] = 56
+    ceiling_y = PLAT_FLOOR["y"] - 2 * 16          # two platform rows above the floor
+    mem[plat_ptr_x + PLAT_SCRATCH_IDX] = start_x - 16
+    mem[plat_ptr_w + PLAT_SCRATCH_IDX] = 32
+    mem[plat_ptr_y + PLAT_SCRATCH_IDX] = ceiling_y
 
     # Trigger vertical jump (Fire + neutral)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -961,16 +1048,18 @@ def test_player_jump_up_does_not_hit_ceiling_two_tiers_above():
 
     mem[labels["STRIG0"]] = 1
     landed = False
-    for _ in range(29):
+    for _ in range(jump_len - 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
-        # Must NEVER bounce into fall state during vertical jump under platform at y=56
-        assert mem[labels["PLAYER_STATE"]] != 2, "Must not bounce off ceiling at y=56 during vertical jump!"
+        # Must NEVER bounce into fall state: a ceiling two tiers above is not a head bump
+        assert mem[labels["PLAYER_STATE"]] != 2, (
+            f"Must not bounce off the ceiling at y={ceiling_y} during a vertical jump!"
+        )
         if mem[labels["PLAYER_STATE"]] == 0:
             landed = True
             break
 
     assert landed, "Hero must land back on starting platform"
-    assert mem[labels["PLAYER_Y"]] == 68
+    assert mem[labels["PLAYER_Y"]] == SPAWN0_Y
 
 
 def test_player_jump_animation_frames_in_pmg():
@@ -984,7 +1073,7 @@ def test_player_jump_animation_frames_in_pmg():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Start jump-right from x=96, y=68
+    # Start a jump from the scene spawn platform (Rule 05)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
     mem[labels["STRIG0"]] = 0
     mem[labels["STICK0"]] = 0x0F                # Neutral -> JUMP_UP (facing Right)
@@ -1027,44 +1116,50 @@ def test_player_jump_on_row_1_full_height():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Platform 6 ("platform-010") in Scene 0 is at x=96, y=24, w=32. Standing head is at player_y = 4
-    mem[labels["PLAYER_X"]] = 100
-    mem[labels["PLAYER_Y"]] = 4
-    mem[labels["PLAYER_PLAT_IDX"]] = 6
+    # Hero standing on the top platform row, head at the platform surface minus sprite height
+    start_y = PLAT_TOP_ROW["y"] - labels["PLAYER_SPRITE_HEIGHT"]
+    jump_len = labels["JUMP_UP_LEN"]
+    first_dy = mem[labels["JUMP_UP_DY"]]
+    first_dy = first_dy - 256 if first_dy >= 128 else first_dy
+    apex_dy = jump_apex_dy(mem, labels, "JUMP_UP_DY", jump_len)
 
-    # Trigger vertical jump (apex 18 lines)
+    mem[labels["PLAYER_X"]] = PLAT_TOP_ROW["x"] + 4
+    mem[labels["PLAYER_Y"]] = start_y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_TOP_ROW_IDX
+
+    # Trigger vertical jump
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
     mem[labels["STRIG0"]] = 0
     mem[labels["STICK0"]] = 0x0F
 
-    # Step 1: y = 2
+    # Step 1: first dy step
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 3
-    assert mem[labels["PLAYER_Y"]] == 2
+    assert mem[labels["PLAYER_Y"]] == start_y + first_dy
 
-    # Step 2: y = 0
+    # Step 2: second dy step
     mem[labels["STRIG0"]] = 1
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_Y"]] == 0
+    assert mem[labels["PLAYER_Y"]] == start_y + 2 * first_dy
 
-    # Step 3: y crosses into negative (-2 = 254 / 0xFE) - must NOT be clamped to 0!
+    # Step 3: y crosses into negative (two's complement) - must NOT be clamped to 0!
     run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_Y"]] == 254  # -2 in two's complement
+    assert mem[labels["PLAYER_Y"]] == (start_y + 3 * first_dy) & 0xFF
 
-    # Step through remaining steps to apex (step 11: total dy = -18, y = 4 - 18 = -14 = 242 / 0xF2)
+    # Step through the remaining steps to the apex (cumulative dy from JUMP_UP_DY)
     for _ in range(8):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
-    assert mem[labels["PLAYER_Y"]] == 242  # -14 in two's complement (apex 18 lines reached!)
+    assert mem[labels["PLAYER_Y"]] == (start_y + apex_dy) & 0xFF
 
-    # PMG scanline at apex: (-14 * 2) + 52 = 24 (valid PMG scanline)
-    assert mem[labels["PLAYER_PMG_Y"]] == 24
+    # PMG scanline at apex: signed y * 2 + 52 (still a valid PMG scanline)
+    assert mem[labels["PLAYER_PMG_Y"]] == ((start_y + apex_dy) * 2 + 52) & 0xFF
 
-    # Complete jump (1 apex step + 18 descent steps = 19 steps) and verify clean landing back on Platform 6 at y=4
+    # Complete the jump (1 apex step + the descent steps) and verify a clean landing
     for _ in range(19):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
     assert mem[labels["PLAYER_STATE"]] == 0     # IDLE (landed!)
-    assert mem[labels["PLAYER_PLAT_IDX"]] == 6  # Platform 6
-    assert mem[labels["PLAYER_Y"]] == 4         # Exactly returned to starting Y
+    assert mem[labels["PLAYER_PLAT_IDX"]] == PLAT_TOP_ROW_IDX
+    assert mem[labels["PLAYER_Y"]] == start_y    # Exactly returned to starting Y
 
 
 def test_player_jump_short_from_platform_016_to_012_under_platform_010():
@@ -1079,13 +1174,14 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
     mpu.a = 0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # In Scene 0:
-    # platform-016 is at x=117..125, y=56. Standing head: y = 56 - 20 = 36
-    # platform-012 is at x=73..105, y=56.
-    # platform-010 is at x=96..128, y=24 (32px above platform-016).
-    mem[labels["PLAYER_X"]] = 118
-    mem[labels["PLAYER_Y"]] = 36
-    mem[labels["PLAYER_PLAT_IDX"]] = 9
+    # Hero on PLAT_JUMP_FROM (a missile platform) jumping left onto PLAT_JUMP_TO on the same
+    # row, under the top-row platform two tiers above (geometry from the scene JSON).
+    start_x = PLAT_JUMP_FROM["x"] + 1
+    start_y = PLAT_JUMP_FROM["y"] - labels["PLAYER_SPRITE_HEIGHT"]
+    jump_len = labels["JUMP_SHORT_LEN"]
+    mem[labels["PLAYER_X"]] = start_x
+    mem[labels["PLAYER_Y"]] = start_y
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_JUMP_FROM_IDX
 
     # Trigger jump left (STICK0 bit 2=0 left -> 0x0B)
     mem[labels["PLAYER_FIRE_RELEASED"]] = 1
@@ -1098,16 +1194,18 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
     assert mem[labels["PLAYER_JUMP_TYPE"]] == 1  # JUMP_TYPE_SHORT
     assert mem[labels["PLAYER_DIR"]] == 1  # Left
 
-    # Release fire and step through the jump (18 steps total)
+    # Release fire and step through the jump
     mem[labels["STRIG0"]] = 1
-    for step in range(2, 19):
+    for step in range(2, jump_len + 1):
         run_subroutine(mpu, labels["PLAYER_UPDATE"])
         # Crucial invariant: Hero must NEVER transition to FALL state during ascent!
         assert mem[labels["PLAYER_STATE"]] != 2, f"Bounced off false ceiling on step {step}!"
         if mem[labels["PLAYER_STATE"]] == 0:
             break
 
-    # Jump must complete and land on platform-012 at y=36 (feet at 56)
+    # Jump must complete and land on the target platform (same row, feet on its surface)
     assert mem[labels["PLAYER_STATE"]] == 0, "Hero must land in IDLE state"
-    assert mem[labels["PLAYER_Y"]] == 36, "Hero must land at platform surface y=36"
-    assert 73 <= mem[labels["PLAYER_X"]] <= 105, "Hero must be within platform-012 x bounds"
+    assert mem[labels["PLAYER_Y"]] == start_y, "Hero must land at the platform surface"
+    assert PLAT_JUMP_TO["x"] <= mem[labels["PLAYER_X"]] <= PLAT_JUMP_TO["x"] + PLAT_JUMP_TO["width"], (
+        f"Hero must be within {PLAT_JUMP_TO['id']} x bounds"
+    )

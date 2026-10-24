@@ -259,7 +259,7 @@ def test_enemies_speed_intervals():
     # Frame 1:
     # Enemy 0 (med): speed_timer was 0 -> reloads 1, moves 1 px left to 119
     # Enemy 1 (slow): speed_timer was 0 -> reloads 3, moves 1 px right to 6
-    # Enemy 2 (stat): stays 110
+    # Enemy 2 (stat): stays at its configured x
     run_subroutine(mpu, labels["ENEMIES_UPDATE"])
     assert mem[x_addr + 0] == 119
     assert mem[x_addr + 1] == 6
@@ -462,9 +462,14 @@ def test_player_no_collision_preserves_lives():
     lives_addr = labels["PLAYER_LIVES"]
     mem[lives_addr] = 3
 
-    # Position Hero far from any enemy: x=20, pmg_y=188
-    mem[labels["PLAYER_X"]] = 20
-    mem[labels["PLAYER_PMG_Y"]] = 188
+    # Position the Hero 24 px to the left of the first enemy, at the same scanline: the
+    # engine's overlap box is |dx| < 8, so even a vertical overlap must not collide
+    # (coordinates read from the runtime tables, never from the scene file).
+    e0_x = mem[labels["ENEMIES_X"] + 0]
+    e0_pmg_y = mem[labels["ENEMIES_PMG_Y"] + 0]
+    mem[labels["PLAYER_X"]] = max(0, e0_x - 24)
+    mem[labels["PLAYER_PMG_Y"]] = e0_pmg_y
+    assert abs(mem[labels["PLAYER_X"]] - e0_x) >= 8, "fixture must keep the hero outside the enemy box"
 
     run_subroutine(mpu, labels["ENEMIES_CHECK_PLAYER_COLLISION"])
 

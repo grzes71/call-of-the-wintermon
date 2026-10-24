@@ -96,6 +96,104 @@ def scene_platform_count(scene_index: int) -> int:
     return len(load_scene(scene_files()[scene_index])["platforms"])
 
 
+def scene_platforms(scene_index: int) -> list[dict[str, Any]]:
+    """Platforms of the scene at that engine index, in the compiler's order (JSON order).
+
+    Each entry carries the JSON fields plus the geometry the engine sees (`x`, `y`, `width`,
+    `height`) and the compiler's `type_code` (0 = sprite/player, 1 = missile).
+    """
+    scene = load_scene(scene_files()[scene_index])
+    return [
+        {
+            **platform,
+            "type_code": 0 if platform["type"] == "sprite" else 1,
+            "x": platform["position"]["x"],
+            "y": platform["position"]["y"],
+            "width": platform["width"],
+            "height": platform["height"],
+        }
+        for platform in scene["platforms"]
+    ]
+
+
+def scene_platform(scene_index: int, platform_id: str) -> dict[str, Any]:
+    """Platform by scene id (fails loudly when the scene no longer defines it)."""
+    for platform in scene_platforms(scene_index):
+        if platform["id"] == platform_id:
+            return platform
+    raise AssertionError(
+        f"scene {scene_index} ({scene_files()[scene_index]}) has no platform '{platform_id}'"
+    )
+
+
+def scene_platform_index(scene_index: int, platform_id: str) -> int:
+    """Engine index of a platform id (its position in the `scene_plat_*` tables)."""
+    for index, platform in enumerate(scene_platforms(scene_index)):
+        if platform["id"] == platform_id:
+            return index
+    raise AssertionError(
+        f"scene {scene_index} ({scene_files()[scene_index]}) has no platform '{platform_id}'"
+    )
+
+
+def platform_supporting(scene_index: int, x: int, y: int) -> dict[str, Any]:
+    """Platform of row `y` whose x-range contains `x` - i.e. what holds a sprite there."""
+    row = [p for p in scene_platforms(scene_index) if p["y"] == y]
+    for platform in row:
+        if platform["x"] <= x < platform["x"] + platform["width"]:
+            return platform
+    raise AssertionError(
+        f"scene {scene_index}: no platform at row y={y} covers x={x} "
+        f"(platforms on that row: {[(p['id'], p['x'], p['width']) for p in row]})"
+    )
+
+
+def free_x_on_row(scene_index: int, y: int, start_x: int) -> int:
+    """First x >= start_x on platform row `y` that no platform covers (a fall-through spot)."""
+    row = [p for p in scene_platforms(scene_index) if p["y"] == y]
+    x = start_x
+    while x < 160 and any(p["x"] <= x < p["x"] + p["width"] for p in row):
+        x += 1
+    return x
+
+
+def player_spawn_pmg_y(scene_index: int) -> int:
+    """PMG scanline the engine derives from the scene spawn (`player_init`: y * 2 + 52)."""
+    return player_spawn(scene_index)["y"] * 2 + 52
+
+
+def jump_dy_total(mem, labels, table: str, length: int) -> int:
+    """Signed sum of a compiled jump vertical table (the net vertical displacement).
+
+    A well-formed jump profile returns to its starting line, so this is 0.
+    """
+    total = 0
+    for i in range(length):
+        value = mem[labels[table] + i]
+        total += value - 256 if value >= 128 else value
+    return total
+
+
+def jump_apex_dy(mem, labels, table: str, length: int) -> int:
+    """Lowest (most negative) running sum of a jump vertical table = the apex offset.
+
+    Lets tests derive the jump height from the ROM table the engine actually uses instead
+    of pinning the apex as a literal.
+    """
+    total = 0
+    apex = 0
+    for i in range(length):
+        value = mem[labels[table] + i]
+        total += value - 256 if value >= 128 else value
+        apex = min(apex, total)
+    return apex
+
+
+def jump_dx_total(mem, labels, table: str, length: int) -> int:
+    """Sum of a compiled jump horizontal table (`JUMP_SHORT_DX`, `JUMP_LONG_DX`, ...)."""
+    return sum(mem[labels[table] + i] for i in range(length))
+
+
 def scene_special_secret_count(scene_index: int) -> int:
     """Number of secrets with "special": true placed in the scene at that index."""
     return sum(1 for secret in scene_objects(scene_files()[scene_index], "secret") if secret["special"])

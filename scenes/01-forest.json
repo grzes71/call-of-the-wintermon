@@ -154,7 +154,7 @@
       "id": "platform-011",
       "type": "sprite",
       "position": {
-        "x": 63,
+        "x": 65,
         "y": 24
       },
       "width": 16,
@@ -176,7 +176,7 @@
       "id": "platform-013",
       "type": "sprite",
       "position": {
-        "x": 15,
+        "x": 17,
         "y": 24
       },
       "width": 32,
@@ -237,14 +237,14 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-010",
-      "x": 106
+      "x": 100
     },
     {
       "id": 5,
       "type": "secret",
       "definition_id": 2,
       "platform_id": "platform-011",
-      "x": 71,
+      "x": 73,
       "dependency": 1
     },
     {

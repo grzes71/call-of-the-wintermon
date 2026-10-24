@@ -322,7 +322,8 @@ def test_dli_stage_scene_double_buffer_isolation():
     assert mem[labels["DLI_HPOS_P1"] + 0] == 0
 
     # Inactive buffer (offset 8) has received staged scene 0 data
-    # In Scene 0 (Forest), pas 1 (y=24) has platform-010 at x=96 -> HPOS = 48 + 96 = 144 ($90) or 0x68
+    # (Scene 0 pas 1 carries whatever platform row y=24 defines in the scene JSON, so the
+    # expected HPOS is data-driven - see test_scene_dli_data_matches_json.)
     staged_hpos_p1 = mem[labels["DLI_HPOS_P1"] + 8 + 1]  # pas index 1 in buffer 1
     assert staged_hpos_p1 > 0, "Staged buffer at offset 8 must contain platform data"
 
