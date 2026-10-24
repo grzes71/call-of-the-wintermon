@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from scene_editor.atari_palette import atari_color_to_rgb
 from scene_editor.catalogue_dialog import CataloguePathsDialog, CataloguesDialog
 from scene_editor.catalogue_model import (
     CatalogDefinition,
@@ -482,6 +483,80 @@ class TestGUIIntegrationCatalogues:
 
         dlg.secret_list.setCurrentRow(0)
         assert dlg.secret_btn_save.text() == "Update Entry"
+
+    # -------------------------------------------------------------------------
+    # One-way Atari (GTIA) -> RGB conversion when the author enters a colour
+    # -------------------------------------------------------------------------
+    def test_gui_entering_atari_color_derives_rgb_for_enemy(self, qapp):
+        cats = ProjectCatalogues()
+        cats.add_enemy(EnemyDefinition(id=1, name="Dragon"))
+        dlg = CataloguesDialog(cats, parent=None)
+        dlg.enemy_list.setCurrentRow(0)
+
+        dlg.enemy_atari_check.setChecked(True)
+        dlg.enemy_atari_spin.setValue(0x1A)
+
+        expected = atari_color_to_rgb(0x1A)
+        assert (dlg.enemy_r_spin.value(), dlg.enemy_g_spin.value(), dlg.enemy_b_spin.value()) == expected
+        assert dlg.enemy_rgb_check.isChecked(), "derived RGB must be enabled so it is persisted"
+        assert dlg.enemy_atari_hex_lbl.text() == "Hex: $1A"
+
+    def test_gui_entering_atari_color_derives_rgb_for_secret(self, qapp):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=2, name="Skull"))
+        dlg = CataloguesDialog(cats, parent=None)
+        dlg.secret_list.setCurrentRow(0)
+
+        dlg.secret_atari_check.setChecked(True)
+        dlg.secret_atari_spin.setValue(0xFC)
+
+        expected = atari_color_to_rgb(0xFC)
+        assert (dlg.secret_r_spin.value(), dlg.secret_g_spin.value(), dlg.secret_b_spin.value()) == expected
+        assert dlg.secret_rgb_check.isChecked()
+        assert dlg.secret_atari_hex_lbl.text() == "Hex: $FC"
+
+    def test_gui_rgb_entry_does_not_modify_atari_color(self, qapp):
+        """The conversion is one-way: RGB edits never change the GTIA register value."""
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=2, name="Skull"))
+        dlg = CataloguesDialog(cats, parent=None)
+        dlg.secret_list.setCurrentRow(0)
+
+        dlg.secret_atari_check.setChecked(True)
+        dlg.secret_atari_spin.setValue(0x1A)
+
+        dlg.secret_r_spin.setValue(0)
+        dlg.secret_g_spin.setValue(255)
+        dlg.secret_b_spin.setValue(7)
+
+        assert dlg.secret_atari_spin.value() == 0x1A
+        assert dlg.secret_atari_hex_lbl.text() == "Hex: $1A"
+
+    def test_gui_loading_entry_keeps_authored_rgb(self, qapp):
+        """Selecting an entry must not overwrite its stored RGB with the palette value."""
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=2, name="Skull", rgb_color=(170, 255, 255), atari_color=252))
+        dlg = CataloguesDialog(cats, parent=None)
+        dlg.secret_list.setCurrentRow(0)
+
+        assert (dlg.secret_r_spin.value(), dlg.secret_g_spin.value(), dlg.secret_b_spin.value()) == (170, 255, 255)
+        assert dlg.secret_atari_spin.value() == 252
+
+    def test_gui_saved_entry_persists_derived_rgb(self, qapp, tmp_path: Path):
+        """End-to-end: entering an Atari colour and saving stores the derived RGB triplet."""
+        cats = ProjectCatalogues()
+        cats.add_enemy(EnemyDefinition(id=1, name="Dragon"))
+        dlg = CataloguesDialog(cats, base_dir=tmp_path, parent=None)
+        dlg.enemy_list.setCurrentRow(0)
+
+        dlg.enemy_atari_check.setChecked(True)
+        dlg.enemy_atari_spin.setValue(0x8C)
+        dlg._on_save_enemy_clicked()
+
+        reloaded = ProjectCatalogues.load_from_dir(tmp_path)
+        expected = atari_color_to_rgb(0x8C)
+        assert reloaded.get_enemy(1).atari_color == 0x8C
+        assert tuple(reloaded.get_enemy(1).rgb_color) == expected
 
     def test_menu_contains_catalogue_actions(self, qapp, tmp_path: Path):
         window = MainWindow(base_dir=tmp_path)

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -332,7 +332,7 @@ class CataloguesDialog(QDialog):
             btn_delete.clicked.connect(self._on_delete_enemy_clicked)
             rgb_check.toggled.connect(lambda chk: self._update_rgb_enabled(True, chk))
             atari_check.toggled.connect(lambda chk: self._update_atari_enabled(True, chk))
-            atari_spin.valueChanged.connect(lambda val: atari_hex_lbl.setText(f"Hex: ${val:02X}"))
+            atari_spin.valueChanged.connect(lambda val: self._on_atari_color_changed(True, val))
             swatch_btn.clicked.connect(lambda: self._on_pick_color(True))
             r_spin.valueChanged.connect(lambda: self._update_swatch_color(True))
             g_spin.valueChanged.connect(lambda: self._update_swatch_color(True))
@@ -365,7 +365,7 @@ class CataloguesDialog(QDialog):
             btn_delete.clicked.connect(self._on_delete_secret_clicked)
             rgb_check.toggled.connect(lambda chk: self._update_rgb_enabled(False, chk))
             atari_check.toggled.connect(lambda chk: self._update_atari_enabled(False, chk))
-            atari_spin.valueChanged.connect(lambda val: atari_hex_lbl.setText(f"Hex: ${val:02X}"))
+            atari_spin.valueChanged.connect(lambda val: self._on_atari_color_changed(False, val))
             swatch_btn.clicked.connect(lambda: self._on_pick_color(False))
             r_spin.valueChanged.connect(lambda: self._update_swatch_color(False))
             g_spin.valueChanged.connect(lambda: self._update_swatch_color(False))
@@ -554,7 +554,11 @@ class CataloguesDialog(QDialog):
 
         if defn.atari_color is not None:
             self.enemy_atari_check.setChecked(True)
-            self.enemy_atari_spin.setValue(defn.atari_color)
+            # Loading must not re-derive the stored RGB: the one-way Atari -> RGB
+            # conversion runs on user input only (see _on_atari_color_changed), so the
+            # authored RGB colour of the entry is preserved until the author edits it.
+            with QSignalBlocker(self.enemy_atari_spin):
+                self.enemy_atari_spin.setValue(defn.atari_color)
             self.enemy_atari_hex_lbl.setText(f"Hex: ${defn.atari_color:02X}")
         else:
             self.enemy_atari_check.setChecked(False)
@@ -784,7 +788,9 @@ class CataloguesDialog(QDialog):
 
         if defn.atari_color is not None:
             self.secret_atari_check.setChecked(True)
-            self.secret_atari_spin.setValue(defn.atari_color)
+            # See _on_enemy_selected: loading preserves the authored RGB colour.
+            with QSignalBlocker(self.secret_atari_spin):
+                self.secret_atari_spin.setValue(defn.atari_color)
             self.secret_atari_hex_lbl.setText(f"Hex: ${defn.atari_color:02X}")
         else:
             self.secret_atari_check.setChecked(False)
@@ -1103,21 +1109,61 @@ class CataloguesDialog(QDialog):
         spin.setEnabled(enabled)
         lbl.setEnabled(enabled)
 
+    def _color_widgets(self, is_enemy: bool):
+        """RGB spin boxes / swatch / Atari hex label / RGB enable box for one catalogue."""
+        if is_enemy:
+            return (
+                self.enemy_r_spin,
+                self.enemy_g_spin,
+                self.enemy_b_spin,
+                self.enemy_swatch_btn,
+                self.enemy_atari_hex_lbl,
+                self.enemy_rgb_check,
+            )
+        return (
+            self.secret_r_spin,
+            self.secret_g_spin,
+            self.secret_b_spin,
+            self.secret_swatch_btn,
+            self.secret_atari_hex_lbl,
+            self.secret_rgb_check,
+        )
+
     def _update_swatch_color(self, is_enemy: bool) -> None:
-        r_spin = self.enemy_r_spin if is_enemy else self.secret_r_spin
-        g_spin = self.enemy_g_spin if is_enemy else self.secret_g_spin
-        b_spin = self.enemy_b_spin if is_enemy else self.secret_b_spin
-        swatch_btn = self.enemy_swatch_btn if is_enemy else self.secret_swatch_btn
+        r_spin, g_spin, b_spin, swatch_btn, _, _ = self._color_widgets(is_enemy)
 
         r, g, b = r_spin.value(), g_spin.value(), b_spin.value()
         swatch_btn.setStyleSheet(
             f"background-color: rgb({r}, {g}, {b}); border: 1px solid #ffffff; border-radius: 2px;"
         )
 
+    def _on_atari_color_changed(self, is_enemy: bool, value: int) -> None:
+        """One-way Atari (GTIA) -> RGB conversion, run when the user enters an Atari colour.
+
+        The Atari register value is the colour the game actually renders, so entering it
+        derives the matching RGB triplet from the GTIA palette. The RGB group is enabled
+        as well, so the derived triplet is persisted with the entry and the editor shows
+        exactly what the hardware will show.
+
+        The reverse direction is intentionally NOT implemented: editing the RGB spin
+        boxes never modifies the Atari colour (it stays the author's explicit choice).
+        """
+        r_spin, g_spin, b_spin, _, hex_lbl, rgb_check = self._color_widgets(is_enemy)
+
+        hex_lbl.setText(f"Hex: ${value:02X}")
+
+        r, g, b = atari_color_to_rgb(value)
+        for spin, component in ((r_spin, r), (g_spin, g), (b_spin, b)):
+            if spin.value() != component:
+                spin.setValue(component)
+
+        if not rgb_check.isChecked():
+            rgb_check.setChecked(True)
+
+        self._update_swatch_color(is_enemy)
+
     def _on_pick_color(self, is_enemy: bool) -> None:
-        r_spin = self.enemy_r_spin if is_enemy else self.secret_r_spin
-        g_spin = self.enemy_g_spin if is_enemy else self.secret_g_spin
-        b_spin = self.enemy_b_spin if is_enemy else self.secret_b_spin
+        r_spin, g_spin, b_spin, _, _, _ = self._color_widgets(is_enemy)
 
         cur_color = QColor(r_spin.value(), g_spin.value(), b_spin.value())
         picked = QColorDialog.getColor(cur_color, self, "Pick RGB Color")

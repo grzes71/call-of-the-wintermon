@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-24] - Catalogue Colour Entry: One-Way Atari (GTIA) -> RGB Conversion
+
+- **Added** ([atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py)): entering (or changing) an Atari colour in the Enemies/Secrets form now derives the matching RGB triplet with `atari_color_to_rgb()` from the GTIA palette - new handler `_on_atari_color_changed()`, wired to both `enemy_atari_spin` and `secret_atari_spin` (it also keeps the `Hex: $XX` label in sync, replacing the old lambda). The RGB spin boxes and the swatch follow the register value, and the *Enable RGB Color* box is ticked so the derived triplet is persisted with the entry.
+- **One-way by design**: the reverse direction stays unimplemented - editing the RGB spin boxes (or picking a colour in the RGB dialog) never modifies `atari_color`, which remains the author's explicit hardware-palette choice. Loading an entry is guarded with `QSignalBlocker` in `_on_enemy_selected` / `_on_secret_selected`, so opening a catalogue does not silently rewrite the stored `rgb_color` of an entry whose two colours differ (e.g. Skull: `rgb_color` = (170,255,255), `atari_color` = 252).
+- **Why**: the two fields are independent (the editor renders `rgb_color`, the game renders `atari_color`), so one catalogue entry could look cyan in the editor and gold on the Atari. Entering the hardware colour is now the single action that also fixes the editor preview; the small shared helper `_color_widgets()` removes the duplicated widget lookups in `_update_swatch_color` / `_on_pick_color`.
+- **Tests** ([tests/test_catalogues.py](tests/test_catalogues.py), +5): enemy and secret entry derive the palette RGB and enable the RGB group; RGB edits leave the Atari value untouched; selecting an entry preserves its authored RGB; a saved entry round-trips the derived triplet through `scenes/definitions.json`.
+- **Docs** ([atari-scene-editor/README.md](atari-scene-editor/README.md)): the `atari_color` field description now documents the one-way rule (entering Atari -> RGB; RGB never changes Atari; loading never overwrites RGB).
+- **Verified**: `pytest tests/test_catalogues.py tests/test_gui_integration.py tests/test_platform_profiles.py` - 126 passed.
+
 ## [2026-10-23] - Game Over Screens (FAILURE / SUCCESS) with Two Display Lists and DLI Colours
 
 - **Added**: two full Game Over screens replacing the blank stub. `gameover_init` picks the variant from the *existing* `game_result` value (GAME_FAILED -> FAILURE, GAME_SUCCESS -> SUCCESS, anything else -> FAILURE), so no new gameplay rule was invented; `player.asm` (last life lost) and `game.asm` (final scene cleared) already set it before switching to `STATE_OVER`.
