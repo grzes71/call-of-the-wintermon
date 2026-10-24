@@ -244,7 +244,7 @@
       "type": "secret",
       "definition_id": 2,
       "platform_id": "platform-011",
-      "x": 70,
+      "x": 71,
       "dependency": 1
     },
     {

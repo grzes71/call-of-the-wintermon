@@ -87,8 +87,10 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Title Display List"
         elif start == 0x6100:
             seg_type = "Unified DLI Double Buffers"
-        elif start == 0x6710:
-            seg_type = "Game Over / Victory State Handler"
+        elif start == 0x5C00:
+            seg_type = "Game Over / Victory Module (2 display lists + DLI chain + builder)"
+        elif start == 0xBC00:
+            seg_type = "Game Over Texts (generated compact data)"
         elif start == 0x6800:
             seg_type = "Render Lookup Tables + Intro Screen Handler"
         elif start == 0x69C0:
@@ -141,10 +143,15 @@ def check_memory(xex_path: Path) -> int:
     scene_tables_seg = next((s for s in segments if s[0] == 0xB300), None)
     if scene_tables_seg:
         _, st_end, st_size = scene_tables_seg
-        st_headroom = 0xBFFF - st_end
+        # The Game Over text segment sits in the same window, so its bytes are not
+        # available for more scenes.
+        go_text_seg = next((s for s in segments if s[0] == 0xBC00), None)
+        st_reserved = go_text_seg[2] if go_text_seg else 0
+        st_headroom = 0xBFFF - st_end - st_reserved
         print(
             f"Scene SoA Tables ($B300-$BFFF) used {st_size} bytes, "
             f"{st_headroom} bytes left for additional scenes"
+            + (f" (Game Over texts reserve {st_reserved} bytes)" if st_reserved else "")
         )
 
     # Dedicated check for Render Code / Sprites segment ($7A00-$7FFF) headroom before $8000

@@ -22,7 +22,9 @@ SCENE_TABLES = $B300    ; Scene SoA tables + pointer tables, in the RAM freed by
                         ; (tilesets end at $B21F, so 224 B of tile headroom is kept before the tables)
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
-GAMEOVER_ADDR = $6710   ; Game Over / Victory screen handler (~157 bytes: $6710-$67AD)
+GAMEOVER_CODE = $5C00    ; Game Over / Victory module: 2 display lists + DLI chain + builder
+                        ; (free tail of the $5000 block: runtime ends $5B94, title DL at $6000)
+GAMEOVER_TEXT = $BC00   ; Game Over texts (generated compact data, ~850 B)
 RENDER_TABLES = $6800   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) — reclaims $6800-$6AFF (MEM-006)
 INTRO_CODE_ADDR = $69C0 ; Intro screen handler: relocated out of the $2000 CODE block (which was down to 21 B of headroom)
 PMG_ADDR    = $6800     ; Player-Missile Graphics base: 2 KB aligned (PMBASE=$68, active memory $6B00-$6FFF)
@@ -462,11 +464,27 @@ title_dl_vs_addr
     icl 'engine/dli.asm'
 
 ; ==============================================================================
-; GAMEOVER SCENE MODULE ($6710)
-; Placed in free space between DLI buffers ($6706) and PMG ($6800)
+; GAMEOVER SCENE MODULE ($5C00) — two display lists + DLI chain + screen builder
+; Uses the free tail of the $5000 block (scene runtime ends at $5B94, title DL
+; starts at $6000): the whole module fits in the 1 KB page $5C00-$5FFF, so the
+; display lists can never cross a 1 KB boundary.
 ; ==============================================================================
-    org GAMEOVER_ADDR
+    org GAMEOVER_CODE
     icl 'scenes/gameover.asm'
+
+; ==============================================================================
+; GAMEOVER TEXT SEGMENT ($BC00) — generated compact text data
+; Kept out of the $5C00 page so the code + display lists stay under 1 KB (the
+; display lists must not cross a 1 KB boundary). The scene SoA tables start at
+; $B300 and grow with the scene count; they may use everything up to $BBFF.
+; ==============================================================================
+    org GAMEOVER_TEXT
+    icl 'gen/gameover_texts.inc'
+
+; The generated line count must match the display list size.
+.if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
+    .error "gen/gameover_texts.inc allows a different line count than the display list"
+.endif
 
 ; ==============================================================================
 ; RENDER LOOKUP TABLES SEGMENT ($6800)

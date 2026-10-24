@@ -45,8 +45,11 @@ Plik wynikowy `call_of_the_wintermon.xex` został zaprojektowany z myślą o kom
   - Licznik pozostałych żyć (serca o kodzie wewnętrznym 64).
   - Nazwa bieżącej sceny wyrównana do lewej od kolumny 4 (kolumny 0–2: życia, kolumna 3: odstęp, kolumny 38–39: licznik CD).
   - Ikony zebranych sekretów specjalnych (glif o kodzie 61) dopisywane od prawej strony linii; utrzymują się między scenami, a resetują dopiero przy nowej grze.
-- **Ekran końca gry**:
-  - Obsługa stanów `GAME_FAILED` (porażka) oraz `GAME_SUCCESS` (zwycięstwo) z dedykowanymi wierszami poezji i bezpiecznym powrotem do ekranu tytułowego.
+- **Ekran końca gry** (dwa warianty, osobne Display Listy i łańcuch DLI):
+  - `GAME_FAILED` → ekran FAILURE z nagłówkiem „GAME OVER”, `GAME_SUCCESS` → ekran SUCCESS z „VICTORY!”; wynik bierze się z istniejącej zmiennej `game_result`.
+  - Nagłówek generowany w `GAME_VRAM` tym samym generatorem 2bpp co napis na ekranie tytułowym (16 linii ANTIC D, każda z własnym LMS), kolory z DLI.
+  - Tekst w trybie ANTIC 2 (18 linii po 40 znaków) z plików `texts/failure.txt` / `texts/success.txt`, każda linia centrowana; puste linie zachowują pozycję.
+  - Kolory nagłówka i tekstu w jednej tablicy `gameover_colors` ustawianej przez DLI; naciśnięcie fire wraca do ekranu tytułowego.
 
 ---
 
