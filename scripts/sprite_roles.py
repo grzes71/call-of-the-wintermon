@@ -20,9 +20,21 @@ MAX_ENEMIES_PER_ZONE = 3
 MAX_ENEMIES_TOTAL = 6
 # Per-scene secret capacity: the engine sizes its SoA arrays (16 bytes per slot) with
 # MAX_SECRETS in engine/secrets.asm - keep both values in sync (asserted by tests).
-# The *design* limit is one secret per unique dependency per platform row, which the
-# scene validation below enforces; this constant is only a memory guard.
+# The *design* limit is the per-row channel budget (see MAX_CHANNELS_PER_ROW); this constant
+# is only a memory guard.
 MAX_SECRETS_TOTAL = 12
+
+# Hardware sprite channels available in one platform row (one zone slot) and per dependency
+# stage: Players 1..3 (COLPM1..3) plus the 5th player (the four missiles combined, COLPF3).
+# Enemies and secrets share that budget, so every row/stage must satisfy
+# `enemies_in_row + secrets_of_stage_in_row <= MAX_CHANNELS_PER_ROW`.
+MAX_CHANNELS_PER_ROW = 4
+
+# Rendering channel of a secret, authored per definition in scenes/definitions.json
+# ("channel": "player" | "missiles"). A missing field means SECRET_CHANNEL_MISSILES, i.e. the
+# behaviour before this feature existed (backward compatible).
+SECRET_CHANNEL_PLAYER = "player"
+SECRET_CHANNEL_MISSILES = "missiles"
 
 
 class SpriteValidationError(ValueError):
@@ -154,6 +166,30 @@ def resolve_object_sprite_id(
     )
 
 
+def secret_channel_of(cat_item: Any) -> str:
+    """Rendering channel of a secret definition: SECRET_CHANNEL_PLAYER or SECRET_CHANNEL_MISSILES.
+
+    Reads the ``channel`` field of scenes/definitions.json (dict or CatalogueItem). A missing
+    field means SECRET_CHANNEL_MISSILES, which is exactly the behaviour before this feature.
+    """
+    raw: Any = None
+    if isinstance(cat_item, dict):
+        raw = cat_item.get("channel")
+    elif cat_item is not None:
+        raw = getattr(cat_item, "channel", None)
+
+    if raw is None:
+        return SECRET_CHANNEL_MISSILES
+
+    value = str(raw).strip().lower()
+    if value in (SECRET_CHANNEL_PLAYER, SECRET_CHANNEL_MISSILES):
+        return value
+    raise SpriteValidationError(
+        f"Błąd katalogu: nieznany 'channel' sekretu '{raw}'. Dozwolone wartości: "
+        f"'{SECRET_CHANNEL_PLAYER}' (gracze P1..P3) lub '{SECRET_CHANNEL_MISSILES}' (5. gracz)."
+    )
+
+
 def determine_sprite_roles_from_scenes(
     manifest_path: Path,
     definitions_path: Path,
@@ -196,6 +232,10 @@ def determine_sprite_roles_from_scenes(
 
     enemy_usages: dict[int, list[str]] = {}
     secret_usages: dict[int, list[str]] = {}
+    # Secrets authored with "channel": "player" are packed as player bitmaps, so they are tracked
+    # separately: a sprite used by both channel kinds would need two packing formats (rejected).
+    secret_player_usages: dict[int, list[str]] = {}
+    secret_missiles_usages: dict[int, list[str]] = {}
 
     for fname in scene_files:
         sc_path = sdir / fname if not Path(fname).is_absolute() else Path(fname)
@@ -216,7 +256,16 @@ def determine_sprite_roles_from_scenes(
                 sid = resolve_object_sprite_id(
                     obj, secret_cats, sc_name, sc_path.name, registry=registry, sprites_path=spr_p
                 )
-                secret_usages.setdefault(sid, []).append(f"{sc_path.name}:obiekt_{oid}")
+                usage = f"{sc_path.name}:obiekt_{oid}"
+                secret_usages.setdefault(sid, []).append(usage)
+                try:
+                    cat_item = secret_cats.get(int(obj.get("definition_id", 0)))
+                except (TypeError, ValueError):
+                    cat_item = None
+                if secret_channel_of(cat_item) == SECRET_CHANNEL_PLAYER:
+                    secret_player_usages.setdefault(sid, []).append(usage)
+                else:
+                    secret_missiles_usages.setdefault(sid, []).append(usage)
 
     # Check for conflicts
     conflicting_ids = set(enemy_usages.keys()) & set(secret_usages.keys())
@@ -234,11 +283,27 @@ def determine_sprite_roles_from_scenes(
             + "\n".join(conflict_details)
         )
 
+    # A secret sprite may serve only one channel kind: player bitmaps and 5th-player missile
+    # bitmaps are packed differently, so one sprite cannot be used by both.
+    mixed_channel_ids = set(secret_player_usages) & set(secret_missiles_usages)
+    if mixed_channel_ids:
+        mixed_details = []
+        for cid in sorted(mixed_channel_ids):
+            cname = registry.id_to_name.get(cid, f"ID {cid}") if registry else f"ID {cid}"
+            mixed_details.append(
+                f"- Sprite '{cname}' (ID {cid}): kanal 'player' ({', '.join(secret_player_usages[cid])}) "
+                f"oraz kanal 'missiles' ({', '.join(secret_missiles_usages[cid])})"
+            )
+        raise SpriteRoleConflictError(
+            "Błąd kompilacji: ten sam sprite sekretu nie może być użyty jednocześnie na kanale "
+            "'player' i 'missiles' (wymagałby dwóch formatów bitmapy):\n" + "\n".join(mixed_details)
+        )
+
     roles: dict[int, str] = {}
     for sid in enemy_usages:
         roles[sid] = "player"
     for sid in secret_usages:
-        roles[sid] = "missiles"
+        roles[sid] = "player" if sid in secret_player_usages else "missiles"
 
     # Also register catalogue definitions as baseline roles if not yet used in any scene
     for e in enemy_cats.values():
@@ -265,7 +330,7 @@ def determine_sprite_roles_from_scenes(
             raw_s = s.get("sprite_id") if isinstance(s, dict) else getattr(s, "sprite_id", None)
             sid = int(raw_s) if raw_s is not None else None
         if sid is not None and sid not in roles:
-            roles[sid] = "missiles"
+            roles[sid] = "player" if secret_channel_of(s) == SECRET_CHANNEL_PLAYER else "missiles"
 
     return roles, enemy_usages, secret_usages
 

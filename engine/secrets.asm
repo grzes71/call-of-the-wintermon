@@ -1,18 +1,22 @@
 ; ==============================================================================
-; SECRETS.ASM — Secret Animation & Rendering Engine (5th Player / 4 Missiles)
+; SECRETS.ASM — Secret Animation & Rendering Engine
 ; Target: Atari 800XL / 65XE (MOS 6502)
 ;
-; In 5th player mode:
-; - 4 Missiles (M0..M3) are grouped into a single 8-pixel wide Player
-; - Positioned horizontally via HPOSM0..HPOSM3 (set by DLI per zone)
-; - Colored via COLPF3 (set by DLI per zone)
-; - Displayed using packed bytes in PMG_MISSILES ($6B00 + Y)
+; Every secret definition in scenes/definitions.json carries a rendering channel:
+; - "missiles" (default): 4 Missiles (M0..M3) grouped into a single 8-pixel wide
+;   Player (5th player), positioned via HPOSM0..HPOSM3 and coloured via COLPF3
+;   (both set by the DLI per zone), bitmap in PMG_MISSILES ($6B00 + Y)
+; - "player": one of Players 1..3 (HPOSP1..3 / COLPM1..3), bitmap in
+;   PMG_PLAYER1..3, sharing the channel budget of its platform row with the
+;   enemies (the compiler keeps enemies + secrets of one dependency stage
+;   within MAX_CHANNELS_PER_ROW = 4 channels per row)
 ; ==============================================================================
 
-; Per-scene secret capacity: sizes the SoA arrays below (16 bytes per slot). The
-; design limit is one secret per unique dependency per platform row (validated by the
-; compiler and the scene editor), so this is only a memory guard - it must match
-; MAX_SECRETS_TOTAL in scripts/sprite_roles.py (asserted by the test suite).
+; Per-scene secret capacity: sizes the SoA arrays below (17 bytes per slot). The
+; design limit is the per-row sprite channel budget (MAX_CHANNELS_PER_ROW = 4 per
+; platform row and dependency stage, validated by the compiler and the scene
+; editor), so this is only a memory guard - it must match MAX_SECRETS_TOTAL in
+; scripts/sprite_roles.py (asserted by the test suite).
 MAX_SECRETS = 12
 SECRETS_BLINK_STEP_FRAMES = 2   ; Frames each luminance step is held (2 = 2x slower blink pulse)
 
@@ -34,10 +38,15 @@ secrets_color       :MAX_SECRETS .byte 0
 secrets_zone        :MAX_SECRETS .byte 0
 secrets_blink       :MAX_SECRETS .byte 0
 secrets_special     :MAX_SECRETS .byte 0
+; The per-secret sprite channel (secrets_channel), the channel-aware PMG/HPOS writers
+; (secret_pmg_dst / secret_write_player / secret_clear_player) and the scene->state
+; channel copy (secrets_copy_channels) live in engine/secrets_channel.asm - the
+; $5000-$5BFF block is full, so that module uses the free tail of the $5C00 page.
 
 ; ==============================================================================
 ; RENDER SECRET FRAME
-; Copies a single frame of a secret's sprite into PMG_MISSILES memory.
+; Copies a single frame of a secret's sprite into its PMG buffer (Players 1..3 or
+; the missiles page, see secret_pmg_page).
 ; Input: X = secret index (0..MAX_SECRETS-1)
 ; Preserves: X
 ; ==============================================================================
@@ -66,13 +75,11 @@ secrets_special     :MAX_SECRETS .byte 0
     lda zp_temp_x
     sta zp_ptr_src+1
 
-    ; 2. Set zp_ptr_dst = PMG_MISSILES + secrets_pmg_y,x
-    lda #>PMG_MISSILES
-    sta zp_ptr_dst+1
-    lda secrets_pmg_y,x
-    sta zp_ptr_dst
+    ; 2. Set zp_ptr_dst = PMG page of this secret's channel + secrets_pmg_y,x
+    ;    (Players 1..3 for "player" definitions, PMG_MISSILES for the 5th player)
+    jsr secret_pmg_dst          ; X preserved
 
-    ; 3. Copy scanlines from frame into PMG_MISSILES
+    ; 3. Copy scanlines from frame into the PMG buffer
     ldy secrets_height,x
     dey
     bmi @done
@@ -88,15 +95,13 @@ secrets_special     :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; CLEAR SECRET ROWS
-; Clears the scanlines of a secret in PMG_MISSILES memory with $00.
+; Clears the scanlines of a secret in its PMG buffer (Player 1..3 or the missiles
+; page, see secret_pmg_page) with $00.
 ; Input: X = secret index (0..MAX_SECRETS-1)
 ; Preserves: X
 ; ==============================================================================
 .proc clear_secret_rows
-    lda #>PMG_MISSILES
-    sta zp_ptr_dst+1
-    lda secrets_pmg_y,x
-    sta zp_ptr_dst
+    jsr secret_pmg_dst          ; X preserved
 
     lda #0
     ldy secrets_height,x
@@ -113,8 +118,10 @@ secrets_special     :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; UPDATE SECRET HPOS
-; Updates DLI horizontal position (HPOSM0..M3), color (COLPF3), and PRIOR for
-; a secret's zone in both DLI double buffers.
+; Writes the horizontal position, colour and (5th player only) PRIOR of a secret
+; into the DLI tables of its zone, in both double buffers.
+; - channel 0..2 ("player" definitions): HPOSP1..3 + COLPM1..3
+; - channel 3 ("missiles", default): HPOSM0..M3 (x, x+2, x+4, x+6) + COLPF3
 ; Input: X = secret index (0..MAX_SECRETS-1)
 ; Preserves: X
 ; ==============================================================================
@@ -122,10 +129,28 @@ secrets_special     :MAX_SECRETS .byte 0
     clc
     lda secrets_x,x
     adc #48
-    sta zp_temp_a       ; M0 = 48 + X
+    sta zp_temp_a       ; HPOS = 48 + X
 
+    ; Pulsed (blink) or solid colour, shared by both channel kinds
+    lda secrets_blink,x
+    beq @solid_color
+    lda secrets_color,x
+    and #$F0
+    ora secrets_blink_lum
+    jmp @have_color
+@solid_color
+    lda secrets_color,x
+@have_color
+    sta zp_temp_x
+
+    lda secrets_channel,x
+    cmp #3
+    bcs @missiles        ; 5th player (default channel) keeps the missile path
+    jmp secret_write_player
+
+@missiles
     lda secrets_zone,x
-    beq @zone_0
+    beq @m_zone_0
 
     ; Zones 1..6: table offset = zone - 1 (0..5). The DLI applies slot `s` one platform row
     ; before the row the sprite stands on, so the values must be one zone early.
@@ -148,15 +173,7 @@ secrets_special     :MAX_SECRETS .byte 0
     sta dli_zone_hpos_m3,y
     sta dli_zone_hpos_m3+8,y
 
-    lda secrets_blink,x
-    beq @solid_color
-    lda secrets_color,x
-    and #$F0
-    ora secrets_blink_lum
-    jmp @apply_color
-@solid_color
-    lda secrets_color,x
-@apply_color
+    lda zp_temp_x
     sta dli_zone_secret_col,y
     sta dli_zone_secret_col+8,y
     lda #$11
@@ -164,7 +181,7 @@ secrets_special     :MAX_SECRETS .byte 0
     sta dli_zone_prior+8,y
     rts
 
-@zone_0
+@m_zone_0
     ; Zone 0: Buffer 0 (+0) and Buffer 1 (+1)
     lda zp_temp_a
     sta dli_z0_hpos_m0
@@ -180,15 +197,7 @@ secrets_special     :MAX_SECRETS .byte 0
     sta dli_z0_hpos_m3
     sta dli_z0_hpos_m3+1
 
-    lda secrets_blink,x
-    beq @solid_color_z0
-    lda secrets_color,x
-    and #$F0
-    ora secrets_blink_lum
-    jmp @apply_color_z0
-@solid_color_z0
-    lda secrets_color,x
-@apply_color_z0
+    lda zp_temp_x
     sta dli_z0_secret_col
     sta dli_z0_secret_col+1
     sta COLPF3
@@ -200,14 +209,20 @@ secrets_special     :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; CLEAR SECRET HPOS
-; Clears DLI horizontal position (HPOSM0..M3 = $FF) for a secret's zone in both
-; DLI double buffers.
+; Moves a secret off screen (HPOS = $FF) in both DLI double buffers: HPOSM0..M3
+; for the 5th player channel, HPOSP1..3 for a player channel.
 ; Input: X = secret index (0..MAX_SECRETS-1)
 ; Preserves: X
 ; ==============================================================================
 .proc clear_secret_hpos
+    lda secrets_channel,x
+    cmp #3
+    bcs @missiles        ; 5th player keeps the missile tables
+    jmp secret_clear_player
+
+@missiles
     lda secrets_zone,x
-    beq @zone_0
+    beq @m_zone_0
 
     sec
     sbc #1
@@ -224,7 +239,7 @@ secrets_special     :MAX_SECRETS .byte 0
     sta dli_zone_hpos_m3+8,y
     rts
 
-@zone_0
+@m_zone_0
     lda #$FF
     sta dli_z0_hpos_m0
     sta dli_z0_hpos_m0+1
@@ -457,7 +472,10 @@ secrets_special     :MAX_SECRETS .byte 0
     dey
     bpl @copy_spc
 
-    ; 14. Clear secrets_collected array
+    ; 14. Copy sprite channels (0..2 = Players 1..3, 3 = 5th player / missiles)
+    jsr secrets_copy_channels
+
+    ; 15. Clear secrets_collected array
     ldy secrets_count
     dey
     lda #0
@@ -466,7 +484,7 @@ secrets_special     :MAX_SECRETS .byte 0
     dey
     bpl @clr_coll
 
-    ; 14. Clear PMG rows for all scene secrets
+    ; 16. Clear PMG rows for all scene secrets
     ldx #0
 @clear_all_loop
     cpx secrets_count
@@ -480,7 +498,7 @@ secrets_special     :MAX_SECRETS .byte 0
     jmp @clear_all_loop
 
 @start_render
-    ; 15. Render Frame 0 and update DLI positions for active secrets
+    ; 17. Render Frame 0 and update DLI positions for active secrets
     ldx #0
 @init_render_loop
     cpx secrets_count
@@ -507,7 +525,7 @@ secrets_special     :MAX_SECRETS .byte 0
 
 ; ==============================================================================
 ; SECRETS UPDATE
-; Advances animation timer and updates PMG_MISSILES rows for active secrets.
+; Advances animation timer and updates PMG rows for active secrets.
 ; Called once per frame during active gameplay.
 ; ==============================================================================
 .proc secrets_update
@@ -531,27 +549,10 @@ secrets_special     :MAX_SECRETS .byte 0
     lda secrets_blink,x
     beq @next_blink
 
-    lda secrets_color,x
-    and #$F0
-    ora secrets_blink_lum
-    sta zp_temp_a
-
-    lda secrets_zone,x
-    beq @blink_z0
-
-    sec
-    sbc #1
-    tay
-    lda zp_temp_a
-    sta dli_zone_secret_col,y
-    sta dli_zone_secret_col+8,y
-    jmp @next_blink
-
-@blink_z0
-    lda zp_temp_a
-    sta dli_z0_secret_col
-    sta dli_z0_secret_col+1
-    sta COLPF3
+    ; Re-commit HPOS + the pulsed colour of this secret's channel. update_secret_hpos
+    ; recomputes the blink luminance, so player channels (COLPM1..3) and the 5th player
+    ; (COLPF3) stay in sync through one shared code path.
+    jsr update_secret_hpos
 
 @next_blink
     inx
@@ -618,3 +619,88 @@ secrets_special     :MAX_SECRETS .byte 0
 @done
     rts
 .endp
+
+; ==============================================================================
+; BLINK SECRET COLOUR
+; Commits a blinking secret's pulsing colour to the DLI colour table of its
+; channel, in both double buffers (5th player: dli_zone_secret_col / COLPF3,
+; player channels: dli_zone_col_p1..p3 / COLPM1..3).
+; Input: X = secret index (0..MAX_SECRETS-1), A = pulsing colour
+; Preserves: X
+; ==============================================================================
+.proc blink_secret_color
+    sta zp_temp_a
+
+    lda secrets_channel,x
+    cmp #3
+    bcc @player
+
+    lda secrets_zone,x
+    beq @m_zone_0
+
+    sec
+    sbc #1
+    tay
+    lda zp_temp_a
+    sta dli_zone_secret_col,y
+    sta dli_zone_secret_col+8,y
+    rts
+
+@m_zone_0
+    lda zp_temp_a
+    sta dli_z0_secret_col
+    sta dli_z0_secret_col+1
+    sta COLPF3
+    rts
+
+@player
+    lda secrets_zone,x
+    beq @p_zone_0
+
+    sec
+    sbc #1
+    tay
+    lda secrets_channel,x
+    bne @p_check_p2
+    lda zp_temp_a
+    sta dli_zone_col_p1,y
+    sta dli_zone_col_p1+8,y
+    rts
+
+@p_check_p2
+    cmp #1
+    bne @p_use_p3
+    lda zp_temp_a
+    sta dli_zone_col_p2,y
+    sta dli_zone_col_p2+8,y
+    rts
+
+@p_use_p3
+    lda zp_temp_a
+    sta dli_zone_col_p3,y
+    sta dli_zone_col_p3+8,y
+    rts
+
+@p_zone_0
+    lda secrets_channel,x
+    bne @p0_check_p2
+    lda zp_temp_a
+    sta dli_z0_col_p1
+    sta dli_z0_col_p1+1
+    rts
+
+@p0_check_p2
+    cmp #1
+    bne @p0_use_p3
+    lda zp_temp_a
+    sta dli_z0_col_p2
+    sta dli_z0_col_p2+1
+    rts
+
+@p0_use_p3
+    lda zp_temp_a
+    sta dli_z0_col_p3
+    sta dli_z0_col_p3+1
+    rts
+.endp
+

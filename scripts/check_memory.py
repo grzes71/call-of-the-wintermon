@@ -74,9 +74,9 @@ def check_memory(xex_path: Path) -> int:
         elif start in (0x2A30, 0x2B00):
             seg_type = "Tileset Metadata, Status Line & SFX Engine"
         elif start in (0x5000, 0x2C30, 0x2D00):
-            seg_type = "Scene DLI Data & Runtime Engine (secrets/enemies/sfx)"
+            seg_type = "Scene Runtime Engine (secrets/channel dispatch/enemies/sfx)"
         elif start == 0xB300:
-            seg_type = "Scene SoA Tables & Pointer Tables (grows with scene count)"
+            seg_type = "Scene SoA Tables, DLI Blocks & Pointer Tables (grows with scene count)"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
         elif start == 0x3F00:

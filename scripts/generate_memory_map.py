@@ -97,9 +97,9 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
     if start == 0x4000:
         return "Title VScroll VRAM & Text", "GRAPHICS", COLORS["GRAPHICS"], "Vertical scroll VRAM ($4000) + Centered text lines ($4078)"
     if start in (0x5000, 0x2C30, 0x2D00):
-        return "Scene DLI Data & Runtime Engine", "METADATA", COLORS["METADATA"], "Per-scene DLI blocks ($5000) + secrets/enemies/SFX runtime engine"
+        return "Scene Runtime Engine", "METADATA", COLORS["METADATA"], "Secrets (+sprite channel dispatch), enemies & SFX runtime engine"
     if start == 0xB300:
-        return "Scene SoA Tables", "METADATA", COLORS["METADATA"], "Scene definitions, platforms, objects & pointer tables (grows with the scene count)"
+        return "Scene SoA Tables & DLI Blocks", "METADATA", COLORS["METADATA"], "Scene definitions, platforms, objects, pointer tables & per-scene DLI blocks (grows with the scene count)"
     if start == 0x6000:
         return "Title Display List", "DLIST", COLORS["DLIST"], "Procedural 2bpp Title Display List with Mode 2 VScroller"
     if start == 0x6100:

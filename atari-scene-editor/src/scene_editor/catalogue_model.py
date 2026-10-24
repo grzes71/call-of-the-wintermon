@@ -52,6 +52,19 @@ class CorruptedCatalogueFileError(CatalogueError):
     pass
 
 
+# Secret rendering channel - mirrors SECRET_CHANNEL_* in scripts/sprite_roles.py:
+# "missiles" (default) draws the secret with the 5th player built from the four missiles,
+# "player" draws it on one of Players 1..3. Both kinds share the 4-channel budget of a
+# platform row (3 players + the 5th player), which the compiler enforces per row and stage.
+SECRET_CHANNEL_MISSILES = "missiles"
+SECRET_CHANNEL_PLAYER = "player"
+SECRET_CHANNELS = (SECRET_CHANNEL_PLAYER, SECRET_CHANNEL_MISSILES)
+
+# Sprite channel budget of one platform row and dependency stage: Players 1..3 plus the 5th
+# player (mirrors MAX_CHANNELS_PER_ROW in scene_model.py and scripts/sprite_roles.py).
+MAX_CHANNELS_PER_ROW = 4
+
+
 @dataclass
 class CatalogDefinition:
     """Base definition for an enemy or secret type in project catalogues."""
@@ -203,10 +216,16 @@ class EnemyDefinition(CatalogDefinition):
 @dataclass
 class SecretDefinition(CatalogDefinition):
     """Specific definition for a secret / collectible type."""
+
     dependency: Optional[int] = None
     # Editor-only flag marking a "special" secret. Its in-game behaviour is not
     # implemented yet - the flag is stored in the catalogue for later stages.
     special: bool = False
+    # Rendering channel: SECRET_CHANNEL_MISSILES (default, the 5th player built from the four
+    # missiles) or SECRET_CHANNEL_PLAYER (one of Players 1..3). The compiler packs the sprite
+    # for that channel and keeps every platform row inside the 4-channel budget
+    # (scripts/compile_scenes.py + engine/secrets_channel.asm).
+    channel: str = SECRET_CHANNEL_MISSILES
 
     def validate(self) -> None:
         super().validate()
@@ -229,12 +248,25 @@ class SecretDefinition(CatalogDefinition):
                 f"Secret 'special' must be a boolean, got {self.special!r}."
             )
 
+        if not isinstance(self.channel, str):
+            raise InvalidDefinitionError(
+                f"Secret 'channel' must be a string, got {self.channel!r}."
+            )
+        normalized = self.channel.strip().lower()
+        if normalized not in SECRET_CHANNELS:
+            raise InvalidDefinitionError(
+                f"Secret 'channel' must be one of {SECRET_CHANNELS}, got {self.channel!r}."
+            )
+        self.channel = normalized
+
     def to_dict(self) -> dict[str, Any]:
         d = super().to_dict()
         if self.dependency is not None:
             d["dependency"] = int(self.dependency)
         if self.special:
             d["special"] = True
+        if self.channel != SECRET_CHANNEL_MISSILES:
+            d["channel"] = self.channel
         return d
 
     @classmethod
@@ -263,6 +295,17 @@ class SecretDefinition(CatalogDefinition):
                 f"Secret 'special' must be a boolean, got {raw_special!r}."
             )
 
+        raw_channel = data.get("channel", SECRET_CHANNEL_MISSILES)
+        if not isinstance(raw_channel, str):
+            raise InvalidDefinitionError(
+                f"Secret 'channel' must be a string, got {raw_channel!r}."
+            )
+        channel = raw_channel.strip().lower()
+        if channel not in SECRET_CHANNELS:
+            raise InvalidDefinitionError(
+                f"Secret 'channel' must be one of {SECRET_CHANNELS}, got {raw_channel!r}."
+            )
+
         defn = cls(
             id=base_defn.id,
             name=base_defn.name,
@@ -273,6 +316,7 @@ class SecretDefinition(CatalogDefinition):
             sprite=base_defn.sprite,
             dependency=dep,
             special=raw_special,
+            channel=channel,
         )
         defn.validate()
         return defn
@@ -729,7 +773,14 @@ class ProjectCatalogues:
     def check_scene_secret_dependency_conflict(
         self, scene: Any, target_secret_id: int, new_dependency: Optional[int]
     ) -> tuple[bool, str]:
-        """Check if changing target_secret_id's dependency to new_dependency causes a row conflict on scene."""
+        """Check whether changing target_secret_id's dependency to new_dependency breaks the
+        sprite channel budget of the row(s) where that secret is placed.
+
+        Moving a secret to another dependency stage moves it into another stage's channel
+        budget, so the row must still fit: enemies + secrets of the new stage <= 4 channels
+        (3 players + the 5th player), with "player" secrets needing a free Player 1..3 channel
+        and only one "missiles" secret per stage.
+        """
         if scene is None or not hasattr(scene, "objects") or not hasattr(scene, "get_platform"):
             return True, ""
 
@@ -747,31 +798,50 @@ class ProjectCatalogues:
         if not target_objs:
             return True, ""
 
+        def _kind_of(def_raw: Any) -> str:
+            sec = self.get_secret(def_raw)
+            return str(getattr(sec, "channel", SECRET_CHANNEL_MISSILES) or SECRET_CHANNEL_MISSILES).lower()
+
+        target_kind = _kind_of(target_id_norm)
+        dep_name = self.get_dependency_display_name(new_dependency)
+        sec_name = self.secrets[target_id_norm].name if target_id_norm in self.secrets else f"ID {target_id_norm}"
+
         for obj in target_objs:
             plat = scene.get_platform(obj.platform_id)
             if plat is None:
                 continue
             row_y = plat.position.y
-            row_secrets = [
-                o for o in scene.get_row_objects(row_y, exclude_id=obj.id)
-                if getattr(o, "type", None) in ("secret", "treasure")
-            ]
-            for other in row_secrets:
+            row_objs = scene.get_row_objects(row_y, exclude_id=obj.id)
+            enemies = sum(1 for o in row_objs if getattr(o, "type", None) == "enemy")
+
+            players = 1 if target_kind == SECRET_CHANNEL_PLAYER else 0
+            missiles = 1 if target_kind != SECRET_CHANNEL_PLAYER else 0
+            conflicting_ids = [str(obj.id)]
+
+            for other in row_objs:
+                if getattr(other, "type", None) not in ("secret", "treasure"):
+                    continue
                 other_def_raw = getattr(other, "definition_id", None)
-                if self._safe_match_id(other_def_raw, target_id_norm):
-                    other_dep = new_dependency
+                other_dep = new_dependency if self._safe_match_id(other_def_raw, target_id_norm) else self.get_secret_dependency(other_def_raw)
+                if other_dep != new_dependency:
+                    continue
+                if _kind_of(other_def_raw) == SECRET_CHANNEL_PLAYER:
+                    players += 1
                 else:
-                    other_dep = self.get_secret_dependency(other_def_raw)
-                if other_dep == new_dependency:
-                    dep_name = self.get_dependency_display_name(new_dependency)
-                    sec_name = self.secrets[target_id_norm].name if target_id_norm in self.secrets else f"ID {target_id_norm}"
-                    return (
-                        False,
-                        f"Changing dependency of secret '{sec_name}' [{target_id_norm}] "
-                        f"to {dep_name} causes a conflict on platform row y={row_y}:\n"
-                        f"Secret '{obj.id}' and secret '{other.id}' would both have dependency {dep_name}.\n"
-                        f"Only one secret per unique dependency is allowed per row.",
-                    )
+                    missiles += 1
+                conflicting_ids.append(str(other.id))
+
+            free_players = max(0, (MAX_CHANNELS_PER_ROW - 1) - min(enemies, MAX_CHANNELS_PER_ROW - 1))
+            total = min(enemies, MAX_CHANNELS_PER_ROW - 1) + players + missiles
+            if missiles > 1 or players > free_players or total > MAX_CHANNELS_PER_ROW:
+                return (
+                    False,
+                    f"Changing dependency of secret '{sec_name}' [{target_id_norm}] to {dep_name} "
+                    f"causes a conflict on platform row y={row_y}: secrets {', '.join(conflicting_ids)} "
+                    f"would need {players} Player channel(s) and {missiles} 5th player channel(s) next to "
+                    f"{enemies} enemy(ies) - the row provides {MAX_CHANNELS_PER_ROW} sprite channels "
+                    f"(3 players + the 5th player).",
+                )
         return True, ""
 
     @staticmethod

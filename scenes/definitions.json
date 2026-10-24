@@ -92,11 +92,11 @@
       "name": "CD",
       "blink": true,
       "rgb_color": [
-        81,
-        128,
-        21
+        0,
+        12,
+        99
       ],
-      "atari_color": 216,
+      "atari_color": 128,
       "sprite_id": 6,
       "special": true
     },

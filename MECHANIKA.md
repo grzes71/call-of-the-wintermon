@@ -36,6 +36,8 @@ Przykład: Etap 1 to wszystkie Sekrety typu `Klucz`. Etap 2 to wszystkie Sekrety
 6. Jeśli scena nie ma żadnych zależności, wszystkie jej Sekrety są dostępne od początku i tworzą jeden etap.
 7. Scena jest ukończona dopiero po zebraniu wszystkich Sekretów ze wszystkich etapów.
 
+**Kanały sprite'ów (ograniczenie sprzętowe):** każdy wiersz platformy dysponuje czterema kanałami PMG - trzech graczy (P1..P3) oraz piątego gracza (cztery pociski złożone w jeden sprite 8 px). Wrogowie zawsze zajmują swoje kanały pierwsi, a Sekrety danego etapu wypełniają pozostałe, dlatego w jednym wierszu i jednym etapie zmieści się razem najwyżej cztery obiekty (wrogowie + Sekrety). Kanał wybiera się per definicja Sekretu w katalogu edytora: `player` (sprite gracza, 8 px, własny kolor `COLPM1..3`) albo `missiles` (domyślny, piąty gracz, `COLPF3`). Sprite jest pakowany pod wybrany kanał, więc jedna grafika nie może obsłużyć obu kanałów naraz.
+
 ### 2.3. Sekrety a śmierć gracza
 
 Śmierć nie cofa postępu w scenie:

@@ -17,9 +17,10 @@ TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: 
 GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
-SCENES_DATA = $5000     ; Scene DLI blocks + scene runtime engine (secrets/enemies/sfx): $5000-$5Fxx (4 KB budget, title DL starts at $6000)
-SCENE_TABLES = $B300    ; Scene SoA tables + pointer tables, in the RAM freed by the smaller tilesets
-                        ; (tilesets end at $B21F, so 224 B of tile headroom is kept before the tables)
+SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
+SCENE_TABLES = $B300    ; Scene SoA tables + pointer tables + per-scene DLI blocks, in the RAM freed
+                        ; by the smaller tilesets (tilesets end at $B21F, so 224 B of tile headroom
+                        ; is kept before the tables)
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_CODE = $5C00    ; Game Over / Victory module: 2 display lists + DLI chain + builder
@@ -320,14 +321,16 @@ title_vs_buf
     icl 'gen/intro_music.asm'
 
 ; ==============================================================================
-; SCENE DLI DATA & RUNTIME ENGINE SEGMENT ($5000)
-; Per-scene DLI blocks (241 B/scene) plus the scene runtime code (secrets,
-; enemies, SFX). The SoA tables moved to SCENE_TABLES so this block keeps its
-; 4 KB budget: 7 scenes need 7*241 + ~2,195 = 3,882 B.
+; SCENE RUNTIME ENGINE SEGMENT ($5000)
+; Scene runtime code (secrets + sprite channel dispatch, enemies, SFX). The
+; per-scene DLI blocks (241 B/scene) moved to the SCENE SoA TABLES segment
+; ($B300), because they grow with the scene count exactly like the SoA tables
+; and this block has to stay inside $5000-$5BFF (the Game Over module uses
+; $5C00-$5F09 and the Title display list starts at $6000).
 ; ==============================================================================
     org SCENES_DATA
-    icl 'gen/scenes_dli_data.asm'
     icl 'engine/secrets.asm'
+    icl 'engine/secrets_channel.asm'
     icl 'engine/enemies.asm'
     icl 'engine/sfx.asm'
 
@@ -567,15 +570,17 @@ tiles_trees_data
 tiles_data_end
 
 ; ==============================================================================
-; SCENE SoA TABLES SEGMENT ($B300, above the tilesets)
-; Scene definitions, platforms, objects and every pointer table the engine
-; indexes (`scene_elem_*_lo/hi`, `scene_secret_*`, ...). Placed in the RAM freed
-; by the smaller tilesets so the scene count can grow (7 scenes planned) without
-; competing for the $5000 block (DLI data + runtime) or the $6000 title DL.
+; SCENE DATA TABLES SEGMENT ($B300, above the tilesets)
+; Scene definitions, platforms, objects, every pointer table the engine indexes
+; (`scene_elem_*_lo/hi`, `scene_secret_*`, ...) and the per-scene DLI blocks
+; (241 B/scene). Placed in the RAM freed by the smaller tilesets so the scene
+; count can grow (7 scenes planned) without competing for the $5000 block
+; (runtime code) or the $6000 title DL.
 ; Budget: $B300-$BFFF = 3,328 bytes; keep the tilesets below $B300.
 ; ==============================================================================
     org SCENE_TABLES
     icl 'gen/scenes_data.asm'
+    icl 'gen/scenes_dli_data.asm'
 scene_tables_end
 
 ; ==============================================================================

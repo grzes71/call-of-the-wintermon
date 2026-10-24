@@ -43,6 +43,7 @@ from scripts.sprite_links import (
 )
 from scripts.sprite_roles import (
     SpriteRoleConflictError,
+    SpriteValidationError,
     determine_sprite_roles_from_scenes,
 )
 from scene_editor.catalogue_model import EnemyDefinition, ProjectCatalogues, SecretDefinition
@@ -668,3 +669,113 @@ def test_resolver_preserves_secret_special_flag(tmp_path: Path):
     resolved = json.loads(out_path.read_text(encoding="utf-8"))
     assert resolved["secrets"][0]["sprite_id"] == 8
     assert resolved["secrets"][0]["special"] is True
+
+
+# -----------------------------------------------------------------------------
+# 12. Kanał sekretu z definicji wybiera format pakowania sprite'a
+# -----------------------------------------------------------------------------
+def _channel_fixture(tmp_path: Path, secrets_defs: list[dict[str, Any]], objects: list[dict[str, Any]]) -> tuple[Path, Path, dict[str, Any]]:
+    """Zapisuje sprite'y, definitions.json, scenę i manifest; zwraca ścieżki i surowe sprite'y."""
+    spr_json = {
+        "sprites": [
+            {"id": 8, "description": "Gold Key", "width": 8, "height": 4,
+             "frames": [{"pixels": ["11000011", "00111100", "01011010", "11111111"]}]},
+            {"id": 9, "description": "Skull", "width": 8, "height": 4,
+             "frames": [{"pixels": ["00111100", "01111110", "01111110", "00111100"]}]},
+            {"id": 10, "description": "CD", "width": 8, "height": 4,
+             "frames": [{"pixels": ["11111111", "10000001", "10000001", "11111111"]}]},
+        ]
+    }
+    spr_path = tmp_path / "objects.sprite.json"
+    spr_path.write_text(json.dumps(spr_json), encoding="utf-8")
+
+    defs_path = tmp_path / "definitions.json"
+    defs_path.write_text(json.dumps({"enemies": [], "secrets": secrets_defs, "platform_profiles": []}), encoding="utf-8")
+
+    scene_data = {
+        "scene": {"name": "Channels", "tileset": "trees", "background_color": 0},
+        "platforms": [
+            {"id": "p1", "type": "ground", "position": {"x": 0, "y": 24}, "width": 160, "height": 16},
+            {"id": "p2", "type": "ground", "position": {"x": 0, "y": 56}, "width": 160, "height": 16},
+        ],
+        "objects": objects,
+    }
+    (tmp_path / "scene1.json").write_text(json.dumps(scene_data), encoding="utf-8")
+    man_file = tmp_path / "scenes.json"
+    man_file.write_text(json.dumps({"scenes": ["scene1.json"]}), encoding="utf-8")
+    return spr_path, defs_path, spr_json
+
+
+def test_secret_channel_selects_sprite_packing_format(tmp_path: Path):
+    """'channel' z definitions.json: 'player' -> bitmapa gracza, 'missiles'/brak -> 5. gracz."""
+    secrets_defs = [
+        {"id": 1, "name": "Player Key", "sprite_id": 8, "atari_color": 0x1A, "channel": "player"},
+        {"id": 2, "name": "Missile Skull", "sprite_id": 9, "atari_color": 0xFC, "channel": "missiles"},
+        {"id": 3, "name": "Default CD", "sprite_id": 10, "atari_color": 0x3C},  # brak 'channel'
+    ]
+    objects = [
+        {"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 20},
+        {"id": 2, "type": "secret", "definition_id": 2, "platform_id": "p2", "x": 60},
+    ]
+    spr_path, defs_path, spr_json = _channel_fixture(tmp_path, secrets_defs, objects)
+    man_file = tmp_path / "scenes.json"
+
+    # 'channel' musi przetrwać kroki powiązania sprite'ów (resolved -> compile_sprites/scenes)
+    resolved_path = tmp_path / "definitions_resolved.json"
+    resolve_definitions(defs_path, spr_path, resolved_path)
+    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+    assert [s.get("channel") for s in resolved["secrets"]] == ["player", "missiles", None]
+
+    roles, _, _ = determine_sprite_roles_from_scenes(
+        man_file, resolved_path, scenes_dir=tmp_path, sprites_path=spr_path
+    )
+    assert roles[8] == "player"
+    assert roles[9] == "missiles"
+    assert roles[10] == "missiles"  # brak 'channel' = zachowanie sprzed zmiany
+
+    parsed = parse_sprites_json(
+        spr_path, mode="missiles", scenes_manifest_path=man_file, definitions_path=resolved_path
+    )
+    assert parsed[8].format == "player"
+    assert parsed[9].format == "missiles"
+    assert parsed[10].format == "missiles"
+    assert parsed[8].frames[0].rows == [
+        pack_row_to_player_bitmap(r) for r in spr_json["sprites"][0]["frames"][0]["pixels"]
+    ]
+    assert parsed[9].frames[0].rows == [
+        pack_row_to_5th_player_missiles(r) for r in spr_json["sprites"][1]["frames"][0]["pixels"]
+    ]
+
+
+
+def test_secret_channel_conflict_when_one_sprite_needs_both_formats(tmp_path: Path):
+    """Ten sam sprite użyty przez sekret 'player' i 'missiles' -> SpriteRoleConflictError."""
+    secrets_defs = [
+        {"id": 1, "name": "Player Key", "sprite_id": 8, "atari_color": 0x1A, "channel": "player"},
+        {"id": 2, "name": "Missile Key", "sprite_id": 8, "atari_color": 0x1A, "channel": "missiles"},
+    ]
+    objects = [
+        {"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 20},
+        {"id": 2, "type": "secret", "definition_id": 2, "platform_id": "p2", "x": 60},
+    ]
+    spr_path, defs_path, _ = _channel_fixture(tmp_path, secrets_defs, objects)
+    man_file = tmp_path / "scenes.json"
+
+    with pytest.raises(SpriteRoleConflictError, match="nie może być użyty jednocześnie na kanale"):
+        determine_sprite_roles_from_scenes(
+            man_file, defs_path, scenes_dir=tmp_path, sprites_path=spr_path
+        )
+
+
+def test_secret_channel_rejects_unknown_value(tmp_path: Path):
+    """Nieznana wartość 'channel' -> SpriteValidationError z listą dozwolonych wartości."""
+    secrets_defs = [{"id": 1, "name": "Key", "sprite_id": 8, "atari_color": 0x1A, "channel": "fifth"}]
+    objects = [{"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 20}]
+    spr_path, defs_path, _ = _channel_fixture(tmp_path, secrets_defs, objects)
+    man_file = tmp_path / "scenes.json"
+
+    with pytest.raises(SpriteValidationError, match="nieznany 'channel' sekretu"):
+        determine_sprite_roles_from_scenes(
+            man_file, defs_path, scenes_dir=tmp_path, sprites_path=spr_path
+        )
+

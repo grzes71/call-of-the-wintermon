@@ -19,32 +19,44 @@ from typing import Any
 
 try:
     from scripts.sprite_roles import (
+        MAX_CHANNELS_PER_ROW,
         MAX_ZONE_SPRITE_HEIGHT,
         MAX_ENEMIES_PER_ZONE,
         MAX_ENEMIES_TOTAL,
         MAX_SECRETS_TOTAL,
+        SECRET_CHANNEL_MISSILES,
+        SECRET_CHANNEL_PLAYER,
         SpriteValidationError,
         resolve_object_sprite_id,
+        secret_channel_of,
     )
 except ImportError:
     try:
         from sprite_roles import (
+            MAX_CHANNELS_PER_ROW,
             MAX_ZONE_SPRITE_HEIGHT,
             MAX_ENEMIES_PER_ZONE,
             MAX_ENEMIES_TOTAL,
             MAX_SECRETS_TOTAL,
+            SECRET_CHANNEL_MISSILES,
+            SECRET_CHANNEL_PLAYER,
             SpriteValidationError,
             resolve_object_sprite_id,
+            secret_channel_of,
         )
     except ImportError:
         sys.path.insert(0, str(Path(__file__).parent.resolve()))
         from sprite_roles import (
+            MAX_CHANNELS_PER_ROW,
             MAX_ZONE_SPRITE_HEIGHT,
             MAX_ENEMIES_PER_ZONE,
             MAX_ENEMIES_TOTAL,
             MAX_SECRETS_TOTAL,
+            SECRET_CHANNEL_MISSILES,
+            SECRET_CHANNEL_PLAYER,
             SpriteValidationError,
             resolve_object_sprite_id,
+            secret_channel_of,
         )
 
 try:
@@ -178,6 +190,8 @@ class CatalogueItem:
     special: bool = False
     sprite_id: Optional[int] = None
     sprite: Optional[str] = None
+    # Secrets only: rendering channel, "player" (P1..P3) or "missiles" (5th player).
+    channel: str = SECRET_CHANNEL_MISSILES
 
 
 @dataclass
@@ -228,6 +242,9 @@ class SceneObjectData:
     dependency_id: int
     atari_color: int
     blink: bool
+    # Sprite channel in its platform row: 0..2 = Players 1..3, 3 = 5th player (missiles).
+    # Enemies always use 0..2; secrets use the channel their definition asks for.
+    channel: int = 3
 
 
 @dataclass
@@ -249,6 +266,11 @@ class SceneSecretData:
     zone_idx: int = 0
     blink: bool = False
     special: bool = False
+    # Sprite channel in its platform row: 0..2 = Players 1..3, 3 = 5th player (missiles).
+    channel: int = 3
+    # Channel kind requested by the definition ("player" or "missiles"); assigned in the
+    # channel-budget pass that runs after all objects are parsed.
+    channel_kind: str = SECRET_CHANNEL_MISSILES
 
 
 @dataclass
@@ -571,6 +593,25 @@ def validate_scene_dli_platforms(
                 )
 
 
+def zone_channel_occupants(objs: list[SceneObjectData]) -> list[Optional[SceneObjectData]]:
+    """Occupant of each sprite channel (0..2 = Players 1..3, 3 = 5th player) in one platform row.
+
+    Enemies are on screen in every dependency stage, so they own their channel; a secret only
+    appears when its stage unlocks, so the compiled DLI tables carry the *initially active*
+    secrets (dependency 0) and the runtime patches the channel for every later stage.
+    """
+    occupants: list[Optional[SceneObjectData]] = [None] * MAX_CHANNELS_PER_ROW
+    for obj in objs:
+        if obj.type_code == 0 and obj.channel < MAX_CHANNELS_PER_ROW - 1:
+            occupants[obj.channel] = obj
+    for obj in objs:
+        if obj.type_code != 1 or obj.dependency_id != 0:
+            continue
+        if 0 <= obj.channel < MAX_CHANNELS_PER_ROW and occupants[obj.channel] is None:
+            occupants[obj.channel] = obj
+    return occupants
+
+
 def compile_scene_dli_data(
     elements: list[SceneElementData],
     platforms: list[PlatformData],
@@ -704,32 +745,29 @@ def compile_scene_dli_data(
 
     # Zone 0 initial values (applied in VBLANK before Pas 0): objects of the first platform row
     # (y = 8), whose sprites are already visible above that row.
-    z0_objs = zone_objects[0]
-    z0_enemies = [o for o in z0_objs if o.type_code == 0][:3]
-    z0_secrets = [o for o in z0_objs if o.type_code == 1 and o.dependency_id == 0][:1]
+    z0_channels = zone_channel_occupants(zone_objects[0])
+    z0_occ_p1, z0_occ_p2, z0_occ_p3, z0_occ_m = z0_channels
 
-    z0_hpos_p1 = min(255, max(0, 48 + z0_enemies[0].x)) if len(z0_enemies) > 0 else 0
-    z0_col_p1  = z0_enemies[0].atari_color if len(z0_enemies) > 0 else 0
-    z0_hpos_p2 = min(255, max(0, 48 + z0_enemies[1].x)) if len(z0_enemies) > 1 else 0
-    z0_col_p2  = z0_enemies[1].atari_color if len(z0_enemies) > 1 else 0
-    z0_hpos_p3 = min(255, max(0, 48 + z0_enemies[2].x)) if len(z0_enemies) > 2 else 0
-    z0_col_p3  = z0_enemies[2].atari_color if len(z0_enemies) > 2 else 0
+    z0_hpos_p1 = min(255, max(0, 48 + z0_occ_p1.x)) if z0_occ_p1 else 0
+    z0_col_p1  = z0_occ_p1.atari_color if z0_occ_p1 else 0
+    z0_hpos_p2 = min(255, max(0, 48 + z0_occ_p2.x)) if z0_occ_p2 else 0
+    z0_col_p2  = z0_occ_p2.atari_color if z0_occ_p2 else 0
+    z0_hpos_p3 = min(255, max(0, 48 + z0_occ_p3.x)) if z0_occ_p3 else 0
+    z0_col_p3  = z0_occ_p3.atari_color if z0_occ_p3 else 0
 
-    if z0_secrets:
-        sec = z0_secrets[0]
-        z0_hpos_m0 = min(255, max(0, 48 + sec.x))
-        z0_hpos_m1 = min(255, max(0, 48 + sec.x + 2))
-        z0_hpos_m2 = min(255, max(0, 48 + sec.x + 4))
-        z0_hpos_m3 = min(255, max(0, 48 + sec.x + 6))
-        z0_secret_col = sec.atari_color
-        z0_prior = 0x11
+    if z0_occ_m is not None:
+        z0_hpos_m0 = min(255, max(0, 48 + z0_occ_m.x))
+        z0_hpos_m1 = min(255, max(0, 48 + z0_occ_m.x + 2))
+        z0_hpos_m2 = min(255, max(0, 48 + z0_occ_m.x + 4))
+        z0_hpos_m3 = min(255, max(0, 48 + z0_occ_m.x + 6))
+        z0_secret_col = z0_occ_m.atari_color
     else:
         z0_hpos_m0 = 0xFF
         z0_hpos_m1 = 0xFF
         z0_hpos_m2 = 0xFF
         z0_hpos_m3 = 0xFF
         z0_secret_col = 0
-        z0_prior = 0x11
+    z0_prior = 0x11
 
     # Zones 1..6 (set up in Faza C of pas 0..5, 6 entries)
     zone_hpos_p1 = [0] * 6
@@ -746,34 +784,29 @@ def compile_scene_dli_data(
     zone_secret_col = [0] * 6
     zone_prior = [0x11] * 6
 
+    zone_hpos_players = (zone_hpos_p1, zone_hpos_p2, zone_hpos_p3)
+    zone_col_players = (zone_col_p1, zone_col_p2, zone_col_p3)
+
     for z_idx in range(6):
         # Slot z_idx carries the objects of the platform row whose pas is z_idx + 1, so their
         # sprites are set up one zone before the row they stand on.
-        target_zone = z_idx + 1
-        objs = zone_objects[target_zone]
-        enemies = [o for o in objs if o.type_code == 0][:3]
-        secrets = [o for o in objs if o.type_code == 1 and o.dependency_id == 0][:1]
+        occupants = zone_channel_occupants(zone_objects[z_idx + 1])
 
-        if len(enemies) > 0:
-            zone_hpos_p1[z_idx] = min(255, max(0, 48 + enemies[0].x))
-            zone_col_p1[z_idx]  = enemies[0].atari_color
-        if len(enemies) > 1:
-            zone_hpos_p2[z_idx] = min(255, max(0, 48 + enemies[1].x))
-            zone_col_p2[z_idx]  = enemies[1].atari_color
-        if len(enemies) > 2:
-            zone_hpos_p3[z_idx] = min(255, max(0, 48 + enemies[2].x))
-            zone_col_p3[z_idx]  = enemies[2].atari_color
+        for channel in range(MAX_CHANNELS_PER_ROW - 1):
+            occupant = occupants[channel]
+            if occupant is None:
+                continue
+            zone_hpos_players[channel][z_idx] = min(255, max(0, 48 + occupant.x))
+            zone_col_players[channel][z_idx] = occupant.atari_color
 
-        if secrets:
-            s = secrets[0]
-            zone_hpos_m0[z_idx] = min(255, max(0, 48 + s.x))
-            zone_hpos_m1[z_idx] = min(255, max(0, 48 + s.x + 2))
-            zone_hpos_m2[z_idx] = min(255, max(0, 48 + s.x + 4))
-            zone_hpos_m3[z_idx] = min(255, max(0, 48 + s.x + 6))
-            zone_secret_col[z_idx] = s.atari_color
-            zone_prior[z_idx] = 0x11
-        else:
-            zone_prior[z_idx] = 0x11
+        missile = occupants[MAX_CHANNELS_PER_ROW - 1]
+        if missile is not None:
+            zone_hpos_m0[z_idx] = min(255, max(0, 48 + missile.x))
+            zone_hpos_m1[z_idx] = min(255, max(0, 48 + missile.x + 2))
+            zone_hpos_m2[z_idx] = min(255, max(0, 48 + missile.x + 4))
+            zone_hpos_m3[z_idx] = min(255, max(0, 48 + missile.x + 6))
+            zone_secret_col[z_idx] = missile.atari_color
+        zone_prior[z_idx] = 0x11
 
     compiled_dli = SceneDliCompiledData(
         hpos_p1=hpos_p1,
@@ -938,6 +971,7 @@ def load_catalogues(
                     special=bool(item.get("special", False)),
                     sprite_id=sid,
                     sprite=sname,
+                    channel=secret_channel_of(item),
                 )
             return enemies, secrets
         except Exception as exc:
@@ -985,6 +1019,7 @@ def load_catalogues(
                     dependency=dep,
                     special=bool(item.get("special", False)),
                     sprite_id=item.get("sprite_id"),
+                    channel=secret_channel_of(item),
                 )
         except Exception as exc:
             print(f"Warning: Failed loading secrets catalog ({exc})", file=sys.stderr)
@@ -1254,7 +1289,6 @@ def parse_scene_json(
     objects: list[SceneObjectData] = []
     scene_secrets: list[SceneSecretData] = []
     scene_enemies: list[SceneEnemyData] = []
-    row_secret_deps: dict[int, dict[Optional[int], int]] = {}
     zone_enemy_counts: dict[int, int] = {}
 
     for obj in raw_objects:
@@ -1262,6 +1296,9 @@ def parse_scene_json(
         otype_str = str(obj.get("type", "enemy")).lower()
         is_secret = otype_str in ("secret", "treasure")
         type_code = 1 if is_secret else 0
+        # Sprite channel in this row: enemies take Players 1..3 in order (set below), secrets get
+        # theirs from the channel-budget pass that runs after all objects are parsed.
+        obj_channel = MAX_CHANNELS_PER_ROW - 1
         def_id = int(obj.get("definition_id", 1))
         plat_id = str(obj.get("platform_id", ""))
         plat_idx = plat_id_to_idx.get(plat_id, 0)
@@ -1291,21 +1328,11 @@ def parse_scene_json(
                 dep_val = cat_item.dependency
             dep_id = int(dep_val) if dep_val is not None else 0
 
-            # Validate unique secret dependency per platform row
-            deps_on_row = row_secret_deps.setdefault(plat_y, {})
-            if dep_val in deps_on_row:
-                first_oid = deps_on_row[dep_val]
-                dep_desc = (
-                    f"'{secrets[dep_val].name}' (ID {dep_val})"
-                    if (dep_val is not None and dep_val in secrets)
-                    else ("None" if dep_val is None else f"ID {dep_val}")
-                )
-                raise ValueError(
-                    f"Scene '{name}' ({scene_file.name}) violates secret row constraint at platform row y={plat_y}: "
-                    f"conflict between secret '{first_oid}' and secret '{oid}' (both have dependency {dep_desc}). "
-                    f"Only one secret per unique dependency is allowed per row."
-                )
-            deps_on_row[dep_val] = oid
+            # Rendering channel comes from the definition ("player" or "missiles"). The channel
+            # budget (MAX_CHANNELS_PER_ROW sprite channels per platform row and dependency stage)
+            # is enforced in the assignment pass below, because it also depends on the enemies
+            # that stand in the same row.
+            channel_kind = secret_channel_of(cat_item)
 
             spr_id = resolve_object_sprite_id(obj, secrets, name, scene_file.name, sprites_dict=sprites)
             if sprites and spr_id not in sprites:
@@ -1326,13 +1353,15 @@ def parse_scene_json(
                     f"co przekracza dopuszczalną wysokość strefy {MAX_ZONE_SPRITE_HEIGHT} px (exceeds maximum safe height)."
                 )
 
-            # Verify role against sprite manifest / definition format
+            # Verify role against sprite manifest / definition format: the packing format must
+            # match the channel the definition asks for (player bitmap vs 5th-player missiles).
             if spr_def is not None:
                 spr_fmt = getattr(spr_def, "format", "missiles")
-                if spr_fmt != "missiles":
+                if spr_fmt != channel_kind:
                     raise ValueError(
                         f"Błąd w scenie '{name}' ({scene_file.name}): sekret '{oid}' wskazuje sprite ID {spr_id} "
-                        f"skompilowany w formacie '{spr_fmt}' (Player), a sekrety wymagają formatu 'missiles'."
+                        f"skompilowany w formacie '{spr_fmt}', a zdefiniowany kanał '{channel_kind}' wymaga "
+                        f"formatu '{channel_kind}'."
                     )
 
             # Platform base scanline in PMG: 32 + (plat_y * 2) (its first visible scanline;
@@ -1361,6 +1390,7 @@ def parse_scene_json(
                     zone_idx=zid,
                     blink=blink,
                     special=special,
+                    channel_kind=channel_kind,
                 )
             )
         else:
@@ -1421,6 +1451,7 @@ def parse_scene_json(
                     f"w strefie {zid} (próba dodania wroga '{oid}')."
                 )
             zone_enemy_counts[zid] = ch + 1
+            obj_channel = ch
 
             scene_enemies.append(
                 SceneEnemyData(
@@ -1458,6 +1489,7 @@ def parse_scene_json(
                 dependency_id=dep_id,
                 atari_color=color,
                 blink=blink,
+                channel=obj_channel,
             )
         )
     if len(scene_enemies) > MAX_ENEMIES_TOTAL:
@@ -1481,6 +1513,41 @@ def parse_scene_json(
             f"Błąd w scenie '{name}' ({scene_file.name}): na każdej scenie włączanej do gry "
             f"powinien być ustawiony co najmniej jeden sekret (znaleziono {len(scene_secrets)})."
         )
+
+    # 3b. Sprite channel budget. Every platform row (= one DLI zone slot) provides
+    # MAX_CHANNELS_PER_ROW channels: Players 1..3 plus the 5th player (the four missiles combined).
+    # Enemies are on screen in every stage, so they claim their channels first; secrets of one
+    # dependency stage fill the remaining ones. Different stages may reuse a channel because they
+    # are never visible at the same time (the runtime patches the channel when a stage unlocks).
+    enemy_channels_by_zone: dict[int, set[int]] = {}
+    for enemy in scene_enemies:
+        enemy_channels_by_zone.setdefault(enemy.zone_idx, set()).add(enemy.channel)
+
+    channels_used_by_stage: dict[tuple[int, int], set[int]] = {}
+    for secret in scene_secrets:
+        row_y = 8 + secret.zone_idx * 16
+        used = set(enemy_channels_by_zone.get(secret.zone_idx, set()))
+        used |= channels_used_by_stage.get((secret.zone_idx, secret.dep_id), set())
+        if secret.channel_kind == SECRET_CHANNEL_PLAYER:
+            candidates = range(MAX_CHANNELS_PER_ROW - 1)   # Players 1..3
+        else:
+            candidates = (MAX_CHANNELS_PER_ROW - 1,)       # 5th player (missiles)
+        channel = next((c for c in candidates if c not in used), None)
+        if channel is None:
+            raise ValueError(
+                f"Błąd w scenie '{name}' ({scene_file.name}): wiersz platformy y={row_y} przekracza budżet "
+                f"kanałów sprite'ów dla etapu (dependency) {secret.dep_id}: zajęte kanały {sorted(used)}/"
+                f"{MAX_CHANNELS_PER_ROW} (wrogowie + sekrety tego etapu), a sekret '{secret.id}' wymaga kanału "
+                f"'{secret.channel_kind}'. Użyj innego wiersza, zmień 'channel' definicji sekretu albo usuń wroga."
+            )
+        secret.channel = channel
+        channels_used_by_stage.setdefault((secret.zone_idx, secret.dep_id), set()).add(channel)
+
+    # The DLI compiler reads the generic object list, so mirror the assignment there.
+    secret_channel_by_id = {s.id: s.channel for s in scene_secrets}
+    for obj in objects:
+        if obj.type_code == 1 and obj.id in secret_channel_by_id:
+            obj.channel = secret_channel_by_id[obj.id]
 
     # Player start position and color (defaults to X=20, Y=68, Color=$98 if not defined)
     player_spawn_raw = data.get("player_spawn") or scene_meta.get("player_spawn")
@@ -1704,6 +1771,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(1 if s.blink else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_special")
             lines.append("    .byte " + ", ".join(str(1 if s.special else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_channel")
+            lines.append("    .byte " + ", ".join(str(s.channel) for s in sc.secrets))
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
@@ -1719,6 +1788,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_zone       .byte 0",
                 f"scene_{sym}_secret_blink      .byte 0",
                 f"scene_{sym}_secret_special    .byte 0",
+                f"scene_{sym}_secret_channel    .byte 0",
             ])
         lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
         if sc.enemies:
@@ -1912,6 +1982,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_special" for sc in scenes),
         "scene_secret_special_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_special" for sc in scenes),
+        "scene_secret_channel_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_channel" for sc in scenes),
+        "scene_secret_channel_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_channel" for sc in scenes),
         "",
         "; --- Enemy Pointer Tables ---",
         "scene_enemy_def_id_lo",

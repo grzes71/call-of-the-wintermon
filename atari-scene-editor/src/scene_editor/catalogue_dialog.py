@@ -45,6 +45,8 @@ from .catalogue_model import (
     PlatformColorProfile,
     ProfileInUseError,
     ProjectCatalogues,
+    SECRET_CHANNEL_MISSILES,
+    SECRET_CHANNEL_PLAYER,
     SecretDefinition,
 )
 from .scene_model import OBJECT_TYPE_ENEMY, OBJECT_TYPE_SECRET, Scene
@@ -271,6 +273,7 @@ class CataloguesDialog(QDialog):
 
         # Secret-only "special" flag (behaviour implemented in a later stage)
         special_check: Optional[QCheckBox] = None
+        channel_combo: Optional[QComboBox] = None
         if not is_enemy:
             special_check = QCheckBox("Special (specjalny sekret)")
             special_check.setChecked(False)
@@ -279,6 +282,20 @@ class CataloguesDialog(QDialog):
                 "sound (3 notes instead of 2). Saved in the catalogue as \"special\": true."
             )
             form_layout.addRow("", special_check)
+
+            # Sprite channel: Players 1..3 ("player") or the 5th player ("missiles", default)
+            channel_combo = QComboBox()
+            channel_combo.addItem("5th player (missiles) - domyślny", SECRET_CHANNEL_MISSILES)
+            channel_combo.addItem("Players 1..3 (player sprite)", SECRET_CHANNEL_PLAYER)
+            channel_combo.setToolTip(
+                "Kanał PMG, na którym gra rysuje ten sekret.\n"
+                "- 5th player (missiles): domyślny; sprajt pakowany jako 4 pociski (8 px).\n"
+                "- Players 1..3: zwykły sprite gracza (8 px, własny kolor COLPM1..3); sprite jest "
+                "pakowany inaczej, więc ten sam sprite nie może obsłużyć obu kanałów.\n"
+                "Każdy wiersz platformy ma 4 kanały: 3 graczy + 5. gracz; wrogowie zajmują je pierwsi, "
+                "a w jednym etapie (dependency) zmieści się tyle sekretów, ile wolnych kanałów."
+            )
+            form_layout.addRow("Sprite channel (PMG):", channel_combo)
 
         # Sprite mapping option (from Sprite Studio)
         sprite_combo = QComboBox()
@@ -353,6 +370,7 @@ class CataloguesDialog(QDialog):
             self.secret_atari_hex_lbl = atari_hex_lbl
             self.secret_blink_check = blink_check
             self.secret_special_check = special_check
+            self.secret_channel_combo = channel_combo
             self.secret_sprite_combo = sprite_combo
             self.secret_btn_save = btn_save
             self.secret_btn_delete = btn_delete
@@ -798,6 +816,10 @@ class CataloguesDialog(QDialog):
 
         self.secret_blink_check.setChecked(defn.blink)
         self.secret_special_check.setChecked(bool(getattr(defn, "special", False)))
+        if getattr(self, "secret_channel_combo", None) is not None:
+            channel = str(getattr(defn, "channel", SECRET_CHANNEL_MISSILES) or SECRET_CHANNEL_MISSILES).lower()
+            index = self.secret_channel_combo.findData(channel)
+            self.secret_channel_combo.setCurrentIndex(index if index >= 0 else 0)
         self._populate_sprite_combo(
             getattr(self, "secret_sprite_combo", None),
             getattr(defn, "sprite", None) or getattr(defn, "sprite_id", None),
@@ -830,6 +852,8 @@ class CataloguesDialog(QDialog):
         self._update_atari_enabled(False, False)
         self.secret_blink_check.setChecked(False)
         self.secret_special_check.setChecked(False)
+        if getattr(self, "secret_channel_combo", None) is not None:
+            self.secret_channel_combo.setCurrentIndex(0)  # default: 5th player (missiles)
         self._populate_sprite_combo(getattr(self, "secret_sprite_combo", None), None)
         self.secret_btn_delete.setEnabled(False)
 
@@ -855,6 +879,9 @@ class CataloguesDialog(QDialog):
 
         blink = self.secret_blink_check.isChecked()
         special = self.secret_special_check.isChecked()
+        channel = SECRET_CHANNEL_MISSILES
+        if getattr(self, "secret_channel_combo", None) is not None:
+            channel = str(self.secret_channel_combo.currentData() or SECRET_CHANNEL_MISSILES)
         sprite_val = self.secret_sprite_combo.currentData() if hasattr(self, "secret_sprite_combo") and self.secret_sprite_combo else None
         sprite_id = None
         if sprite_val is not None:
@@ -877,6 +904,7 @@ class CataloguesDialog(QDialog):
                 special=special,
                 sprite_id=sprite_id,
                 sprite=None,
+                channel=channel,
             )
             defn.validate()
 

@@ -172,7 +172,7 @@ class TestSceneSecretDependencies:
         )
         scene.objects = [obj1, obj2]
 
-        with pytest.raises(ModelValidationError, match="Only one secret per unique dependency is allowed per row"):
+        with pytest.raises(ModelValidationError, match="ask for the 5th player channel"):
             scene.validate()
 
     def test_circular_dependency_detection_on_scene(self, catalogues):

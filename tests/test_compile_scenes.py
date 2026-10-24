@@ -29,7 +29,12 @@ from scripts.compile_scenes import (
 )
 from tests.scene_expectations import special_secret_total
 from tests.test_state_machine_and_fade import parse_labels
-from scripts.sprite_roles import MAX_SECRETS_TOTAL
+from scripts.sprite_roles import (
+    MAX_CHANNELS_PER_ROW,
+    MAX_SECRETS_TOTAL,
+    SECRET_CHANNEL_MISSILES,
+    SECRET_CHANNEL_PLAYER,
+)
 
 
 def test_char_to_atari_screencode():
@@ -734,9 +739,10 @@ def test_secret_capacity_matches_engine_arrays():
 def test_every_scene_fits_the_secret_capacity():
     """Each scene may place at most MAX_SECRETS_TOTAL secrets (engine array capacity).
 
-    The design limit is one secret per unique dependency per platform row - this test
-    only guards the memory bound, so a scene that would overflow the engine arrays fails
-    here (with the counts) instead of corrupting RAM at runtime.
+    The design limit is the per-row sprite channel budget (MAX_CHANNELS_PER_ROW channels per
+    platform row and dependency stage) - this test only guards the memory bound, so a scene
+    that would overflow the engine arrays fails here (with the counts) instead of corrupting
+    RAM at runtime.
     """
     manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
@@ -747,3 +753,173 @@ def test_every_scene_fits_the_secret_capacity():
             f"{scene_file_name}: {len(scene_data.secrets)} secrets exceed the engine capacity "
             f"of {MAX_SECRETS_TOTAL}"
         )
+
+
+# ==============================================================================
+# Secret sprite channels: Players 1..3 vs the 5th player (missiles)
+# ==============================================================================
+
+def _channel_scene(tmp_path: Path, objects: list[dict]) -> Path:
+    """Synthetic one-row scene for the sprite channel budget tests (row y=24 -> zone slot 0)."""
+    scene_data = {
+        "scene": {"name": "Channel Budget", "width": 160, "height": 96},
+        "platforms": [
+            {"id": "p1", "type": "sprite", "position": {"x": 0, "y": 24}, "width": 96, "height": 4, "color_profile_id": 1}
+        ],
+        "objects": objects,
+    }
+    scene_file = tmp_path / "channel_budget.json"
+    scene_file.write_text(json.dumps(scene_data), encoding="utf-8")
+    return scene_file
+
+
+def _enemy_catalogue():
+    from scripts.compile_scenes import CatalogueItem
+
+    return {1: CatalogueItem(id=1, name="Azathoth", atari_color=0x4A, sprite_id=1)}
+
+
+def test_secret_channel_defaults_to_missiles(tmp_path: Path):
+    """A secret definition without 'channel' stays on the 5th player (backward compatible)."""
+    from scripts.compile_scenes import CatalogueItem
+
+    scene_file = _channel_scene(
+        tmp_path,
+        [{"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 40, "sprite_id": 7}],
+    )
+    secrets = {1: CatalogueItem(id=1, name="Skull", atari_color=0xFC, sprite_id=7)}
+    compiled = parse_scene_json(scene_file, {}, secrets)
+
+    assert [s.channel for s in compiled.secrets] == [3]
+    assert compiled.secrets[0].channel_kind == SECRET_CHANNEL_MISSILES
+
+    dli = compiled.dli_data
+    # The 5th player is built from four missiles at x, x+2, x+4, x+6 (48 + 40 = 88)
+    assert (dli.zone_hpos_m0[0], dli.zone_hpos_m1[0], dli.zone_hpos_m2[0], dli.zone_hpos_m3[0]) == (88, 90, 92, 94)
+    assert dli.zone_secret_col[0] == 0xFC
+    assert (dli.zone_hpos_p1[0], dli.zone_hpos_p2[0], dli.zone_hpos_p3[0]) == (0, 0, 0)
+
+
+def test_secret_channel_uses_free_player_channels(tmp_path: Path):
+    """Enemies own Players 1..3 first; a 'player' secret takes the next free one."""
+    from scripts.compile_scenes import CatalogueItem
+
+    scene_file = _channel_scene(
+        tmp_path,
+        [
+            {"id": 1, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 8, "sprite_id": 1},
+            {"id": 2, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 32, "sprite_id": 1},
+            {"id": 3, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 56, "sprite_id": 8},
+            {"id": 4, "type": "secret", "definition_id": 2, "platform_id": "p1", "x": 80, "sprite_id": 7},
+        ],
+    )
+    secrets = {
+        1: CatalogueItem(id=1, name="Key", atari_color=0x1A, sprite_id=8, channel=SECRET_CHANNEL_PLAYER),
+        2: CatalogueItem(id=2, name="Skull", atari_color=0xFC, sprite_id=7),
+    }
+    compiled = parse_scene_json(scene_file, _enemy_catalogue(), secrets)
+
+    # Two enemies take P1/P2, so the player-channel secret lands on P3 and the missile one on 5P
+    assert [s.channel for s in compiled.secrets] == [2, 3]
+
+    dli = compiled.dli_data
+    assert dli.zone_hpos_p1[0] == 48 + 8
+    assert dli.zone_hpos_p2[0] == 48 + 32
+    assert dli.zone_hpos_p3[0] == 48 + 56          # the player-channel secret
+    assert dli.zone_col_p3[0] == 0x1A              # its own colour, not an enemy colour
+    assert dli.zone_hpos_m0[0] == 48 + 80          # the missiles-channel secret
+    assert dli.zone_hpos_m1[0] == 48 + 82
+    assert dli.zone_secret_col[0] == 0xFC
+
+
+
+def test_secret_channel_budget_rejects_overflow(tmp_path: Path):
+    """Three enemies leave no Player channel, so a 'player' secret cannot be placed."""
+    from scripts.compile_scenes import CatalogueItem
+
+    objects = [
+        {"id": 1, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 8, "sprite_id": 1},
+        {"id": 2, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 32, "sprite_id": 1},
+        {"id": 3, "type": "enemy", "definition_id": 1, "platform_id": "p1", "x": 56, "sprite_id": 1},
+        {"id": 4, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 80, "sprite_id": 8},
+    ]
+    scene_file = _channel_scene(tmp_path, objects)
+    enemies = _enemy_catalogue()
+
+    player_secret = {1: CatalogueItem(id=1, name="Key", atari_color=0x1A, sprite_id=8, channel=SECRET_CHANNEL_PLAYER)}
+    with pytest.raises(ValueError, match="przekracza budżet kanałów sprite"):
+        parse_scene_json(scene_file, enemies, player_secret)
+
+    # The very same scene compiles when the secret uses the 5th player instead
+    missile_secret = {1: CatalogueItem(id=1, name="Key", atari_color=0x1A, sprite_id=8)}
+    compiled = parse_scene_json(scene_file, enemies, missile_secret)
+    assert [s.channel for s in compiled.secrets] == [MAX_CHANNELS_PER_ROW - 1]
+
+
+def test_secret_channel_must_match_sprite_packing(tmp_path: Path):
+    """A 'player' secret whose sprite is packed for the 5th player must be rejected."""
+    from scripts.compile_scenes import CatalogueItem
+
+    scene_file = _channel_scene(
+        tmp_path,
+        [{"id": 1, "type": "secret", "definition_id": 1, "platform_id": "p1", "x": 40, "sprite_id": 7}],
+    )
+    secrets = {1: CatalogueItem(id=1, name="Key", atari_color=0x1A, sprite_id=7, channel=SECRET_CHANNEL_PLAYER)}
+
+    class _MissilePackedSprite:
+        height = 16
+        frame_duration = 4
+        frames = [b"\x00" * 16]
+        format = SECRET_CHANNEL_MISSILES
+
+    with pytest.raises(ValueError, match="wymaga formatu 'player'"):
+        parse_scene_json(scene_file, {}, secrets, sprites={7: _MissilePackedSprite()})
+
+
+def test_secret_channels_fit_the_row_budget():
+    """Every compiled scene stays within MAX_CHANNELS_PER_ROW per row and dependency stage."""
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+
+    checked = 0
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        used: dict[tuple[int, int], set[int]] = {}
+        for enemy in scene_data.enemies:
+            used.setdefault((enemy.zone_idx, 0), set()).add(enemy.channel)
+        for secret in scene_data.secrets:
+            # Enemies are visible in every stage, so they share the budget with each stage
+            used.setdefault((secret.zone_idx, secret.dep_id), set()).add(secret.channel)
+            checked += 1
+        for (zone_idx, dep), channels in used.items():
+            assert len(channels) <= MAX_CHANNELS_PER_ROW, (
+                f"{scene_file_name}: row y={8 + zone_idx * 16} dependency {dep} uses "
+                f"{sorted(channels)} - more than {MAX_CHANNELS_PER_ROW} sprite channels"
+            )
+    assert checked, "at least one compiled secret must be checked"
+
+
+def test_generated_asm_contains_secret_channel_tables():
+    """Every scene emits the secret_channel SoA table plus the shared pointer pair."""
+    asm_path = Path("gen/scenes_data.asm")
+    if not asm_path.is_file():
+        pytest.skip("gen/scenes_data.asm not found, run 'make data' first")
+
+    asm_text = asm_path.read_text(encoding="utf-8")
+    assert "scene_secret_channel_lo" in asm_text
+    assert "scene_secret_channel_hi" in asm_text
+
+    asm_lines = asm_text.splitlines()
+    manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
+    enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
+    for scene_file_name in manifest["scenes"]:
+        scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
+        label = f"scene_{scene_data.symbol_name}_secret_channel"
+        assert label in asm_text, f"{scene_file_name}: compiled {label} table missing from the generated ASM"
+        line_index = next(i for i, l in enumerate(asm_lines) if l.startswith(label))
+        emitted = [int(v.strip()) for v in asm_lines[line_index + 1].replace(".byte", "").split(",")]
+        assert emitted == [s.channel for s in scene_data.secrets], (
+            f"{scene_file_name}: emitted channels {emitted} != compiled "
+            f"{[s.channel for s in scene_data.secrets]}"
+        )
+

@@ -1115,3 +1115,46 @@ class TestSpriteStudioIntegration:
         # Combos must now be enabled
         assert win.new_obj_sprite_combo.isEnabled()
         assert win.catalogues.sprites_path == sprite_file.resolve()
+
+
+# ==============================================================================
+# Secret sprite channels (Players 1..3 vs the 5th player / missiles)
+# ==============================================================================
+
+def test_secret_channel_constants_match_compiler():
+    """The editor's channel names and row budget must match scripts/sprite_roles.py.
+
+    The editor writes `channel` into scenes/definitions.json and enforces the same row budget
+    the compiler enforces before packing the sprites - if the two drift, a scene the editor
+    accepts can fail the build (or worse, silently use the wrong channel).
+    """
+    from scene_editor.catalogue_model import (
+        MAX_CHANNELS_PER_ROW as EDITOR_MAX_CHANNELS_PER_ROW,
+        SECRET_CHANNELS,
+        SECRET_CHANNEL_MISSILES as EDITOR_MISSILES,
+        SECRET_CHANNEL_PLAYER as EDITOR_PLAYER,
+    )
+    from scripts.sprite_roles import (
+        MAX_CHANNELS_PER_ROW,
+        SECRET_CHANNEL_MISSILES,
+        SECRET_CHANNEL_PLAYER,
+    )
+
+    assert EDITOR_MISSILES == SECRET_CHANNEL_MISSILES
+    assert EDITOR_PLAYER == SECRET_CHANNEL_PLAYER
+    assert EDITOR_MAX_CHANNELS_PER_ROW == MAX_CHANNELS_PER_ROW
+    assert set(SECRET_CHANNELS) == {SECRET_CHANNEL_MISSILES, SECRET_CHANNEL_PLAYER}
+
+
+def test_project_definitions_channels_are_valid():
+    """Every secret in scenes/definitions.json carries a known channel (default: missiles)."""
+    from scene_editor.catalogue_model import SECRET_CHANNELS, ProjectCatalogues
+
+    repo_root = Path(__file__).resolve().parent.parent
+    cats = ProjectCatalogues.load_from_dir(repo_root)
+    assert cats.secrets, "the project catalogue must define secrets"
+    for secret in cats.secrets.values():
+        assert secret.channel in SECRET_CHANNELS, (
+            f"secret '{secret.name}' [{secret.id}] has unknown channel {secret.channel!r}"
+        )
+

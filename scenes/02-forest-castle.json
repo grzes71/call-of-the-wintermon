@@ -344,6 +344,14 @@
       "platform_id": "platform-012",
       "x": 142,
       "dependency": 2
+    },
+    {
+      "id": 13,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-006",
+      "x": 32,
+      "dependency": 1
     }
   ],
   "player_spawn": {

@@ -8,6 +8,8 @@ import math
 from typing import Any, Optional
 import warnings
 
+from .catalogue_model import SECRET_CHANNEL_MISSILES, SECRET_CHANNEL_PLAYER
+
 
 class ModelValidationError(Exception):
     """Raised when scene model validation fails."""
@@ -530,7 +532,12 @@ class PlatformElement:
 # Scene Object (Enemies and Treasures) Constants & Model
 # -----------------------------------------------------------------------------
 MAX_ENEMIES_PER_ROW = 3
-MAX_SECRETS_PER_STAGE = 4
+# Sprite channel budget per platform row and dependency stage: Players 1..3 plus the 5th
+# player (the four missiles combined) = 4 channels. Enemies always claim their channels
+# first, so one row/stage may hold `enemies + secrets <= MAX_CHANNELS_PER_ROW` - the same
+# rule the compiler enforces (scripts/sprite_roles.py, scripts/compile_scenes.py).
+MAX_CHANNELS_PER_ROW = 4
+MAX_SECRETS_PER_STAGE = MAX_CHANNELS_PER_ROW  # backward-compatible alias
 MAX_OBJECTS_PER_ROW = 3  # Kept for backward compatibility
 
 OBJECT_TYPE_ENEMY = "enemy"
@@ -1278,6 +1285,80 @@ class Scene:
                     return f"'{sec.name}' (ID {dependency})"
         return f"ID {dependency}"
 
+    def get_secret_channel_kind(self, definition_id: Any, obj: Optional[SceneObjectElement] = None) -> str:
+        """Rendering channel kind of a secret definition: "player" or "missiles".
+
+        Read from the catalogue (scenes/definitions.json); a missing definition or field means
+        "missiles", which is exactly what the compiler assumes (backward compatible).
+        """
+        cat_item: Any = None
+        if self.catalogues is not None:
+            if hasattr(self.catalogues, "get_secret"):
+                cat_item = self.catalogues.get_secret(definition_id)
+            if cat_item is None and hasattr(self.catalogues, "secrets"):
+                try:
+                    cat_item = self.catalogues.secrets.get(int(definition_id))
+                except (TypeError, ValueError):
+                    cat_item = None
+
+        raw = getattr(cat_item, "channel", None)
+        if raw is None and isinstance(cat_item, dict):
+            raw = cat_item.get("channel")
+        return str(raw or SECRET_CHANNEL_MISSILES).strip().lower()
+
+    def get_row_channel_usage(self, y: int, exclude_id: Optional[Any] = None) -> dict[str, Any]:
+        """Sprite channel usage of the platform row at y (hardware budget model).
+
+        Enemies always occupy Players 1..3 first, so one platform row and dependency stage can
+        hold at most MAX_CHANNELS_PER_ROW sprites (three players + the 5th player). Within a
+        stage a "player" secret needs one of P1..P3 that neither an enemy nor another
+        player-channel secret of the same stage has taken, while a "missiles" secret needs the
+        single 5th player channel. Mirrors the assignment in scripts/compile_scenes.py.
+
+        Returns a dict with "enemies" (count), "stages" ({dependency: {"player": [...],
+        "missiles": [...]}}) and "errors" (human readable conflicts, empty when the row fits).
+        """
+        row_objs = self.get_row_objects(y, exclude_id=exclude_id)
+        enemies = [o for o in row_objs if o.type == OBJECT_TYPE_ENEMY]
+        used_players = min(len(enemies), MAX_CHANNELS_PER_ROW - 1)
+        stages: dict[Optional[int], dict[str, list[SceneObjectElement]]] = {}
+        errors: list[str] = []
+
+        for o in row_objs:
+            if o.type not in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
+                continue
+            dep = self.get_secret_dependency(o.definition_id, obj=o)
+            kind = self.get_secret_channel_kind(o.definition_id, obj=o)
+            stage = stages.setdefault(dep, {"player": [], "missiles": []})
+            stage["player" if kind == SECRET_CHANNEL_PLAYER else "missiles"].append(o)
+
+        for dep, stage in stages.items():
+            dep_name = self.get_dependency_display_name(dep)
+            player_secrets = stage["player"]
+            missile_secrets = stage["missiles"]
+            free_players = (MAX_CHANNELS_PER_ROW - 1) - used_players
+            if len(missile_secrets) > 1:
+                ids = ", ".join(f"'{s.id}'" for s in missile_secrets)
+                errors.append(
+                    f"Platform row y={y}: {len(missile_secrets)} secrets of dependency {dep_name} "
+                    f"({ids}) ask for the 5th player channel - only one fits (missiles)."
+                )
+            if len(player_secrets) > free_players:
+                ids = ", ".join(f"'{s.id}'" for s in player_secrets)
+                errors.append(
+                    f"Platform row y={y}: {len(player_secrets)} player-channel secret(s) of "
+                    f"dependency {dep_name} ({ids}) but only {free_players} of Players 1..3 are free "
+                    f"({used_players} taken by enemies)."
+                )
+            total = used_players + len(player_secrets) + len(missile_secrets)
+            if total > MAX_CHANNELS_PER_ROW:
+                errors.append(
+                    f"Platform row y={y}: {used_players} enemy(ies) + "
+                    f"{len(player_secrets) + len(missile_secrets)} secret(s) of dependency {dep_name} "
+                    f"exceed the {MAX_CHANNELS_PER_ROW}-channel budget (3 players + 5th player)."
+                )
+        return {"enemies": len(enemies), "stages": stages, "errors": errors}
+
     def _sync_z_indices(self) -> None:
         """Ensure z_index reflects the exact list order."""
         for idx, elem in enumerate(self.elements):
@@ -1380,11 +1461,13 @@ class Scene:
                     )
 
         # Validate scene objects and hardware row limits:
-        # - Max 3 enemies per platform row
-        # - Max 1 secret per unique Dependency per platform row
+        # - Max MAX_ENEMIES_PER_ROW enemies per platform row
+        # - Sprite channel budget per platform row and dependency stage: enemies + secrets of
+        #   one stage <= MAX_CHANNELS_PER_ROW (3 players + the 5th player), because enemies
+        #   always claim their channels first and each kind of secret needs a channel it can
+        #   use ("player" -> P1..P3, "missiles" -> the single 5th player channel).
         seen_object_ids: set[str] = set()
         row_enemy_counts: dict[int, int] = {}
-        row_secret_deps: dict[int, dict[Optional[int], SceneObjectElement]] = {}
 
         for obj in self.objects:
             obj.validate(scene=self)
@@ -1394,27 +1477,19 @@ class Scene:
             seen_object_ids.add(str_id)
 
             plat = self.get_platform(obj.platform_id)
-            if plat is not None:
+            if plat is not None and obj.type == OBJECT_TYPE_ENEMY:
                 row_y = plat.position.y
-                if obj.type == OBJECT_TYPE_ENEMY:
-                    row_enemy_counts[row_y] = row_enemy_counts.get(row_y, 0) + 1
-                    if row_enemy_counts[row_y] > MAX_ENEMIES_PER_ROW:
-                        raise ObjectLimitExceededError(
-                            f"Platform row y={row_y} exceeds maximum enemy limit "
-                            f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
-                        )
-                elif obj.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    dep = self.get_secret_dependency(obj.definition_id, obj=obj)
-                    deps_map = row_secret_deps.setdefault(row_y, {})
-                    if dep in deps_map:
-                        existing = deps_map[dep]
-                        dep_name = self.get_dependency_display_name(dep)
-                        raise ObjectLimitExceededError(
-                            f"Platform row y={row_y} already contains a secret with dependency {dep_name}: "
-                            f"conflict between secret '{existing.id}' and secret '{obj.id}'. "
-                            f"Only one secret per unique dependency is allowed per row."
-                        )
-                    deps_map[dep] = obj
+                row_enemy_counts[row_y] = row_enemy_counts.get(row_y, 0) + 1
+                if row_enemy_counts[row_y] > MAX_ENEMIES_PER_ROW:
+                    raise ObjectLimitExceededError(
+                        f"Platform row y={row_y} exceeds maximum enemy limit "
+                        f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
+                    )
+
+        for row_y in sorted({p.position.y for p in self.platforms}):
+            usage = self.get_row_channel_usage(row_y)
+            if usage["errors"]:
+                raise ObjectLimitExceededError(" ".join(usage["errors"]))
 
         # Check for circular secret dependencies on this scene
         scene_secret_defs: dict[int, Optional[int]] = {}
@@ -1672,27 +1747,47 @@ class Scene:
                     f"(hardware limit is {MAX_ENEMIES_PER_ROW} per row)."
                 )
 
-            # Check secret dependency conflicts on target row
+            # Check the sprite channel budget of the target row (enemies + secrets of one stage)
             moving_secrets = [o for o in attached_objs if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)]
-            target_secrets = [o for o in target_row_objs if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)]
+            target_usage = self.get_row_channel_usage(target_y)
+            target_enemies = target_usage["enemies"] + moving_enemies
 
-            target_deps: dict[Optional[int], SceneObjectElement] = {}
-            for t in target_secrets:
-                tdep = self.get_secret_dependency(t.definition_id, obj=t)
-                target_deps[tdep] = t
-
+            moving_stages: dict[Optional[int], dict[str, list[SceneObjectElement]]] = {}
             for m in moving_secrets:
                 mdep = self.get_secret_dependency(m.definition_id, obj=m)
-                if mdep in target_deps:
-                    conflicting = target_deps[mdep]
-                    dep_name = self.get_dependency_display_name(mdep)
+                mkind = self.get_secret_channel_kind(m.definition_id, obj=m)
+                moving_stages.setdefault(mdep, {"player": [], "missiles": []})[
+                    "player" if mkind == SECRET_CHANNEL_PLAYER else "missiles"
+                ].append(m)
+
+            for mdep, stage in moving_stages.items():
+                dep_name = self.get_dependency_display_name(mdep)
+                target_stage = target_usage["stages"].get(mdep, {"player": [], "missiles": []})
+                players = len(target_stage["player"]) + len(stage["player"])
+                missiles = len(target_stage["missiles"]) + len(stage["missiles"])
+
+                if missiles > 1:
                     raise ObjectLimitExceededError(
-                        f"Moving platform '{platform_id}' to row y={target_y} causes a secret dependency conflict: "
-                        f"moving secret '{m.id}' and existing secret '{conflicting.id}' on row y={target_y} "
-                        f"both have dependency {dep_name}. "
-                        f"Only one secret per unique dependency is allowed per row."
+                        f"Moving platform '{platform_id}' to row y={target_y} would place {missiles} "
+                        f"'missiles' secrets of dependency {dep_name} in one row - the 5th player is "
+                        f"a single channel."
                     )
-                target_deps[mdep] = m
+
+                free_players = (MAX_CHANNELS_PER_ROW - 1) - min(target_enemies, MAX_CHANNELS_PER_ROW - 1)
+                if players > free_players:
+                    raise ObjectLimitExceededError(
+                        f"Moving platform '{platform_id}' to row y={target_y} leaves no Player channel "
+                        f"for dependency {dep_name}: {players} player secret(s) but only {free_players} "
+                        f"of Players 1..3 free ({target_enemies} enemy(ies) in that row)."
+                    )
+
+                if target_enemies + players + missiles > MAX_CHANNELS_PER_ROW:
+                    raise ObjectLimitExceededError(
+                        f"Moving platform '{platform_id}' to row y={target_y} exceeds the sprite channel "
+                        f"budget for dependency {dep_name}: {target_enemies} enemy(ies) + "
+                        f"{players + missiles} secret(s) > {MAX_CHANNELS_PER_ROW} channels "
+                        f"(3 players + 5th player)."
+                    )
 
         colliding = check_platform_collision(
             self.platforms,
@@ -1833,8 +1928,10 @@ class Scene:
         obj: Optional[SceneObjectElement] = None,
     ) -> tuple[bool, str]:
         """Check if adding an object to the specified platform satisfies hardware row limits:
-        - Max 3 enemies per row.
-        - Max 1 secret per unique Dependency per row."""
+        - Max MAX_ENEMIES_PER_ROW enemies per row.
+        - Sprite channel budget: enemies + secrets of one dependency stage <= MAX_CHANNELS_PER_ROW,
+          where a "player" secret needs a free Player 1..3 channel and a "missiles" secret the
+          single 5th player channel."""
         eff_exclude = exclude_id if exclude_id is not None else exclude_obj_id
         plat = self.get_platform(platform_id)
         if plat is None:
@@ -1865,17 +1962,41 @@ class Scene:
             else:
                 eff_dep = self.get_secret_dependency(definition_id, obj=obj)
 
-            for o in row_objs:
-                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE):
-                    other_dep = self.get_secret_dependency(o.definition_id, obj=o)
-                    if other_dep == eff_dep:
-                        dep_name = self.get_dependency_display_name(eff_dep)
-                        return (
-                            False,
-                            f"Platform row y={plat.position.y} already contains secret '{o.id}' "
-                            f"with dependency {dep_name}. "
-                            f"Only one secret per unique dependency is allowed per row.",
-                        )
+            kind = self.get_secret_channel_kind(definition_id, obj=obj)
+            usage = self.get_row_channel_usage(plat.position.y, exclude_id=eff_exclude)
+            stage = usage["stages"].get(eff_dep, {"player": [], "missiles": []})
+            enemies = usage["enemies"]
+            dep_name = self.get_dependency_display_name(eff_dep)
+            player_count = len(stage["player"])
+            missile_count = len(stage["missiles"])
+
+            if kind == SECRET_CHANNEL_PLAYER:
+                free_players = (MAX_CHANNELS_PER_ROW - 1) - enemies
+                if player_count + 1 > free_players:
+                    return (
+                        False,
+                        f"Platform row y={plat.position.y}: no free Player channel for another "
+                        f"'player' secret of dependency {dep_name} - {enemies} enemy(ies) and "
+                        f"{player_count} player secret(s) already use Players 1..3. "
+                        f"Switch the definition's channel to 'missiles' or use another row.",
+                    )
+            elif missile_count + 1 > 1:
+                return (
+                    False,
+                    f"Platform row y={plat.position.y} already contains secret "
+                    f"'{stage['missiles'][0].id}' on the 5th player channel for dependency {dep_name} - "
+                    f"the 5th player is a single channel. Use another row or switch the definition's "
+                    f"channel to 'player'.",
+                )
+
+            total = enemies + player_count + missile_count + 1
+            if total > MAX_CHANNELS_PER_ROW:
+                return (
+                    False,
+                    f"Platform row y={plat.position.y} would exceed the sprite channel budget: "
+                    f"{enemies} enemy(ies) + {player_count + missile_count + 1} secret(s) of dependency "
+                    f"{dep_name} > {MAX_CHANNELS_PER_ROW} channels (3 players + 5th player).",
+                )
             return True, ""
 
         # Generic / untyped check (fallback for callers not specifying object type):

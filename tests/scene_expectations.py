@@ -13,7 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from scripts.compile_scenes import OBJ_SPEED_MAP, OBJ_STRATEGY_MAP, SPRITE_TAIL_MARGIN
+from scripts.compile_scenes import OBJ_SPEED_MAP, OBJ_STRATEGY_MAP, SPRITE_TAIL_MARGIN, sanitize_symbol
+from scripts.sprite_roles import MAX_CHANNELS_PER_ROW, SECRET_CHANNEL_PLAYER
 
 SCENES_DIR = Path("scenes")
 MANIFEST_PATH = SCENES_DIR / "scenes.json"
@@ -36,6 +37,25 @@ def scene_files() -> list[str]:
 
 def load_scene(scene_file: str) -> dict[str, Any]:
     return json.loads((SCENES_DIR / scene_file).read_text(encoding="utf-8"))
+
+
+def scene_symbol(scene_file: str) -> str:
+    """Compiler symbol of a scene file (mirrors scripts/compile_scenes.py sanitize_symbol)."""
+    return sanitize_symbol(Path(scene_file).stem)
+
+
+def scene_secret_channels(scene_file: str) -> list[int]:
+    """Sprite channel index per secret of a scene (0..2 = Players 1..3, 3 = 5th player).
+
+    Derived from scenes/definitions.json ("channel", default "missiles") with the same rule
+    the compiler applies, so the expectation follows the catalogue instead of a constant.
+    """
+    catalogue = {item["id"]: item for item in load_definitions().get("secrets", [])}
+    channels: list[int] = []
+    for secret in scene_objects(scene_file, "secret"):
+        raw = str(catalogue.get(secret["definition_id"], {}).get("channel", "missiles")).lower()
+        channels.append(0 if raw == SECRET_CHANNEL_PLAYER else MAX_CHANNELS_PER_ROW - 1)
+    return channels
 
 
 def scene_objects(scene_file: str, kind: str) -> list[dict[str, Any]]:

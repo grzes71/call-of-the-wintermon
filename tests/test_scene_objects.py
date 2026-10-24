@@ -1160,13 +1160,13 @@ class TestSecretChainSceneValidationAndRuntime:
             "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=10
         )
         assert can_add is False
-        assert "already contains secret '1' with dependency None" in reason
+        assert "already contains secret '1' on the 5th player channel for dependency None" in reason
 
         with pytest.raises(ObjectLimitExceededError) as exc_info:
             empty_scene.add_object(
                 SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=10, platform_id="plat-02", x=40)
             )
-        assert "already contains secret '1' with dependency None" in str(exc_info.value)
+        assert "already contains secret '1' on the 5th player channel for dependency None" in str(exc_info.value)
 
     def test_two_secrets_with_same_dependency_on_same_row_rejected(
         self, empty_scene: Scene
@@ -1187,13 +1187,13 @@ class TestSecretChainSceneValidationAndRuntime:
             "plat-01", obj_type=OBJECT_TYPE_TREASURE, definition_id=2
         )
         assert can_add is False
-        assert "already contains secret '1' with dependency 'Gold Key' (ID 1)" in reason
+        assert "already contains secret '1' on the 5th player channel for dependency 'Gold Key' (ID 1)" in reason
 
         with pytest.raises(ObjectLimitExceededError) as exc_info:
             empty_scene.add_object(
                 SceneObjectElement(id=2, type=OBJECT_TYPE_TREASURE, definition_id=2, platform_id="plat-02", x=40)
             )
-        assert "already contains secret '1' with dependency 'Gold Key' (ID 1)" in str(exc_info.value)
+        assert "already contains secret '1' on the 5th player channel for dependency 'Gold Key' (ID 1)" in str(exc_info.value)
 
     def test_runtime_stage_progression_mechanics(self, empty_scene: Scene, catalogue_with_chain):
         """Criteria 2, 3, 4, 5, 6, 7:

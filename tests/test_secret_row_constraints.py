@@ -18,6 +18,7 @@ import pytest
 from scene_editor.scene_model import (
     OBJECT_TYPE_TREASURE,
     OBJECT_TYPE_SECRET,
+    OBJECT_TYPE_ENEMY,
     ObjectLimitExceededError,
     PlatformElement,
     PLATFORM_TYPE_SPRITE,
@@ -26,6 +27,7 @@ from scene_editor.scene_model import (
     SceneObjectElement,
 )
 from scene_editor.catalogue_model import (
+    InvalidDefinitionError,
     ProjectCatalogues,
     SecretDefinition,
 )
@@ -107,11 +109,11 @@ class TestSecretRowConstraints:
             "plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=2
         )
         assert can_add is False
-        assert "Platform row y=24 already contains secret '1' with dependency None" in reason
+        assert "Platform row y=24 already contains secret '1' on the 5th player channel for dependency None" in reason
 
         with pytest.raises(ObjectLimitExceededError) as exc:
             test_scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=2, platform_id="plat-02", x=50))
-        assert "already contains secret '1' with dependency None" in str(exc.value)
+        assert "already contains secret '1' on the 5th player channel for dependency None" in str(exc.value)
 
     def test_criterion_3_two_secrets_with_same_dependency_rejected_different_types(self, test_scene: Scene):
         """3. In one row, two secrets with Dependency = Gold Key are rejected, even if different types (Example C)."""
@@ -123,11 +125,11 @@ class TestSecretRowConstraints:
             "plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=4
         )
         assert can_add is False
-        assert "Platform row y=24 already contains secret '10' with dependency 'Gold Key' (ID 1)" in reason
+        assert "Platform row y=24 already contains secret '10' on the 5th player channel for dependency 'Gold Key' (ID 1)" in reason
 
         with pytest.raises(ObjectLimitExceededError) as exc:
             test_scene.add_object(SceneObjectElement(id=11, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-02", x=50))
-        assert "already contains secret '10' with dependency 'Gold Key' (ID 1)" in str(exc.value)
+        assert "already contains secret '10' on the 5th player channel for dependency 'Gold Key' (ID 1)" in str(exc.value)
 
     def test_criterion_4_same_dependency_in_different_rows_allowed(self, test_scene: Scene):
         """4. The same Dependency can appear in different rows."""
@@ -154,12 +156,12 @@ class TestSecretRowConstraints:
         # Moving secret 2 to plat-02 (row 24) must be blocked
         with pytest.raises(ObjectLimitExceededError) as exc:
             test_scene.move_object(2, new_x=50, new_platform_id="plat-02")
-        assert "already contains secret '1' with dependency None" in str(exc.value)
+        assert "already contains secret '1' on the 5th player channel for dependency None" in str(exc.value)
 
         # Moving platform plat-03 (with secret 2) to row 24 must also be blocked
         with pytest.raises(ObjectLimitExceededError) as exc_plat:
             test_scene.move_platform("plat-03", new_x=90, new_y=24)
-        assert "causes a secret dependency conflict" in str(exc_plat.value)
+        assert "would place 2 'missiles' secrets of dependency None in one row" in str(exc_plat.value)
 
     def test_criterion_6_changing_dependency_cannot_introduce_conflict(self, test_scene: Scene, mock_catalogues: ProjectCatalogues):
         """6. Changing Dependency property cannot introduce a conflict."""
@@ -171,7 +173,7 @@ class TestSecretRowConstraints:
         # Attempt to change definition of Secret 2 from 5 (dep=3) to 4 (dep=1) -> conflict on row 24!
         with pytest.raises(ObjectLimitExceededError) as exc:
             test_scene.update_object_props(2, new_definition_id="4")
-        assert "conflict between secret '1' and secret '2'" in str(exc.value)
+        assert "ask for the 5th player channel" in str(exc.value)
         # Original definition remained untouched
         assert test_scene.get_object(2).definition_id == 5
 
@@ -213,7 +215,7 @@ class TestSecretRowConstraints:
         # 8a: SceneSerializer.from_dict / from_json rejects with CorruptedFileError
         with pytest.raises(CorruptedFileError) as exc_import:
             SceneSerializer.from_dict(invalid_data, catalogues=mock_catalogues)
-        assert "already contains a secret with dependency None" in str(exc_import.value)
+        assert "ask for the 5th player channel" in str(exc_import.value)
 
         # 8b: compile_scenes.parse_scene_json rejects during export
         scene_file = tmp_path / "invalid_scene.json"
@@ -232,7 +234,10 @@ class TestSecretRowConstraints:
                 enemies={},
                 secrets=sec_items,
             )
-        assert "violates secret row constraint at platform row y=24" in str(exc_export.value)
+        # Both secrets are "missiles"-channel by default and the row has a single 5th-player
+        # channel, so the channel budget rejects the second one.
+        assert "przekracza budżet kanałów sprite'ów" in str(exc_export.value)
+        assert "y=24" in str(exc_export.value)
 
     def test_criterion_9_existing_scenes_continue_to_work(self):
         """9. Existing scenes (01-forest.json and 02-forest-castle.json) satisfy the new rule and compile cleanly."""
@@ -259,3 +264,97 @@ class TestSecretRowConstraints:
 
         data2 = parse_scene_json(forest2_path, enemies=enemies, secrets=secrets, profiles=profiles)
         assert data2.name != ""
+
+
+class TestSecretChannelBudget:
+    """Per-definition sprite channels: Players 1..3 ("player") vs the 5th player ("missiles").
+
+    The row/stage budget is `enemies + secrets <= MAX_CHANNELS_PER_ROW` (4), with enemies
+    claiming Players 1..3 first. Two secrets of the same dependency may share a row as long as
+    they use different channels - that is the whole point of the per-definition channel.
+    """
+
+    @staticmethod
+    def _catalogues() -> ProjectCatalogues:
+        cats = ProjectCatalogues()
+        cats.secrets[1] = SecretDefinition(id=1, name="Gold Key", dependency=None, channel="missiles")
+        cats.secrets[2] = SecretDefinition(id=2, name="Silver Key", dependency=None, channel="player")
+        cats.secrets[3] = SecretDefinition(id=3, name="Exit Door", dependency=1, channel="player")
+        cats.secrets[4] = SecretDefinition(id=4, name="Chest", dependency=1, channel="player")
+        return cats
+
+    @staticmethod
+    def _scene(cats: ProjectCatalogues) -> Scene:
+        sc = Scene(name="channel_budget", width=160, height=96)
+        sc.catalogues = cats
+        sc.add_platform(PlatformElement(id="plat-01", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 24)))
+        sc.add_platform(PlatformElement(id="plat-02", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(90, 24)))
+        sc.add_platform(PlatformElement(id="plat-03", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 40)))
+        return sc
+
+    def test_same_stage_secrets_allowed_on_different_channels(self):
+        """Two secrets of the same dependency fit one row when their channels differ."""
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-01", x=10))
+        scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=2, platform_id="plat-02", x=90))
+        scene.validate()
+
+        usage = scene.get_row_channel_usage(24)
+        assert usage["errors"] == []
+        assert [s.id for s in usage["stages"][None]["missiles"]] == [1]
+        assert [s.id for s in usage["stages"][None]["player"]] == [2]
+
+    def test_second_missiles_secret_in_one_row_is_rejected(self):
+        """The 5th player is a single channel: only one 'missiles' secret per stage and row."""
+        cats = self._catalogues()
+        cats.secrets[2].channel = "missiles"
+        scene = self._scene(cats)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-01", x=10))
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=2)
+        assert ok is False
+        assert "5th player is a single channel" in reason
+
+    def test_player_channel_secret_rejected_next_to_three_enemies(self):
+        """A 'player' secret needs one of Players 1..3 - three enemies leave none."""
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        for index, x in enumerate((10, 20, 30), start=1):
+            scene.add_object(SceneObjectElement(id=index, type=OBJECT_TYPE_ENEMY, definition_id=1, platform_id="plat-01", x=x))
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=2)
+        assert ok is False
+        assert "no free Player channel" in reason
+
+        # The same row accepts a 'missiles' secret (the 5th player channel is still free)
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=1)
+        assert ok is True, reason
+
+    def test_row_channel_budget_is_four_objects_per_stage(self):
+        """Enemies + secrets of one stage must not exceed the four sprite channels."""
+        cats = self._catalogues()
+        cats.secrets[4].channel = "missiles"  # "Chest", dependency 1 -> stage of the Exit Door
+        scene = self._scene(cats)
+        for index, x in enumerate((10, 20, 30), start=1):
+            scene.add_object(SceneObjectElement(id=index, type=OBJECT_TYPE_ENEMY, definition_id=1, platform_id="plat-01", x=x))
+        # 3 enemies (P1..P3) + 1 'missiles' secret = all 4 channels of the stage are taken
+        scene.add_object(SceneObjectElement(id=10, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-02", x=90))
+        with pytest.raises(ObjectLimitExceededError):
+            scene.add_object(SceneObjectElement(id=11, type=OBJECT_TYPE_SECRET, definition_id=2, platform_id="plat-02", x=110))
+
+        # A secret of another dependency stage still fits (it has its own channel budget)
+        scene.add_object(SceneObjectElement(id=12, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-02", x=110))
+        assert scene.get_row_channel_usage(24)["errors"] == []
+
+    def test_secret_definition_channel_round_trip(self):
+        """'channel' survives the catalogue round trip and defaults to 'missiles'."""
+        default = SecretDefinition.from_dict({"id": 1, "name": "Key"})
+        assert default.channel == "missiles"
+        assert "channel" not in default.to_dict()
+
+        player = SecretDefinition.from_dict({"id": 2, "name": "Key", "channel": "player"})
+        assert player.channel == "player"
+        assert player.to_dict()["channel"] == "player"
+
+        with pytest.raises(InvalidDefinitionError):
+            SecretDefinition.from_dict({"id": 3, "name": "Key", "channel": "fifth"})
+

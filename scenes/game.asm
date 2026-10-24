@@ -357,11 +357,17 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     cmp #PLAYER_STATE_DEATH
     bcs @clear_hit
 
-    ; 1. Check GTIA hardware collision between Player 0 and any Missile (M0..M3)
+    ; 1. Check GTIA hardware collision between Player 0 and any sprite that can carry a secret:
+    ;    Missiles M0..M3 (5th player channel) and Players P1..P3 (player channels). Enemies also
+    ;    live on P1..P3, so a hit here only gates the precise overlap test below (which filters
+    ;    out every sprite that is not a secret at the hero's position).
     lda M0PL
     ora M1PL
     ora M2PL
     ora M3PL
+    ora P1PL
+    ora P2PL
+    ora P3PL
     and #1
     beq @clear_hit
 
