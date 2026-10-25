@@ -188,6 +188,111 @@
         "0x00"
       ],
       "description": "Cyan/blue gradient suitable for winter/ice platforms"
+    },
+    {
+      "id": 6,
+      "name": "red-both",
+      "colors": [
+        "0x32",
+        "0x34",
+        "0x36",
+        "0x38",
+        "0x3A",
+        "0x36",
+        "0x34",
+        "0x32"
+      ],
+      "description": "Cyan/blue gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 7,
+      "name": "green-both",
+      "colors": [
+        "0xC2",
+        "0xC4",
+        "0xC6",
+        "0xC8",
+        "0xCA",
+        "0xC6",
+        "0xC4",
+        "0xC2"
+      ],
+      "description": "Green gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 8,
+      "name": "gold-both",
+      "colors": [
+        "0x12",
+        "0x14",
+        "0x16",
+        "0x18",
+        "0x1A",
+        "0x16",
+        "0x14",
+        "0x12"
+      ],
+      "description": "Gold gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 9,
+      "name": "blue-both",
+      "colors": [
+        "0x92",
+        "0x94",
+        "0x96",
+        "0x98",
+        "0x9A",
+        "0x96",
+        "0x94",
+        "0x92"
+      ],
+      "description": "Gold gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 10,
+      "name": "pink-red",
+      "colors": [
+        "0x32",
+        "0x34",
+        "0x36",
+        "0x38",
+        "0x48",
+        "0x46",
+        "0x44",
+        "0x42"
+      ],
+      "description": "Cyan/blue gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 11,
+      "name": "blue-pink",
+      "colors": [
+        "0x92",
+        "0x94",
+        "0x96",
+        "0x98",
+        "0x48",
+        "0x46",
+        "0x44",
+        "0x42"
+      ],
+      "description": "Gold gradient suitable for winter/ice platforms 2"
+    },
+    {
+      "id": 12,
+      "name": "green-red",
+      "colors": [
+        "0xC2",
+        "0xC4",
+        "0xC6",
+        "0xC8",
+        "0x38",
+        "0x36",
+        "0x34",
+        "0x32"
+      ],
+      "description": "Green gradient suitable for winter/ice platforms 2"
     }
   ]
 }

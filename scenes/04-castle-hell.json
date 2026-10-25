@@ -49,7 +49,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 10
     },
     {
       "id": "platform-002",
@@ -60,7 +60,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 10
     },
     {
       "id": "platform-003",
@@ -71,7 +71,205 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 10
+    },
+    {
+      "id": "platform-004",
+      "type": "sprite",
+      "position": {
+        "x": 136,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-005",
+      "type": "sprite",
+      "position": {
+        "x": 46,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-006",
+      "type": "sprite",
+      "position": {
+        "x": 91,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-007",
+      "type": "missile",
+      "position": {
+        "x": 9,
+        "y": 72
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-008",
+      "type": "sprite",
+      "position": {
+        "x": 17,
+        "y": 56
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-009",
+      "type": "sprite",
+      "position": {
+        "x": 34,
+        "y": 40
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 12
+    },
+    {
+      "id": "platform-010",
+      "type": "sprite",
+      "position": {
+        "x": 9,
+        "y": 24
+      },
+      "width": 24,
+      "height": 4,
+      "color_profile_id": 7
+    },
+    {
+      "id": "platform-011",
+      "type": "missile",
+      "position": {
+        "x": 68,
+        "y": 24
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 7
+    },
+    {
+      "id": "platform-012",
+      "type": "missile",
+      "position": {
+        "x": 88,
+        "y": 24
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 7
+    },
+    {
+      "id": "platform-013",
+      "type": "missile",
+      "position": {
+        "x": 106,
+        "y": 24
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 7
+    },
+    {
+      "id": "platform-014",
+      "type": "missile",
+      "position": {
+        "x": 125,
+        "y": 24
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 7
+    },
+    {
+      "id": "platform-015",
+      "type": "sprite",
+      "position": {
+        "x": 76,
+        "y": 8
+      },
+      "width": 48,
+      "height": 4,
+      "color_profile_id": 11
+    },
+    {
+      "id": "platform-018",
+      "type": "sprite",
+      "position": {
+        "x": 128,
+        "y": 40
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 12
+    },
+    {
+      "id": "platform-019",
+      "type": "sprite",
+      "position": {
+        "x": 112,
+        "y": 56
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 6
+    },
+    {
+      "id": "platform-020",
+      "type": "missile",
+      "position": {
+        "x": 0,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 11
+    },
+    {
+      "id": "platform-021",
+      "type": "missile",
+      "position": {
+        "x": 32,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 11
+    },
+    {
+      "id": "platform-022",
+      "type": "missile",
+      "position": {
+        "x": 48,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 11
+    },
+    {
+      "id": "platform-023",
+      "type": "sprite",
+      "position": {
+        "x": 134,
+        "y": 8
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 11
     }
   ],
   "objects": [
@@ -86,15 +284,15 @@
   "player_spawn": {
     "x": 74,
     "y": 68,
-    "color": 152
+    "color": 12
   },
   "row_color_profiles": [
-    null,
-    null,
-    null,
-    null,
-    null,
-    5
+    11,
+    7,
+    12,
+    6,
+    6,
+    10
   ],
   "background_palette": {
     "upper": [
@@ -103,8 +301,8 @@
       220
     ],
     "lower": [
-      66,
-      70,
+      34,
+      38,
       28
     ]
   }
