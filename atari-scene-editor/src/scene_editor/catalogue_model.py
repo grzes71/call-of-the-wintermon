@@ -47,6 +47,13 @@ class DefinitionInUseError(CatalogueError):
 ProfileInUseError = DefinitionInUseError
 
 
+# Platform colour-profile scroll mode: how often the game rotates the profile's 8 scanline colours
+# by one position (frames per step). Mirrors PLATFORM_SCROLL_* in scripts/compile_scenes.py.
+SCROLL_NONE = "none"
+SCROLL_PERIODS_FRAMES: dict[str, int] = {"slow": 10, "medium": 5, "fast": 2}
+SCROLL_MODES = (SCROLL_NONE,) + tuple(SCROLL_PERIODS_FRAMES)
+
+
 class CorruptedCatalogueFileError(CatalogueError):
     """Raised when a catalogue JSON file is malformed or corrupted."""
     pass

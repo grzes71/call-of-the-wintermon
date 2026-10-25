@@ -339,6 +339,9 @@ dli_table_ptrs_hi
 ; - Sets up Zone 0 initial PMG positions, colors, sizes, PRIOR, and upper palette
 ; ==============================================================================
 .proc dli_vblank_update
+    ; Platform row colour scroll (no-op for rows without "scroll" in their profile)
+    jsr scroll_update
+
     ; Check mailbox flag for pending buffer swap
     lda dli_swap_requested
     beq @no_swap

@@ -81,7 +81,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 13,
+      "scroll": "medium"
     },
     {
       "id": "platform-002",
@@ -92,7 +93,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 13,
+      "scroll": "medium"
     },
     {
       "id": "platform-003",
@@ -103,7 +105,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 13,
+      "scroll": "medium"
     },
     {
       "id": "platform-004",
@@ -136,7 +139,7 @@
     null,
     null,
     null,
-    5
+    13
   ],
   "background_palette": {
     "upper": [
@@ -145,9 +148,9 @@
       42
     ],
     "lower": [
-      18,
-      22,
-      28
+      36,
+      38,
+      46
     ]
   }
 }

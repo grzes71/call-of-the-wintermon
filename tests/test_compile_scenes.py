@@ -392,6 +392,7 @@ def test_validate_scene_dli_platforms_rejects_invalid():
             sizep1=[0]*6, sizep2=[0]*6, sizep3=[0]*6, sizem=[0]*6,
             bg_colpf0=[0]*6, bg_colpf1=[0]*6, bg_colpf2=[0]*6,
             pas_color_sl=[[0]*6 for _ in range(8)],
+            plat_scroll=[0]*6,
             zone_hpos_p1=[0]*6, zone_col_p1=[0]*6,
             zone_hpos_p2=[0]*6, zone_col_p2=[0]*6,
             zone_hpos_p3=[0]*6, zone_col_p3=[0]*6,

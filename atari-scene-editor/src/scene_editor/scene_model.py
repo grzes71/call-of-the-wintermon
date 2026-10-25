@@ -8,7 +8,13 @@ import math
 from typing import Any, Optional
 import warnings
 
-from .catalogue_model import SECRET_CHANNEL_MISSILES, SECRET_CHANNEL_PLAYER
+from .catalogue_model import (
+    SCROLL_MODES,
+    SCROLL_NONE,
+    SCROLL_PERIODS_FRAMES,
+    SECRET_CHANNEL_MISSILES,
+    SECRET_CHANNEL_PLAYER,
+)
 
 
 class ModelValidationError(Exception):
@@ -429,6 +435,11 @@ class PlatformElement:
     width: int
     height: int = PLATFORM_HEIGHT
     color_profile_id: Optional[int] = None
+    # Colour scroll of this platform's row colours: SCROLL_NONE (default, static), "slow"
+    # (1 step / 20 frames), "medium" (10) or "fast" (5). Like `color_profile_id` it is a
+    # row-wide property: every platform in the same row must use the same value (the DLI paints
+    # the row's colours once, so the game can only scroll them together).
+    scroll: str = SCROLL_NONE
 
     @property
     def row_index(self) -> int:
@@ -475,6 +486,15 @@ class PlatformElement:
                 raise ModelValidationError(
                     f"Platform color_profile_id must be an integer between 1 and 255 or None, got {self.color_profile_id!r}."
                 )
+        if not isinstance(self.scroll, str):
+            raise ModelValidationError(
+                f"Platform 'scroll' must be a string, got {self.scroll!r}."
+            )
+        self.scroll = self.scroll.strip().lower()
+        if self.scroll not in SCROLL_MODES:
+            raise ModelValidationError(
+                f"Platform 'scroll' must be one of {SCROLL_MODES}, got {self.scroll!r}."
+            )
 
     def clone(self) -> PlatformElement:
         return copy.deepcopy(self)
@@ -489,6 +509,8 @@ class PlatformElement:
         }
         if self.color_profile_id is not None:
             d["color_profile_id"] = int(self.color_profile_id)
+        if self.scroll != SCROLL_NONE:
+            d["scroll"] = self.scroll
         return d
 
     @classmethod
@@ -523,6 +545,7 @@ class PlatformElement:
             width=int(data["width"]),
             height=raw_h,
             color_profile_id=color_profile_id,
+            scroll=str(data.get("scroll", SCROLL_NONE)),
         )
         p.validate()
         return p
@@ -1185,6 +1208,21 @@ class Scene:
         self._ensure_row_color_profiles()
         self._sync_platform_color_profiles()
 
+    def _ensure_row_scroll(self) -> None:
+        """Force every platform in a row to that row's scroll mode (row-wide, like the profile).
+
+        The effective value of a row is the first scroll mode explicitly set by one of its
+        platforms ("none" means "not set"), so a platform that sets "medium" makes the whole row
+        scroll - and a scene that mixes values still loads instead of failing validation.
+        """
+        row_modes: dict[int, str] = {}
+        for platform in self.platforms:
+            row_y = platform.position.y
+            if platform.scroll != SCROLL_NONE and row_y not in row_modes:
+                row_modes[row_y] = platform.scroll
+        for platform in self.platforms:
+            platform.scroll = row_modes.get(platform.position.y, SCROLL_NONE)
+
     def _ensure_row_color_profiles(self) -> None:
         """Ensure row_color_profiles has entries for all rows and infer from platforms if needed."""
         if not isinstance(self.height, int) or isinstance(self.height, bool):
@@ -1504,6 +1542,11 @@ class Scene:
             usage = self.get_row_channel_usage(row_y)
             if usage["errors"]:
                 raise ObjectLimitExceededError(" ".join(usage["errors"]))
+
+        # Scroll is a row-wide setting (like the row colour profile): normalise it - the first
+        # explicitly set value in a row wins and every platform in that row follows. A half-edited
+        # scene (one platform scrolled, the rest not yet) must still load instead of failing.
+        self._ensure_row_scroll()
 
         # Check for circular secret dependencies on this scene
         scene_secret_defs: dict[int, Optional[int]] = {}

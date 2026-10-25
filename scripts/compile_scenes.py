@@ -229,6 +229,9 @@ class PlatformData:
     width: int
     height: int
     color_profile_id: int | None = None
+    # Colour scroll of this row's platform colours: 0 = none, 1 = slow (10 frames/step),
+    # 2 = medium (5), 3 = fast (2). Row-wide, like the colour profile itself.
+    scroll: int = 0
     colors: list[int] = field(default_factory=lambda: [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80])
 
 
@@ -322,8 +325,11 @@ TILESET_PALETTES: dict[int, tuple[int, int, int]] = {
 # tileset can be resolved. Mirrors scene_editor.scene_model.DEFAULT_BACKGROUND_PALETTE_COLORS
 # (tests/test_scene_background_palette.py asserts both stay in sync).
 DEFAULT_BACKGROUND_PALETTE: tuple[int, int, int] = (0xC4, 0xC8, 0xDC)
-
 BG_PALETTE_ZONES = ("upper", "lower")
+
+# Platform colour-profile scroll: code emitted per platform row (0 = none, 1 = slow, 2 = medium,
+# 3 = fast). Mirrors SCROLL_PERIODS_FRAMES in the scene editor's catalogue_model (10/5/2 frames).
+SCROLL_CODES: dict[str, int] = {"none": 0, "slow": 1, "medium": 2, "fast": 3}
 BG_PALETTE_COLORS_PER_ZONE = 3
 
 
@@ -443,6 +449,7 @@ class SceneDliCompiledData:
     bg_colpf1: list[int]        # 6 bytes
     bg_colpf2: list[int]        # 6 bytes
     pas_color_sl: list[list[int]]  # 8 lists of 6 bytes
+    plat_scroll: list[int]         # 6 bytes: scroll code per pas (0 = none, 1 = slow, 2 = medium, 3 = fast)
     zone_hpos_p1: list[int]     # 6 bytes (zones 1..6)
     zone_col_p1: list[int]      # 6 bytes
     zone_hpos_p2: list[int]     # 6 bytes
@@ -669,6 +676,7 @@ def compile_scene_dli_data(
     sizem = [0] * 6
 
     pas_color_sl = [[0] * 6 for _ in range(8)]
+    plat_scroll = [0] * 6
 
     hpos_p_all = [hpos_p1, hpos_p2, hpos_p3]
     hpos_m_all = [hpos_m0, hpos_m1, hpos_m2, hpos_m3]
@@ -686,6 +694,9 @@ def compile_scene_dli_data(
             row_colors = pas_platforms[0].colors
             for sl in range(8):
                 pas_color_sl[sl][pas_idx] = row_colors[sl]
+            # Scroll is row-wide and "none" (0) means "not set": the first explicitly set value in
+            # the row wins and the whole row follows it (mirrors the editor's _ensure_row_scroll).
+            plat_scroll[pas_idx] = next((code for code in (p.scroll for p in pas_platforms) if code), 0)
 
         ch_p = 0
         ch_m = 0
@@ -831,6 +842,7 @@ def compile_scene_dli_data(
         bg_colpf1=bg_colpf1,
         bg_colpf2=bg_colpf2,
         pas_color_sl=pas_color_sl,
+        plat_scroll=plat_scroll,
         zone_hpos_p1=zone_hpos_p1,
         zone_col_p1=zone_col_p1,
         zone_hpos_p2=zone_hpos_p2,
@@ -1299,6 +1311,7 @@ def parse_scene_json(
                 width=pw,
                 height=ph,
                 color_profile_id=cprof_id,
+                scroll=SCROLL_CODES.get(str(p.get("scroll", "none")).strip().lower(), 0),
                 colors=colors,
             )
         )
@@ -1792,6 +1805,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(1 if s.special else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_channel")
             lines.append("    .byte " + ", ".join(str(s.channel) for s in sc.secrets))
+            lines.append(f"scene_{sym}_plat_scroll")
+            lines.append(
+                "    .byte " + ", ".join(str(c) for c in (sc.dli_data.plat_scroll if sc.dli_data else [0] * 6))
+            )
         else:
             lines.extend([
                 f"scene_{sym}_secret_active      .byte 0",
@@ -1808,6 +1825,7 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_blink      .byte 0",
                 f"scene_{sym}_secret_special    .byte 0",
                 f"scene_{sym}_secret_channel    .byte 0",
+                f"scene_{sym}_plat_scroll       .byte 0",
             ])
         lines.append(f"; --- Enemies ({len(sc.enemies)}) ---")
         if sc.enemies:
@@ -2005,6 +2023,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_channel" for sc in scenes),
         "scene_secret_channel_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_channel" for sc in scenes),
+        "scene_plat_scroll_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_scroll" for sc in scenes),
+        "scene_plat_scroll_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_scroll" for sc in scenes),
         "",
         "; --- Enemy Pointer Tables ---",
         "scene_enemy_def_id_lo",

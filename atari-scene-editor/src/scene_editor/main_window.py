@@ -94,6 +94,8 @@ from .json_serializer import (
 from .scene_model import (
     ANTIC_D_PLAYFIELD_HEIGHT,
     ANTIC_D_PLAYFIELD_WIDTH,
+    SCROLL_NONE,
+    SCROLL_PERIODS_FRAMES,
     BG_PALETTE_COLORS_PER_ZONE,
     BG_PALETTE_ZONES,
     DEFAULT_PLAYER_COLOR,
@@ -553,6 +555,10 @@ class MainWindow(QMainWindow):
         self.new_plat_color_profile_combo = QComboBox()
         pc_layout.addRow("Color Profile:", self.new_plat_color_profile_combo)
 
+        self.new_plat_scroll_combo = QComboBox()
+        self._populate_scroll_combo(self.new_plat_scroll_combo)
+        pc_layout.addRow("Scroll:", self.new_plat_scroll_combo)
+
         self.new_plat_x_spin = QSpinBox()
         self.new_plat_x_spin.setRange(-500, 500)
         self.new_plat_x_spin.setValue(20)
@@ -588,6 +594,11 @@ class MainWindow(QMainWindow):
         self.plat_prop_color_profile_combo = QComboBox()
         self.plat_prop_color_profile_combo.currentIndexChanged.connect(self._on_plat_prop_color_profile_changed)
         pe_layout.addRow("Row Color Profile:", self.plat_prop_color_profile_combo)
+
+        self.plat_prop_scroll_combo = QComboBox()
+        self._populate_scroll_combo(self.plat_prop_scroll_combo)
+        self.plat_prop_scroll_combo.currentIndexChanged.connect(self._on_plat_prop_scroll_changed)
+        pe_layout.addRow("Scroll:", self.plat_prop_scroll_combo)
 
         self.plat_prop_x_spin = QSpinBox()
         self.plat_prop_x_spin.setRange(-500, 500)
@@ -1740,6 +1751,38 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
+    @staticmethod
+    def _populate_scroll_combo(combo: QComboBox) -> None:
+        """Fill a Scroll combo with the platform scroll modes (frames per colour step)."""
+        combo.addItem("No scroll (static)", SCROLL_NONE)
+        for mode in ("slow", "medium", "fast"):
+            combo.addItem(
+                f"{mode.capitalize()} (1 colour / {SCROLL_PERIODS_FRAMES[mode]} frames)", mode
+            )
+        combo.setToolTip(
+            "Scrolls the 8 scanline colours of this platform's row in game (up, one colour per "
+            "step).\nLike the row colour profile it is a row-wide setting: every platform in the "
+            "same row must use the same value."
+        )
+
+    def _on_plat_prop_scroll_changed(self, _index: int) -> None:
+        """Apply the Scroll mode picked for the selected platform (row-wide setting)."""
+        selected_id = self.scene_view.get_selected_platform_id()
+        if not selected_id:
+            return
+        plat = self.scene_model.get_platform(selected_id)
+        if plat is None:
+            return
+
+        value = str(self.plat_prop_scroll_combo.currentData() or SCROLL_NONE)
+        if value == plat.scroll:
+            return  # also the guard against the programmatic refresh in _update_platform_property_panel
+
+        plat.scroll = value
+        plat.validate(scene_height=self.scene_model.height)
+        self._is_dirty = True
+        self._refresh_platform_list(selected_id)
+
     def _on_new_plat_type_changed(self) -> None:
         """Update allowed widths in creator combo when type changes."""
         p_type = self.new_plat_type_combo.currentData()
@@ -1798,6 +1841,7 @@ class MainWindow(QMainWindow):
             width=width,
             height=PLATFORM_HEIGHT,
             color_profile_id=prof_id,
+            scroll=str(self.new_plat_scroll_combo.currentData() or SCROLL_NONE),
         )
 
         cmd = AddPlatformCommand(
@@ -2057,6 +2101,9 @@ class MainWindow(QMainWindow):
             self.plat_prop_color_profile_combo.blockSignals(True)
             self.plat_prop_color_profile_combo.clear()
             self.plat_prop_color_profile_combo.blockSignals(False)
+            self.plat_prop_scroll_combo.blockSignals(True)
+            self.plat_prop_scroll_combo.setCurrentIndex(0)
+            self.plat_prop_scroll_combo.blockSignals(False)
             self.plat_prop_x_spin.blockSignals(True)
             self.plat_prop_x_spin.setValue(0)
             self.plat_prop_x_spin.blockSignals(False)
@@ -2118,6 +2165,12 @@ class MainWindow(QMainWindow):
         else:
             self.plat_prop_color_profile_combo.setCurrentIndex(0)
         self.plat_prop_color_profile_combo.blockSignals(False)
+
+        # Scroll combo (row-wide setting, like the colour profile above)
+        self.plat_prop_scroll_combo.blockSignals(True)
+        s_idx = self.plat_prop_scroll_combo.findData(plat.scroll)
+        self.plat_prop_scroll_combo.setCurrentIndex(s_idx if s_idx >= 0 else 0)
+        self.plat_prop_scroll_combo.blockSignals(False)
 
         # X spinbox
         self.plat_prop_x_spin.blockSignals(True)
