@@ -65,7 +65,8 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-002",
@@ -76,7 +77,8 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-003",
@@ -87,7 +89,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-004",
@@ -98,7 +101,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 11,
+      "scroll": "fast"
     },
     {
       "id": "platform-005",
@@ -120,7 +124,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-007",
@@ -131,7 +136,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-008",
@@ -142,7 +148,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-009",
@@ -153,7 +160,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 7,
+      "scroll": "medium"
     },
     {
       "id": "platform-010",
@@ -175,7 +183,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 9
+      "color_profile_id": 14
     },
     {
       "id": "platform-012",
@@ -186,7 +194,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 9
+      "color_profile_id": 14
     },
     {
       "id": "platform-013",
@@ -197,7 +205,8 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 11,
+      "scroll": "fast"
     },
     {
       "id": "platform-014",
@@ -208,7 +217,8 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 11,
+      "scroll": "fast"
     },
     {
       "id": "platform-015",
@@ -219,7 +229,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 11,
+      "scroll": "fast"
     },
     {
       "id": "platform-016",
@@ -250,7 +261,7 @@
     12,
     null,
     11,
-    9,
+    14,
     14,
     7
   ],
