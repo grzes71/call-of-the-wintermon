@@ -23,7 +23,7 @@
       "z_index": 0
     },
     {
-      "id": "element-003",
+      "id": "element-004",
       "source": "tiles/hell.png",
       "source_rect": {
         "x": 0,
@@ -32,10 +32,10 @@
         "height": 49
       },
       "position": {
-        "x": -1,
-        "y": 47
+        "x": 1,
+        "y": 45
       },
-      "flip_x": false,
+      "flip_x": true,
       "z_index": 1
     }
   ],
@@ -49,7 +49,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 10
+      "color_profile_id": 13
     },
     {
       "id": "platform-002",
@@ -60,7 +60,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 10
+      "color_profile_id": 13
     },
     {
       "id": "platform-003",
@@ -71,7 +71,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 10
+      "color_profile_id": 13
     },
     {
       "id": "platform-004",
@@ -270,6 +270,28 @@
       "width": 16,
       "height": 4,
       "color_profile_id": 11
+    },
+    {
+      "id": "platform-024",
+      "type": "missile",
+      "position": {
+        "x": 78,
+        "y": 40
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12
+    },
+    {
+      "id": "platform-025",
+      "type": "missile",
+      "position": {
+        "x": 100,
+        "y": 40
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12
     }
   ],
   "objects": [
@@ -292,7 +314,7 @@
     12,
     6,
     6,
-    10
+    13
   ],
   "background_palette": {
     "upper": [

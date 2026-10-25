@@ -7,36 +7,68 @@
   },
   "elements": [
     {
-      "id": "element-003",
+      "id": "element-005",
       "source": "tiles/hell.png",
       "source_rect": {
         "x": 0,
         "y": 0,
-        "width": 160,
+        "width": 80,
         "height": 49
       },
       "position": {
-        "x": 1,
-        "y": -5
+        "x": -1,
+        "y": -6
       },
       "flip_x": false,
       "z_index": 0
     },
     {
-      "id": "element-004",
+      "id": "element-006",
       "source": "tiles/hell.png",
       "source_rect": {
         "x": 0,
         "y": 0,
-        "width": 160,
+        "width": 80,
         "height": 49
       },
       "position": {
-        "x": 1,
-        "y": 45
+        "x": 83,
+        "y": 44
       },
       "flip_x": true,
       "z_index": 1
+    },
+    {
+      "id": "element-007",
+      "source": "tiles/hell.png",
+      "source_rect": {
+        "x": 76,
+        "y": 0,
+        "width": 84,
+        "height": 49
+      },
+      "position": {
+        "x": -3,
+        "y": 44
+      },
+      "flip_x": false,
+      "z_index": 2
+    },
+    {
+      "id": "element-009",
+      "source": "tiles/hell.png",
+      "source_rect": {
+        "x": 84,
+        "y": 0,
+        "width": 84,
+        "height": 50
+      },
+      "position": {
+        "x": 80,
+        "y": -6
+      },
+      "flip_x": true,
+      "z_index": 3
     }
   ],
   "platforms": [

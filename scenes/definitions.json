@@ -127,7 +127,7 @@
         "0x82",
         "0x00"
       ],
-      "description": "Cyan/blue gradient suitable for winter/ice platforms"
+      "description": "Cyan-blue with black"
     },
     {
       "id": 2,
@@ -142,7 +142,7 @@
         "0x12",
         "0x00"
       ],
-      "description": "Amber/gold gradient for royal platforms and castle trim"
+      "description": "Amber/gold with black"
     },
     {
       "id": 3,
@@ -157,7 +157,7 @@
         "0x02",
         "0x00"
       ],
-      "description": "Neutral grayscale rock and stone ledges"
+      "description": "Gray with black"
     },
     {
       "id": 4,
@@ -172,7 +172,7 @@
         "0xC2",
         "0x00"
       ],
-      "description": "Verdant green gradient for living branches and roots"
+      "description": "Green with black"
     },
     {
       "id": 5,
@@ -187,7 +187,7 @@
         "0x32",
         "0x00"
       ],
-      "description": "Cyan/blue gradient suitable for winter/ice platforms"
+      "description": "Red with black"
     },
     {
       "id": 6,
@@ -202,7 +202,7 @@
         "0x34",
         "0x32"
       ],
-      "description": "Cyan/blue gradient suitable for winter/ice platforms 2"
+      "description": "Red-smooth"
     },
     {
       "id": 7,
@@ -217,7 +217,7 @@
         "0xC4",
         "0xC2"
       ],
-      "description": "Green gradient suitable for winter/ice platforms 2"
+      "description": "Green smooth"
     },
     {
       "id": 8,
@@ -232,7 +232,7 @@
         "0x14",
         "0x12"
       ],
-      "description": "Gold gradient suitable for winter/ice platforms 2"
+      "description": "Gold smooth"
     },
     {
       "id": 9,
@@ -247,7 +247,7 @@
         "0x94",
         "0x92"
       ],
-      "description": "Gold gradient suitable for winter/ice platforms 2"
+      "description": "Blue smooth"
     },
     {
       "id": 10,
@@ -262,22 +262,22 @@
         "0x44",
         "0x42"
       ],
-      "description": "Cyan/blue gradient suitable for winter/ice platforms 2"
+      "description": "Pink and red"
     },
     {
       "id": 11,
-      "name": "blue-pink",
+      "name": "blue-green",
       "colors": [
         "0x92",
         "0x94",
         "0x96",
         "0x98",
-        "0x48",
-        "0x46",
-        "0x44",
-        "0x42"
+        "0xCC",
+        "0xC8",
+        "0xC6",
+        "0xC4"
       ],
-      "description": "Gold gradient suitable for winter/ice platforms 2"
+      "description": "Blue and green"
     },
     {
       "id": 12,
@@ -292,7 +292,37 @@
         "0x34",
         "0x32"
       ],
-      "description": "Green gradient suitable for winter/ice platforms 2"
+      "description": "Green and red"
+    },
+    {
+      "id": 13,
+      "name": "yellow-yellow",
+      "colors": [
+        "0x3C",
+        "0x3A",
+        "0x38",
+        "0x36",
+        "0x36",
+        "0x2A",
+        "0x2C",
+        "0x2E"
+      ],
+      "description": "Double yellow"
+    },
+    {
+      "id": 14,
+      "name": "green-green",
+      "colors": [
+        "0xBE",
+        "0xBC",
+        "0xBA",
+        "0xB8",
+        "0xCC",
+        "0xC8",
+        "0xC6",
+        "0xC4"
+      ],
+      "description": "Double green"
     }
   ]
 }
