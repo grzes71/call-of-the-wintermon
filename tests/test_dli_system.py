@@ -267,6 +267,27 @@ def assert_pmg_guard_lines(mem, labels) -> None:
         assert mem[labels["PMG_MISSILES"] + guard] == 0x00, f"Guard line {guard} in Missiles must be $00"
 
 
+def scene_pair_with_different_patterns() -> tuple[int, int]:
+    """Two scenes whose compiled PMG platform patterns differ.
+
+    Picked by content (Rule 05): the first scene that compiles any pattern and the first other
+    scene whose pattern set differs, so adding or reordering scenes in scenes/scenes.json cannot
+    break the pattern tests (a manifest where several scenes share a layout still works).
+    """
+    indices = list(range(len(scene_files())))
+    first = next((i for i in indices if any(expected_scene_patterns(i))), indices[0])
+    first_patterns = expected_scene_patterns(first)
+    other = next(
+        (i for i in indices if i != first and expected_scene_patterns(i) != first_patterns),
+        None,
+    )
+    if other is None:
+        raise AssertionError(
+            "no two scenes in scenes/scenes.json compile different PMG platform pattern sets"
+        )
+    return first, other
+
+
 def test_dli_init_execution():
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
@@ -299,20 +320,24 @@ def test_dli_init_execution():
 
 
 def test_dli_init_scene1_patterns():
-    """Verify that dli_init dynamically loads Scene 1 patterns when active_scene_id == 1."""
+    """Verify that dli_init dynamically loads the active scene's patterns."""
+    scene_a, scene_b = scene_pair_with_different_patterns()
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mem[labels["ACTIVE_SCENE_ID"]] = 1
+    mem[labels["ACTIVE_SCENE_ID"]] = scene_b
     run_subroutine(mpu, labels["DLI_INIT"])
 
-    # Scene 1 patterns come from its own scene JSON through the compiler (Rule 05).
-    patterns = expected_scene_patterns(1)
-    assert patterns != expected_scene_patterns(0), "scene 1 must load its own pattern set"
-    assert_pmg_patterns(mem, labels, patterns, scene_index=1)
+    # The patterns come from that scene's JSON through the compiler (Rule 05).
+    patterns = expected_scene_patterns(scene_b)
+    assert patterns != expected_scene_patterns(scene_a), (
+        f"scene {scene_b} ({scene_files()[scene_b]}) must load its own pattern set"
+    )
+    assert_pmg_patterns(mem, labels, patterns, scene_index=scene_b)
     assert_pmg_guard_lines(mem, labels)
 
 
@@ -535,25 +560,29 @@ def test_pmg_patterns_are_applied_on_scene_change():
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    scene0_patterns = expected_scene_patterns(0)
-    scene1_patterns = expected_scene_patterns(1)
-    assert scene0_patterns != scene1_patterns, "the two scenes must use different pattern sets"
+    scene_a, scene_b = scene_pair_with_different_patterns()
+    scene0_patterns = expected_scene_patterns(scene_a)
+    scene1_patterns = expected_scene_patterns(scene_b)
+    assert scene0_patterns != scene1_patterns, (
+        f"scenes {scene_a} and {scene_b} must use different pattern sets"
+    )
 
-    # 1. Initialize with Scene 0
+    # 1. Initialize with the first scene
+    mem[labels["ACTIVE_SCENE_ID"]] = scene_a
     run_subroutine(mpu, labels["DLI_INIT"])
-    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=0)
+    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=scene_a)
 
-    # 2. Stage Scene 1; the buffer swap is committed in VBLANK
-    mpu.a = 1
+    # 2. Stage the second scene; the buffer swap is committed in VBLANK
+    mpu.a = scene_b
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
     run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
-    assert_pmg_patterns(mem, labels, scene1_patterns, scene_index=1)
+    assert_pmg_patterns(mem, labels, scene1_patterns, scene_index=scene_b)
 
-    # 3. Stage Scene 0 back: the original patterns must return
-    mpu.a = 0
+    # 3. Stage the first scene back: the original patterns must return
+    mpu.a = scene_a
     run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
     run_subroutine(mpu, labels["DLI_VBLANK_UPDATE"])
-    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=0)
+    assert_pmg_patterns(mem, labels, scene0_patterns, scene_index=scene_a)
 
 
 # ==============================================================================

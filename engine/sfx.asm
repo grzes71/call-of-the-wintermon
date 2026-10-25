@@ -81,7 +81,7 @@ sfx_death_notes
 ; ==============================================================================
 .proc sfx_init
     lda #3
-    sta SKCTL                   ; Enable two-tone mode / normal POKEY operation
+    sta SKCTL                   ; Keyboard scan + debounce enabled ($03, OS default)
     lda #0
     sta AUDCTL                  ; 64 kHz main clock, standard filters
     jsr sfx_stop_all

@@ -25,6 +25,7 @@ from tests.scene_expectations import (
     scene_platform,
     scene_platform_count,
     scene_platform_index,
+    scene_files,
 )
 
 # ---------------------------------------------------------------------------
@@ -131,41 +132,60 @@ def test_player_init_scene0():
         assert mem[pmg_p0 + y] == 0x00, f"Scanline {y} after player must be 0"
 
 
-def test_player_init_scene1_custom_color():
-    """Verify player_init initializes Player 0 on Scene 1 with scene-specific player color."""
+def test_player_init_uses_the_scene_player_color():
+    """Verify player_init takes the player colour from the scene it stages.
+
+    Two scenes with *different* player colours are picked from the manifest (Rule 05: no
+    hardcoded scene indices, so reordering scenes or adding a level cannot break this).
+    """
+    scene_a = SCENE0
+    colour_a = player_spawn(scene_a)["color"]
+    scene_b = next(
+        (
+            index
+            for index in range(len(scene_files()))
+            if index != scene_a and player_spawn(index)["color"] != colour_a
+        ),
+        None,
+    )
+    assert scene_b is not None, "no other scene defines a different player colour"
+
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    scene0_color = mem[labels["SCENE_PLAYER_COLOR"]]
-    scene1_color = mem[labels["SCENE_PLAYER_COLOR"] + 1]
+    scene_a_color = mem[labels["SCENE_PLAYER_COLOR"] + scene_a]
+    scene_b_color = mem[labels["SCENE_PLAYER_COLOR"] + scene_b]
+    assert scene_b_color != scene_a_color, (
+        f"scene {scene_b} ({scene_files()[scene_b]}) must have its own player colour"
+    )
 
-    # Verify that Scene 1 has a distinct color configured compared to Scene 0
-    assert scene1_color != scene0_color
-
-    # Initialize Player 0 on Scene 1 (spawn read from the scene JSON, Rule 05)
-    mem[labels["ACTIVE_SCENE_ID"]] = 1
-    mpu.a = 1
+    # Initialize Player 0 on the second scene (spawn read from the scene JSON, Rule 05)
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mem[labels["ACTIVE_SCENE_ID"]] = scene_b
+    mpu.a = scene_b
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = scene_b
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    assert mem[labels["PLAYER_X"]] == player_spawn(1)["x"]
-    assert mem[labels["COLPM0"]] == scene1_color
-    assert mem[labels["PCOLR0"]] == scene1_color
-    assert mem[labels["PLAYER_COLOR"]] == scene1_color
+    assert mem[labels["PLAYER_X"]] == player_spawn(scene_b)["x"]
+    assert mem[labels["COLPM0"]] == scene_b_color
+    assert mem[labels["PCOLR0"]] == scene_b_color
+    assert mem[labels["PLAYER_COLOR"]] == scene_b_color
 
-    # Verify platform tables for Scene 1 (count comes from its scene JSON, Rule 05)
-    expected_plat_count = scene_platform_count(1)
-    expected_ptr_x = mem[labels["SCENE_PLAT_X_LO"] + 1] | (mem[labels["SCENE_PLAT_X_HI"] + 1] << 8)
-    expected_ptr_y = mem[labels["SCENE_PLAT_Y_LO"] + 1] | (mem[labels["SCENE_PLAT_Y_HI"] + 1] << 8)
-    expected_ptr_w = mem[labels["SCENE_PLAT_W_LO"] + 1] | (mem[labels["SCENE_PLAT_W_HI"] + 1] << 8)
+    # Verify platform tables for that scene (count comes from its scene JSON, Rule 05)
+    expected_plat_count = scene_platform_count(scene_b)
+    expected_ptr_x = mem[labels["SCENE_PLAT_X_LO"] + scene_b] | (mem[labels["SCENE_PLAT_X_HI"] + scene_b] << 8)
+    expected_ptr_y = mem[labels["SCENE_PLAT_Y_LO"] + scene_b] | (mem[labels["SCENE_PLAT_Y_HI"] + scene_b] << 8)
+    expected_ptr_w = mem[labels["SCENE_PLAT_W_LO"] + scene_b] | (mem[labels["SCENE_PLAT_W_HI"] + scene_b] << 8)
 
     actual_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
     actual_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
     actual_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
 
-    assert mem[labels["SCENE_PLAT_COUNT"] + 1] == expected_plat_count, (
+    assert mem[labels["SCENE_PLAT_COUNT"] + scene_b] == expected_plat_count, (
         "the compiled platform count must match the scene JSON"
     )
     assert mem[labels["ZP_PLAT_COUNT"]] == expected_plat_count

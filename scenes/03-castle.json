@@ -81,7 +81,7 @@
       },
       "width": 64,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 3
     },
     {
       "id": "platform-002",
@@ -92,7 +92,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 3
     },
     {
       "id": "platform-003",
@@ -110,11 +110,11 @@
       "type": "sprite",
       "position": {
         "x": 4,
-        "y": 72
+        "y": 56
       },
       "width": 24,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 4
     },
     {
       "id": "platform-005",
@@ -191,7 +191,70 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 2
+    },
+    {
+      "id": "platform-012",
+      "type": "sprite",
+      "position": {
+        "x": 20,
+        "y": 24
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 2
+    },
+    {
+      "id": "platform-013",
+      "type": "sprite",
+      "position": {
+        "x": 56,
+        "y": 40
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 5
+    },
+    {
+      "id": "platform-014",
+      "type": "sprite",
+      "position": {
+        "x": 108,
+        "y": 8
+      },
+      "width": 32,
+      "height": 4
+    },
+    {
+      "id": "platform-015",
+      "type": "sprite",
+      "position": {
+        "x": 60,
+        "y": 8
+      },
+      "width": 32,
+      "height": 4
+    },
+    {
+      "id": "platform-016",
+      "type": "sprite",
+      "position": {
+        "x": 0,
+        "y": 8
+      },
+      "width": 16,
+      "height": 4
+    },
+    {
+      "id": "platform-017",
+      "type": "sprite",
+      "position": {
+        "x": 4,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 2
     }
   ],
   "objects": [
@@ -210,11 +273,11 @@
   },
   "row_color_profiles": [
     null,
-    4,
+    2,
     5,
     4,
     2,
-    1
+    3
   ],
   "background_palette": {
     "upper": [

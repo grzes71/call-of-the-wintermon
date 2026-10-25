@@ -57,7 +57,7 @@ back to hardware only during VBI.
 
 | Shadow | Hardware |
 |---|---|
-| `GPRIOR` `$022E` | `PRIOR` `$D01B` |
+| `GPRIOR` `$026F` | `PRIOR` `$D01B` |
 | `PCOLR0` `$02C0` | `COLPM0` `$D012` |
 | `PCOLR1` `$02C1` | `COLPM1` `$D013` |
 | `PCOLR2` `$02C2` | `COLPM2` `$D014` |

@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "scene": {
+    "name": "The Call of Ktulu",
+    "width": 160,
+    "height": 96
+  },
+  "elements": [
+    {
+      "id": "element-006",
+      "source": "tiles/depths.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 164,
+        "height": 50
+      },
+      "position": {
+        "x": -3,
+        "y": 44
+      },
+      "flip_x": true,
+      "z_index": 0
+    },
+    {
+      "id": "element-007",
+      "source": "tiles/depths.png",
+      "source_rect": {
+        "x": 164,
+        "y": 0,
+        "width": 80,
+        "height": 50
+      },
+      "position": {
+        "x": 79,
+        "y": -7
+      },
+      "flip_x": false,
+      "z_index": 1
+    },
+    {
+      "id": "element-008",
+      "source": "tiles/depths.png",
+      "source_rect": {
+        "x": 0,
+        "y": 2,
+        "width": 80,
+        "height": 47
+      },
+      "position": {
+        "x": -2,
+        "y": -4
+      },
+      "flip_x": false,
+      "z_index": 2
+    }
+  ],
+  "platforms": [
+    {
+      "id": "platform-001",
+      "type": "sprite",
+      "position": {
+        "x": 18,
+        "y": 88
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 5
+    },
+    {
+      "id": "platform-002",
+      "type": "sprite",
+      "position": {
+        "x": 60,
+        "y": 88
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 5
+    },
+    {
+      "id": "platform-003",
+      "type": "sprite",
+      "position": {
+        "x": 104,
+        "y": 88
+      },
+      "width": 32,
+      "height": 4,
+      "color_profile_id": 5
+    },
+    {
+      "id": "platform-004",
+      "type": "sprite",
+      "position": {
+        "x": 20,
+        "y": 40
+      },
+      "width": 16,
+      "height": 4
+    }
+  ],
+  "objects": [
+    {
+      "id": 1,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-003",
+      "x": 126
+    }
+  ],
+  "player_spawn": {
+    "x": 74,
+    "y": 68,
+    "color": 152
+  },
+  "row_color_profiles": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    5
+  ],
+  "background_palette": {
+    "upper": [
+      210,
+      214,
+      220
+    ],
+    "lower": [
+      194,
+      198,
+      204
+    ]
+  }
+}
