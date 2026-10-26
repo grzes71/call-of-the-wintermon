@@ -16,12 +16,19 @@ from .catalogue_model import (
     PLATFORM_MOVEMENT_RIGHT_LEFT,
     PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT,
     PLATFORM_MOVEMENTS,
+    PLATFORM_SPEED_DEFAULT,
+    PLATFORM_SPEED_FAST,
+    PLATFORM_SPEED_LABELS,
+    PLATFORM_SPEED_MEDIUM,
+    PLATFORM_SPEED_SLOW,
+    PLATFORM_SPEEDS,
     SCROLL_MODES,
     SCROLL_NONE,
     SCROLL_PERIODS_FRAMES,
     SECRET_CHANNEL_MISSILES,
     SECRET_CHANNEL_PLAYER,
     normalize_platform_movement,
+    normalize_platform_speed,
 )
 
 
@@ -451,6 +458,8 @@ class PlatformElement:
     # Horizontal movement pattern: "none" (default, static), "left-right", "right-left",
     # "left-pause-right", "right-pause-left".
     movement: str = PLATFORM_MOVEMENT_NONE
+    # Horizontal movement speed: "slow", "medium" (default, current), "fast".
+    movement_speed: str = PLATFORM_SPEED_DEFAULT
 
     @property
     def row_index(self) -> int:
@@ -515,6 +524,15 @@ class PlatformElement:
             raise ModelValidationError(
                 f"Platform 'movement' must be one of {PLATFORM_MOVEMENTS}, got {self.movement!r}."
             )
+        if not isinstance(self.movement_speed, str):
+            raise ModelValidationError(
+                f"Platform 'movement_speed' must be a string, got {self.movement_speed!r}."
+            )
+        self.movement_speed = normalize_platform_speed(self.movement_speed)
+        if self.movement_speed not in PLATFORM_SPEEDS:
+            raise ModelValidationError(
+                f"Platform 'movement_speed' must be one of {PLATFORM_SPEEDS}, got {self.movement_speed!r}."
+            )
 
     def clone(self) -> PlatformElement:
         return copy.deepcopy(self)
@@ -533,6 +551,8 @@ class PlatformElement:
             d["scroll"] = self.scroll
         if self.movement != PLATFORM_MOVEMENT_NONE:
             d["movement"] = self.movement
+        if self.movement_speed != PLATFORM_SPEED_DEFAULT:
+            d["movement_speed"] = self.movement_speed
         return d
 
     @classmethod
@@ -569,6 +589,9 @@ class PlatformElement:
             color_profile_id=color_profile_id,
             scroll=str(data.get("scroll", SCROLL_NONE)),
             movement=normalize_platform_movement(data.get("movement", PLATFORM_MOVEMENT_NONE)),
+            movement_speed=normalize_platform_speed(
+                data.get("movement_speed", data.get("speed", PLATFORM_SPEED_DEFAULT))
+            ),
         )
         p.validate()
         return p

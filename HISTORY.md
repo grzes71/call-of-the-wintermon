@@ -2,6 +2,53 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-26] - Platform Movement Speed in Editor and 6502 Engine
+
+- **Feature**: Added "Movement Speed" configuration to platforms in the Atari Scene Editor and implemented multi-speed cadence support in the 6502 game engine.
+- **Speed Calibration**:
+  - `Slow`: 1 pixel every 4 frames (divider reload = 3) $\approx$ 12.5 px/s PAL.
+  - `Medium` (default / previous baseline): 1 pixel every 2 frames (divider reload = 1) $\approx$ 25 px/s PAL.
+  - `Fast`: 1 pixel every 1 frame (divider reload = 0) $\approx$ 50 px/s PAL.
+- **Atari Scene Editor**:
+  - [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py): Added speed constants (`PLATFORM_SPEED_SLOW`, `PLATFORM_SPEED_MEDIUM`, `PLATFORM_SPEED_FAST`), list `PLATFORM_SPEEDS`, labels `PLATFORM_SPEED_LABELS`, and normalization function `normalize_platform_speed`.
+  - [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py): Added `movement_speed: str = "medium"` to `PlatformElement`, with validation, JSON serialization (`to_dict` omits default `"medium"`), and deserialization (`from_dict` accepts `"movement_speed"` or `"speed"`).
+  - [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py): Added `ChangePlatformMovementSpeedCommand` for full Undo/Redo support.
+  - [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py): Added `new_plat_movement_speed_combo` under Movement in Platform Creator and `plat_prop_movement_speed_combo` in Selected Platform Properties.
+- **Compiler Pipeline ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `PLAT_SPEED_RELOAD_MAP` (`slow` -> 3, `medium` -> 1, `fast` -> 0).
+  - Extended `PlatformData` with `speed` and `speed_reload`.
+  - Generated `scene_{sym}_plat_speed` reload tables and pointer tables `scene_plat_speed_lo` and `scene_plat_speed_hi`.
+- **6502 Engine ([engine/platforms.asm](engine/platforms.asm))**:
+  - Added `plat_speed` runtime array.
+  - `platforms_init`: Copies `scene_plat_speed` into `plat_speed` alongside positions, directions, and hardware info.
+  - `platforms_update`: Resets `plat_speed_timer,x` from `plat_speed,x` dynamically on step execution.
+- **Tests & Verification**:
+  - [tests/test_platform_editor.py](tests/test_platform_editor.py): Added `TestPlatformMovementSpeed` suite covering defaults, validation, normalization, error handling, serialization roundtrips, and undo/redo.
+  - [tests/test_gui_integration.py](tests/test_gui_integration.py): Added `test_platform_movement_speed_gui_combos` covering creation, selection update, and property panel synchronization.
+  - [tests/test_platforms_runtime.py](tests/test_platforms_runtime.py): Updated initialization assertions and added py65 speed cadence tests (`test_platform_speed_slow`, `test_platform_speed_medium`, `test_platform_speed_fast`).
+  - Full test suite passed (714 tests), `make all` clean, 3,449 B headroom below `$C000`.
+
+## [2026-10-26] - Dynamic Moving Platforms Engine Implementation
+
+- **Feature**: Implemented full dynamic moving platform mechanics in the 6502 engine driven by scene JSON definitions.
+- **Engine Core ([engine/platforms.asm](engine/platforms.asm))**:
+  - `platforms_init`: Restores initial positions from `scene_plat_init_x` to `scene_plat_x`, derives initial direction (`movement & 1`) and row pas index (`(y - 8) >> 4`), copies packed hardware info, and zeroes runtime speed and pause timers.
+  - `platforms_update`: Evaluates speed cadence (1 px every 2 frames = 25 px/s PAL), screen boundary bounces ($X \le 0$ reverses right, $X + W \ge 160$ reverses left), 50-frame pause countdown for pause strategies, symmetric inter-platform collision detection and bounce in the same pas, immediate DLI hardware position double-buffer synchronization, and Hero carrier physics ($dx$ carry for standing player in IDLE/WALK respecting $[0, 152]$ screen bounds).
+  - `platforms_update_dli_hpos`: Dynamically updates `dli_hpos_p1..3` and `dli_hpos_m0..3` in both active and inactive double buffers for 1-to-3 segment sprite platforms and single/quad missile platforms.
+- **Compiler Pipeline ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `PLAT_MOVEMENT_MAP` and initial direction resolution.
+  - Tracked platform row `pas_idx` and assigned hardware channels (`ch_start`, `ch_count`).
+  - Emitted `scene_{sym}_plat_init_x`, `scene_{sym}_plat_movement`, and packed `scene_{sym}_plat_hw_info` along with LO/HI pointer tables (`scene_plat_init_x_lo/hi`, `scene_plat_movement_lo/hi`, `scene_plat_hw_info_lo/hi`).
+- **Integration**:
+  - [main.asm](main.asm): Shifted `SCENE_TABLES` base from `$A800` down to `$A400` to utilize the gap above tilesets (ending at `$A20B`), expanding headroom to 6,144 B before `$BC00`. Included [engine/platforms.asm](engine/platforms.asm).
+  - [engine/player.asm](engine/player.asm): Called `platforms_init` inside `player_init` to guarantee platform runtime tables and pointers are staged.
+  - [scenes/game.asm](scenes/game.asm): Added `jsr platforms_update` in the active gameplay frame loop `@do_playing`.
+  - [Makefile](Makefile): Added `engine/platforms.asm` to `ASM_SRCS`.
+  - [scripts/check_memory.py](scripts/check_memory.py) & [scripts/generate_memory_map.py](scripts/generate_memory_map.py): Updated segment bounds validation to support `$A400`.
+- **Tests & Verification**:
+  - Created automated py65 emulation test suite [tests/test_platforms_runtime.py](tests/test_platforms_runtime.py) with 12 tests covering SoA initialization, speed interval cadence, screen edge bouncing, 50-frame pause countdown, inter-platform collision bounce, DLI hardware register synchronization across both buffers, and Hero carrier mechanics.
+  - Verified full build pipeline (`make all`): 703 tests passing, memory check passing with 3,602 B free headroom below `$C000`.
+
 ## [2026-10-26] - Platform Movement Property in Atari Scene Editor
 
 - **Feature**: Added "Movement" property to hardware platforms in the Atari Scene Editor, allowing per-platform horizontal movement patterns.

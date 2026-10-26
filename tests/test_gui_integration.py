@@ -443,3 +443,63 @@ class TestMainWindowIntegration:
         assert p.movement == "right-left"
         assert prop_combo.currentData() == "right-left"
 
+    def test_platform_movement_speed_gui_combos(self, test_app):
+        """Verify that platform movement speed comboboxes exist, have 3 options, and update platforms."""
+        window, _, _ = test_app
+
+        # 1. Check creator combo
+        creator_combo = window.new_plat_movement_speed_combo
+        assert creator_combo.count() == 3
+        expected_labels = [
+            "Slow",
+            "Medium (obecna prędkość)",
+            "Fast",
+        ]
+        expected_data = [
+            "slow",
+            "medium",
+            "fast",
+        ]
+        for i, (label, data) in enumerate(zip(expected_labels, expected_data)):
+            assert creator_combo.itemText(i) == label
+            assert creator_combo.itemData(i) == data
+
+        # 2. Check property combo
+        prop_combo = window.plat_prop_movement_speed_combo
+        assert prop_combo.count() == 3
+        for i, (label, data) in enumerate(zip(expected_labels, expected_data)):
+            assert prop_combo.itemText(i) == label
+            assert prop_combo.itemData(i) == data
+
+        # 3. Add a platform with speed "fast"
+        window.prop_tabs.setCurrentIndex(1)
+        window.new_plat_x_spin.setValue(20)
+        idx = creator_combo.findData("fast")
+        assert idx >= 0
+        creator_combo.setCurrentIndex(idx)
+        window.btn_add_plat.click()
+
+        assert len(window.scene_model.platforms) == 1
+        p = window.scene_model.platforms[0]
+        assert p.movement_speed == "fast"
+
+        # 4. Property combo should reflect the selected platform's speed
+        window._on_platform_selected(p.id)
+        assert prop_combo.currentData() == "fast"
+
+        # 5. Change speed via property combo
+        new_idx = prop_combo.findData("slow")
+        assert new_idx >= 0
+        prop_combo.setCurrentIndex(new_idx)
+        assert p.movement_speed == "slow"
+
+        # 6. Test undo/redo
+        window.undo_stack.undo()
+        assert p.movement_speed == "fast"
+        assert prop_combo.currentData() == "fast"
+
+        window.undo_stack.redo()
+        assert p.movement_speed == "slow"
+        assert prop_combo.currentData() == "slow"
+
+

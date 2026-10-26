@@ -63,6 +63,7 @@ from .commands import (
     AddSceneObjectCommand,
     ChangePlatformColorProfileCommand,
     ChangePlatformMovementCommand,
+    ChangePlatformMovementSpeedCommand,
     ChangeRowColorProfileCommand,
     ChangePlatformTypeCommand,
     ChangeSceneObjectIdCommand,
@@ -133,6 +134,12 @@ from .scene_model import (
     PLATFORM_MOVEMENT_RIGHT_LEFT,
     PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT,
     PLATFORM_MOVEMENTS,
+    PLATFORM_SPEED_DEFAULT,
+    PLATFORM_SPEED_FAST,
+    PLATFORM_SPEED_LABELS,
+    PLATFORM_SPEED_MEDIUM,
+    PLATFORM_SPEED_SLOW,
+    PLATFORM_SPEEDS,
     PLATFORM_TYPE_MISSILE,
     PLATFORM_TYPE_SPRITE,
     PLATFORM_TYPES,
@@ -570,6 +577,10 @@ class MainWindow(QMainWindow):
         self._populate_movement_combo(self.new_plat_movement_combo)
         pc_layout.addRow("Movement:", self.new_plat_movement_combo)
 
+        self.new_plat_movement_speed_combo = QComboBox()
+        self._populate_movement_speed_combo(self.new_plat_movement_speed_combo)
+        pc_layout.addRow("Movement Speed:", self.new_plat_movement_speed_combo)
+
         self.new_plat_x_spin = QSpinBox()
         self.new_plat_x_spin.setRange(-500, 500)
         self.new_plat_x_spin.setValue(20)
@@ -615,6 +626,11 @@ class MainWindow(QMainWindow):
         self._populate_movement_combo(self.plat_prop_movement_combo)
         self.plat_prop_movement_combo.currentIndexChanged.connect(self._on_plat_prop_movement_changed)
         pe_layout.addRow("Movement:", self.plat_prop_movement_combo)
+
+        self.plat_prop_movement_speed_combo = QComboBox()
+        self._populate_movement_speed_combo(self.plat_prop_movement_speed_combo)
+        self.plat_prop_movement_speed_combo.currentIndexChanged.connect(self._on_plat_prop_movement_speed_changed)
+        pe_layout.addRow("Movement Speed:", self.plat_prop_movement_speed_combo)
 
         self.plat_prop_x_spin = QSpinBox()
         self.plat_prop_x_spin.setRange(-500, 500)
@@ -1831,6 +1847,37 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
+    @staticmethod
+    def _populate_movement_speed_combo(combo: QComboBox) -> None:
+        """Fill a Movement Speed combo with platform speed modes."""
+        combo.addItem("Slow", PLATFORM_SPEED_SLOW)
+        combo.addItem("Medium (obecna prędkość)", PLATFORM_SPEED_MEDIUM)
+        combo.addItem("Fast", PLATFORM_SPEED_FAST)
+        combo.setCurrentIndex(1)  # Default to Medium
+        combo.setToolTip("Horizontal movement speed of this platform in game.")
+
+    def _on_plat_prop_movement_speed_changed(self, _index: int) -> None:
+        """Apply the Movement Speed picked for the selected platform."""
+        selected_id = self.scene_view.get_selected_platform_id()
+        if not selected_id:
+            return
+        plat = self.scene_model.get_platform(selected_id)
+        if plat is None:
+            return
+
+        value = str(self.plat_prop_movement_speed_combo.currentData() or PLATFORM_SPEED_DEFAULT)
+        if value == plat.movement_speed:
+            return  # guard against programmatic refresh in _update_platform_property_panel
+
+        cmd = ChangePlatformMovementSpeedCommand(
+            self.scene_model,
+            selected_id,
+            plat.movement_speed,
+            value,
+            callback=lambda: self._on_platform_command_executed(selected_id),
+        )
+        self.undo_stack.push(cmd)
+
     def _on_new_plat_type_changed(self) -> None:
         """Update allowed widths in creator combo when type changes."""
         p_type = self.new_plat_type_combo.currentData()
@@ -1891,6 +1938,7 @@ class MainWindow(QMainWindow):
             color_profile_id=prof_id,
             scroll=str(self.new_plat_scroll_combo.currentData() or SCROLL_NONE),
             movement=str(self.new_plat_movement_combo.currentData() or PLATFORM_MOVEMENT_NONE),
+            movement_speed=str(self.new_plat_movement_speed_combo.currentData() or PLATFORM_SPEED_DEFAULT),
         )
 
         cmd = AddPlatformCommand(
@@ -2156,6 +2204,9 @@ class MainWindow(QMainWindow):
             self.plat_prop_movement_combo.blockSignals(True)
             self.plat_prop_movement_combo.setCurrentIndex(0)
             self.plat_prop_movement_combo.blockSignals(False)
+            self.plat_prop_movement_speed_combo.blockSignals(True)
+            self.plat_prop_movement_speed_combo.setCurrentIndex(1)
+            self.plat_prop_movement_speed_combo.blockSignals(False)
             self.plat_prop_x_spin.blockSignals(True)
             self.plat_prop_x_spin.setValue(0)
             self.plat_prop_x_spin.blockSignals(False)
@@ -2229,6 +2280,12 @@ class MainWindow(QMainWindow):
         m_idx = self.plat_prop_movement_combo.findData(plat.movement)
         self.plat_prop_movement_combo.setCurrentIndex(m_idx if m_idx >= 0 else 0)
         self.plat_prop_movement_combo.blockSignals(False)
+
+        # Movement speed combo
+        self.plat_prop_movement_speed_combo.blockSignals(True)
+        ms_idx = self.plat_prop_movement_speed_combo.findData(plat.movement_speed)
+        self.plat_prop_movement_speed_combo.setCurrentIndex(ms_idx if ms_idx >= 0 else 1)
+        self.plat_prop_movement_speed_combo.blockSignals(False)
 
         # X spinbox
         self.plat_prop_x_spin.blockSignals(True)

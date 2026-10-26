@@ -75,7 +75,7 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Tileset Metadata, Status Line & SFX Engine"
         elif start in (0x5000, 0x2C30, 0x2D00):
             seg_type = "Scene Runtime Engine (secrets/channel dispatch/enemies/sfx)"
-        elif start == 0xA800:
+        elif start in (0xA800, 0xA400):
             seg_type = "Scene SoA Tables, DLI Blocks & Pointer Tables (grows with scene count)"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
@@ -139,17 +139,17 @@ def check_memory(xex_path: Path) -> int:
             )
         prev_end = end
 
-    # Scene data tables headroom: how much room is left for additional scenes ($A800-$BFFF)
-    scene_tables_seg = next((s for s in segments if s[0] == 0xA800), None)
+    # Scene data tables headroom: how much room is left for additional scenes
+    scene_tables_seg = next((s for s in segments if s[0] in (0xA800, 0xA400)), None)
     if scene_tables_seg:
-        _, st_end, st_size = scene_tables_seg
+        st_start, st_end, st_size = scene_tables_seg
         # The Game Over text segment sits in the same window, so its bytes are not
         # available for more scenes.
         go_text_seg = next((s for s in segments if s[0] == 0xBC00), None)
         st_reserved = go_text_seg[2] if go_text_seg else 0
         st_headroom = 0xBFFF - st_end - st_reserved
         print(
-            f"Scene Data Tables ($A800-$BFFF) used {st_size} bytes, "
+            f"Scene Data Tables (${st_start:04X}-$BFFF) used {st_size} bytes, "
             f"{st_headroom} bytes left for additional scenes"
             + (f" (Game Over texts reserve {st_reserved} bytes)" if st_reserved else "")
         )

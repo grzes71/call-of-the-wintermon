@@ -102,6 +102,43 @@ OBJ_STRATEGY_MAP: dict[str, int] = {
     "ambush": 4,
 }
 
+PLAT_MOVEMENT_MAP: dict[str, int] = {
+    "none": 0,
+    "left-right": 1,
+    "right-left": 2,
+    "left-pause-right": 3,
+    "right-pause-left": 4,
+    "left_right": 1,
+    "right_left": 2,
+    "left_pause_right": 3,
+    "right_pause_left": 4,
+}
+
+PLAT_INITIAL_DIR_MAP: dict[str, int] = {
+    "none": 0,
+    "left-right": 1,
+    "right-left": 0,
+    "left-pause-right": 1,
+    "right-pause-left": 0,
+    "left_right": 1,
+    "right_left": 0,
+    "left_pause_right": 1,
+    "right_pause_left": 0,
+}
+
+# Platform movement speed reload counts (frame cadence reload)
+PLAT_SPEED_RELOAD_MAP: dict[str, int] = {
+    "slow": 3,      # 1 pixel every 4 frames (12.5 px/s PAL)
+    "medium": 1,    # 1 pixel every 2 frames (25 px/s PAL - default)
+    "fast": 0,      # 1 pixel every 1 frame  (50 px/s PAL)
+}
+
+PLAT_SPEED_CODE_MAP: dict[str, int] = {
+    "slow": 0,
+    "medium": 1,
+    "fast": 2,
+}
+
 # Polish diacritics mapping for Atari 8-bit custom font
 POLISH_CHARS: dict[str, int] = {
     "Ą": 65, "Ć": 66, "Ę": 67, "Ł": 68, "Ń": 69, "Ó": 70, "Ś": 71, "Ź": 72, "Ż": 73,
@@ -235,7 +272,12 @@ class PlatformData:
     # Horizontal movement pattern: "none" (default), "left-right", "right-left",
     # "left-pause-right", "right-pause-left".
     movement: str = "none"
+    speed: str = "medium"
+    speed_reload: int = 1
     colors: list[int] = field(default_factory=lambda: [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80])
+    pas_idx: int = 0
+    ch_start: int = 0
+    ch_count: int = 0
 
 
 @dataclass
@@ -711,6 +753,9 @@ def compile_scene_dli_data(
                     f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
                     f"platform '{p.id}' has unsupported width {p.width} px (supported: 8, 16, 24, 32, 48, 64, 96)."
                 )
+            p.pas_idx = pas_idx
+            p.ch_start = ch_p
+            start_ch = ch_p
             seg_offset = 0
             for seg_w, p_sizep in SUPPORTED_SPRITE_WIDTHS[p.width]:
                 if ch_p < 3:
@@ -719,9 +764,13 @@ def compile_scene_dli_data(
                     pmg_patterns_list[pas_idx * 3 + ch_p] = WIDTH_TO_PMG_PATTERN.get(seg_w, 0xFF)
                     ch_p += 1
                 seg_offset += seg_w
+            p.ch_count = ch_p - start_ch
 
         # Assign missile platforms
         for p in missile_plats:
+            p.pas_idx = pas_idx
+            p.ch_start = ch_m
+            start_ch = ch_m
             if p.width == 32:
                 for ms in range(4):
                     if ch_m < 4:
@@ -738,6 +787,7 @@ def compile_scene_dli_data(
                     f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
                     f"missile platform '{p.id}' has unsupported width {p.width} px (supported: 8, 32)."
                 )
+            p.ch_count = ch_m - start_ch
 
     # 3. Compile enemies and secrets for the 7 zone table slots.
     # The DLI applies slot `s` on the guard line of pas `s`, i.e. one platform row *before* the
@@ -1316,6 +1366,10 @@ def parse_scene_json(
                 color_profile_id=cprof_id,
                 scroll=SCROLL_CODES.get(str(p.get("scroll", "none")).strip().lower(), 0),
                 movement=str(p.get("movement", "none")).strip().lower(),
+                speed=str(p.get("movement_speed", p.get("speed", "medium"))).strip().lower(),
+                speed_reload=PLAT_SPEED_RELOAD_MAP.get(
+                    str(p.get("movement_speed", p.get("speed", "medium"))).strip().lower(), 1
+                ),
                 colors=colors,
             )
         )
@@ -1757,21 +1811,32 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             ])
         lines.append("")
 
-        # Scene platforms (geometry only: platform type, height and the per-row colour profiles are
-        # compiled into gen/scenes_dli_data.asm, which the DLI reads at runtime)
+        # Scene platforms (geometry and movement/hardware properties)
         lines.append(f"; --- Platforms ({len(sc.platforms)}) ---")
         if sc.platforms:
+            lines.append(f"scene_{sym}_plat_init_x")
+            lines.append("    .byte " + ", ".join(str(p.x) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_x")
             lines.append("    .byte " + ", ".join(str(p.x) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_y")
             lines.append("    .byte " + ", ".join(str(p.y) for p in sc.platforms))
             lines.append(f"scene_{sym}_plat_w")
             lines.append("    .byte " + ", ".join(str(p.width) for p in sc.platforms))
+            lines.append(f"scene_{sym}_plat_movement")
+            lines.append("    .byte " + ", ".join(str(PLAT_MOVEMENT_MAP.get(p.movement, 0)) for p in sc.platforms))
+            lines.append(f"scene_{sym}_plat_speed")
+            lines.append("    .byte " + ", ".join(str(p.speed_reload) for p in sc.platforms))
+            lines.append(f"scene_{sym}_plat_hw_info")
+            lines.append("    .byte " + ", ".join(f"${((p.type_code << 7) | ((p.ch_start & 3) << 4) | (p.ch_count & 7)):02X}" for p in sc.platforms))
         else:
             lines.extend([
+                f"scene_{sym}_plat_init_x    .byte 0",
                 f"scene_{sym}_plat_x         .byte 0",
                 f"scene_{sym}_plat_y         .byte 0",
                 f"scene_{sym}_plat_w         .byte 0",
+                f"scene_{sym}_plat_movement .byte 0",
+                f"scene_{sym}_plat_speed    .byte 0",
+                f"scene_{sym}_plat_hw_info   .byte 0",
             ])
         lines.append("")
 
@@ -1956,7 +2021,11 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "scene_elem_flags_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_elem_flags" for sc in scenes),
         "",
-        "; --- Platform Pointer Tables (geometry only: type/height/row colours live in the DLI block) ---",
+        "; --- Platform Pointer Tables ---",
+        "scene_plat_init_x_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_init_x" for sc in scenes),
+        "scene_plat_init_x_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_init_x" for sc in scenes),
         "scene_plat_x_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_x" for sc in scenes),
         "scene_plat_x_hi",
@@ -1969,6 +2038,18 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_w" for sc in scenes),
         "scene_plat_w_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_w" for sc in scenes),
+        "scene_plat_movement_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_movement" for sc in scenes),
+        "scene_plat_movement_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_movement" for sc in scenes),
+        "scene_plat_hw_info_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_hw_info" for sc in scenes),
+        "scene_plat_hw_info_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_hw_info" for sc in scenes),
+        "scene_plat_speed_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_plat_speed" for sc in scenes),
+        "scene_plat_speed_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_speed" for sc in scenes),
         "",
         "; --- Secret Pointer Tables ---",
         "scene_secret_active_lo",

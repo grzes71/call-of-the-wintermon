@@ -11,6 +11,7 @@ import pytest
 from scene_editor.commands import (
     AddPlatformCommand,
     ChangePlatformMovementCommand,
+    ChangePlatformMovementSpeedCommand,
     ChangePlatformTypeCommand,
     MovePlatformCommand,
     RemovePlatformCommand,
@@ -29,6 +30,12 @@ from scene_editor.scene_model import (
     PLATFORM_MOVEMENT_LABELS,
     PLATFORM_MOVEMENT_NONE,
     PLATFORM_MOVEMENTS,
+    PLATFORM_SPEED_DEFAULT,
+    PLATFORM_SPEED_FAST,
+    PLATFORM_SPEED_LABELS,
+    PLATFORM_SPEED_MEDIUM,
+    PLATFORM_SPEED_SLOW,
+    PLATFORM_SPEEDS,
     PLATFORM_TYPE_MISSILE,
     PLATFORM_TYPE_SPRITE,
     PlatformCollisionError,
@@ -36,6 +43,7 @@ from scene_editor.scene_model import (
     Position,
     Scene,
     normalize_platform_movement,
+    normalize_platform_speed,
     SPRITE_WIDTHS,
     can_add_platform_to_row,
     check_platform_collision,
@@ -1111,3 +1119,82 @@ class TestPlatformMovement:
 
         cmd.undo()
         assert plat.movement == "none"
+
+
+class TestPlatformMovementSpeed:
+    """Tests for platform movement speed property, normalization, and commands."""
+
+    def test_default_speed_is_medium(self):
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        assert plat.movement_speed == PLATFORM_SPEED_DEFAULT
+        assert plat.movement_speed == "medium"
+
+    @pytest.mark.parametrize(
+        "speed_value",
+        [
+            "slow",
+            "medium",
+            "fast",
+        ],
+    )
+    def test_all_valid_speeds_accepted(self, speed_value: str):
+        plat = PlatformElement(
+            "p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement_speed=speed_value
+        )
+        plat.validate()
+        assert plat.movement_speed == speed_value
+
+    def test_speed_normalization_and_aliases(self):
+        assert normalize_platform_speed(None) == "medium"
+        assert normalize_platform_speed("") == "medium"
+        assert normalize_platform_speed("medium") == "medium"
+        assert normalize_platform_speed("Medium") == "medium"
+        assert normalize_platform_speed("Medium (obecna prędkość)") == "medium"
+        assert normalize_platform_speed("default") == "medium"
+        assert normalize_platform_speed("normal") == "medium"
+
+        assert normalize_platform_speed("slow") == "slow"
+        assert normalize_platform_speed("Slow") == "slow"
+        assert normalize_platform_speed("wolny") == "slow"
+
+        assert normalize_platform_speed("fast") == "fast"
+        assert normalize_platform_speed("Fast") == "fast"
+        assert normalize_platform_speed("szybki") == "fast"
+
+    def test_invalid_speed_rejected(self):
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement_speed="turbo")
+        with pytest.raises(ModelValidationError, match="Platform 'movement_speed' must be one of"):
+            plat.validate()
+
+    def test_speed_serialization_roundtrip(self):
+        # When speed is default 'medium', to_dict omits it
+        p_default = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        d_default = p_default.to_dict()
+        assert "movement_speed" not in d_default
+        p_loaded = PlatformElement.from_dict(d_default)
+        assert p_loaded.movement_speed == "medium"
+
+        # When speed is non-default, to_dict includes it
+        p_fast = PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement_speed="fast")
+        d_fast = p_fast.to_dict()
+        assert d_fast["movement_speed"] == "fast"
+        p_loaded2 = PlatformElement.from_dict(d_fast)
+        assert p_loaded2.movement_speed == "fast"
+
+        p_slow = PlatformElement("p3", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement_speed="slow")
+        d_slow = p_slow.to_dict()
+        assert d_slow["movement_speed"] == "slow"
+        p_loaded3 = PlatformElement.from_dict(d_slow)
+        assert p_loaded3.movement_speed == "slow"
+
+    def test_change_platform_movement_speed_command(self):
+        scene = Scene(width=160, height=96)
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        scene.add_platform(plat)
+
+        cmd = ChangePlatformMovementSpeedCommand(scene, "p1", "medium", "fast")
+        cmd.redo()
+        assert plat.movement_speed == "fast"
+
+        cmd.undo()
+        assert plat.movement_speed == "medium"

@@ -18,9 +18,9 @@ GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
-SCENE_TABLES = $A800    ; Scene SoA tables + pointer tables + per-scene DLI blocks, in the RAM freed
-                        ; by the smaller tilesets (they end at $A1E3, so 1,564 B of tile headroom is
-                        ; kept before the tables); the segment may use everything up to $BBFF
+SCENE_TABLES = $A400    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
+                        ; in the RAM freed by the smaller tilesets (they end at $A20B, keeping 499 B
+                        ; of tile headroom before the tables); budget: $A400-$BBFF = 6,144 bytes
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_CODE = $5C00    ; Game Over / Victory module: 2 display lists + DLI chain + builder
@@ -578,10 +578,11 @@ tiles_data_end
 ; (241 B/scene). Placed in the RAM freed by the smaller tilesets so the scene
 ; count can grow (7 scenes planned) without competing for the $5000 block
 ; (runtime code) or the $6000 title DL.
-; Budget: $A800-$BBFF = 5,120 bytes (the game over texts own $BC00-$BFFF);
-; keep the tilesets below $A800 (they end at $A1E3 today).
+; Budget: $A400-$BBFF = 6,144 bytes (the game over texts own $BC00-$BFFF);
+; keep the tilesets below $A400 (they end at $A20B today).
 ; ==============================================================================
     org SCENE_TABLES
+    icl 'engine/platforms.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
 scene_tables_end

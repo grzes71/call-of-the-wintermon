@@ -472,6 +472,36 @@ class ChangePlatformMovementCommand(SceneBaseCommand):
         self.notify()
 
 
+class ChangePlatformMovementSpeedCommand(SceneBaseCommand):
+    """Command to change the movement speed of a platform."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        platform_id: str,
+        old_speed: str,
+        new_speed: str,
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(f"Change platform {platform_id} speed to {new_speed}", callback)
+        self.scene = scene
+        self.platform_id = platform_id
+        self.old_speed = old_speed
+        self.new_speed = new_speed
+
+    def redo(self) -> None:
+        plat = self.scene.get_platform(self.platform_id)
+        if plat is not None:
+            plat.movement_speed = self.new_speed
+        self.notify()
+
+    def undo(self) -> None:
+        plat = self.scene.get_platform(self.platform_id)
+        if plat is not None:
+            plat.movement_speed = self.old_speed
+        self.notify()
+
+
 # -----------------------------------------------------------------------------
 # Scene Object (Enemies and Treasures) Commands
 # -----------------------------------------------------------------------------

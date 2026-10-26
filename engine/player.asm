@@ -104,6 +104,9 @@ player_jump_start_y .byte 0
 
 @valid_id
     sta active_scene_id
+    pha
+    jsr platforms_init
+    pla
     tax
 
     ; 1. Set initial canvas coordinates from scene data

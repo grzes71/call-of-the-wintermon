@@ -325,6 +325,9 @@ SCENE_TITLE_FADE_STEPS = 8
     lda #$03
     sta GRACTL
 
+    ; Advance dynamic moving platforms (motion, bounce, DLI HPOS, carrier)
+    jsr platforms_update
+
     ; Update Hero Player 0 (joystick input, horizontal movement, animation & PMG render)
     jsr player_update
     jsr enemies_update

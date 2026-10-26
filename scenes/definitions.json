@@ -323,6 +323,81 @@
         "0xC4"
       ],
       "description": "Double green"
+    },
+    {
+      "id": 15,
+      "name": "red-solid",
+      "colors": [
+        "0x32",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x32"
+      ],
+      "description": "Red solid"
+    },
+    {
+      "id": 16,
+      "name": "green-solid",
+      "colors": [
+        "0xC2",
+        "0xC6",
+        "0xC6",
+        "0xC6",
+        "0xC6",
+        "0xC6",
+        "0xC6",
+        "0xC2"
+      ],
+      "description": "Red-smooth"
+    },
+    {
+      "id": 17,
+      "name": "gold-solid",
+      "colors": [
+        "0x10",
+        "0x1A",
+        "0x1A",
+        "0x1A",
+        "0x1A",
+        "0x1A",
+        "0x1A",
+        "0x10"
+      ],
+      "description": "Gold solid"
+    },
+    {
+      "id": 18,
+      "name": "blue-solid",
+      "colors": [
+        "0x00",
+        "0x86",
+        "0x86",
+        "0x86",
+        "0x86",
+        "0x86",
+        "0x86",
+        "0x00"
+      ],
+      "description": "Blue solid"
+    },
+    {
+      "id": 19,
+      "name": "red-solid (Copy)",
+      "colors": [
+        "0x32",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x36",
+        "0x32"
+      ],
+      "description": "Red solid"
     }
   ]
 }

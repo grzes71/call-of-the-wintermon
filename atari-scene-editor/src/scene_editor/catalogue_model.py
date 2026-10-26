@@ -95,6 +95,40 @@ def normalize_platform_movement(val: Any) -> str:
     return s
 
 
+# Platform horizontal movement speed modes:
+PLATFORM_SPEED_SLOW = "slow"
+PLATFORM_SPEED_MEDIUM = "medium"
+PLATFORM_SPEED_FAST = "fast"
+
+PLATFORM_SPEEDS = (
+    PLATFORM_SPEED_SLOW,
+    PLATFORM_SPEED_MEDIUM,
+    PLATFORM_SPEED_FAST,
+)
+
+PLATFORM_SPEED_DEFAULT = PLATFORM_SPEED_MEDIUM
+
+PLATFORM_SPEED_LABELS: dict[str, str] = {
+    PLATFORM_SPEED_SLOW: "Slow",
+    PLATFORM_SPEED_MEDIUM: "Medium (obecna prędkość)",
+    PLATFORM_SPEED_FAST: "Fast",
+}
+
+
+def normalize_platform_speed(val: Any) -> str:
+    """Normalize platform movement speed value, accepting variations and aliases."""
+    if val is None:
+        return PLATFORM_SPEED_DEFAULT
+    s = str(val).strip().lower()
+    if s in ("medium", "medium (obecna prędkość)", "default", "normal", ""):
+        return PLATFORM_SPEED_MEDIUM
+    if s in ("slow", "wolny"):
+        return PLATFORM_SPEED_SLOW
+    if s in ("fast", "szybki"):
+        return PLATFORM_SPEED_FAST
+    return s
+
+
 class CorruptedCatalogueFileError(CatalogueError):
     """Raised when a catalogue JSON file is malformed or corrupted."""
     pass
