@@ -154,8 +154,10 @@ def test_status_line_special_icons_fill_right_to_left():
     assert capacity > 0, "the project must place at least one special secret"
     name_end = STATUS_LINE_WIDTH - capacity
 
-    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
+    mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     vram = labels["STATUS_LINE_VRAM"]
@@ -168,14 +170,16 @@ def test_status_line_special_icons_fill_right_to_left():
         assert mem[labels["PLAYER_SPECIALS"]] == count
         rightmost = list(mem[vram + STATUS_LINE_WIDTH - count:vram + STATUS_LINE_WIDTH])
         assert rightmost == [STATUS_GLYPH_SPECIAL] * count, f"{count} icons must sit at the right end"
-        # The icon row is exactly `count` wide - the column left of it stays blank.
-        assert mem[vram + STATUS_LINE_WIDTH - count - 1] == 0
+        # The icon row is exactly `count` wide - while slots remain, the slot left of it stays blank.
+        if count < capacity:
+            assert mem[vram + STATUS_LINE_WIDTH - count - 1] == 0
         # The icons must never touch the scene name.
         assert list(mem[vram + STATUS_NAME_COL:vram + name_end]) == name_bytes
 
     # 2. A new game clears the icons again (a scene change must not).
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     assert mem[labels["PLAYER_SPECIALS"]] == 0
+    mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
     assert list(mem[vram + name_end:vram + STATUS_LINE_WIDTH]) == [0] * capacity
 

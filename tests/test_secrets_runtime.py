@@ -151,30 +151,39 @@ def test_secrets_animation_progression():
     frame_addr = labels["SECRETS_FRAME_IDX"]
     dur_addr = labels["SECRETS_FRAME_DUR"]
     frame_cnt_addr = labels["SECRETS_FRAME_COUNT"]
+    act_addr = labels["SECRETS_ACTIVE"]
     pmg_m = labels["PMG_MISSILES"]
 
-    # Secret 0 (Gold Key / Sprite 3) duration and frame count from runtime tables
-    key_dur = mem[dur_addr + 0]
-    key_frame_count = mem[frame_cnt_addr + 0]
+    # Pick the first active secret that has multiple animation frames (frame_count > 1)
+    count = mem[labels["SECRETS_COUNT"]]
+    secret_idx = next(
+        (i for i in range(count) if mem[act_addr + i] and mem[frame_cnt_addr + i] > 1),
+        None,
+    )
+    assert secret_idx is not None, f"scene {SCENE} must have at least one active animated secret"
+
+    # Secret duration and frame count from runtime tables
+    key_dur = mem[dur_addr + secret_idx]
+    key_frame_count = mem[frame_cnt_addr + secret_idx]
 
     assert key_dur > 0
     assert key_frame_count > 1
-    assert mem[timer_addr + 0] == key_dur
-    assert mem[frame_addr + 0] == 0
+    assert mem[timer_addr + secret_idx] == key_dur
+    assert mem[frame_addr + secret_idx] == 0
 
     # Ticks 1..key_dur-1: timer counts down; frame index stays 0
     for expected_timer in range(key_dur - 1, 0, -1):
         run_subroutine(mpu, labels["SECRETS_UPDATE"])
-        assert mem[timer_addr + 0] == expected_timer
-        assert mem[frame_addr + 0] == 0
+        assert mem[timer_addr + secret_idx] == expected_timer
+        assert mem[frame_addr + secret_idx] == 0
 
     # Tick key_dur: timer resets to key_dur, frame index advances to 1
     run_subroutine(mpu, labels["SECRETS_UPDATE"])
-    assert mem[timer_addr + 0] == key_dur
-    assert mem[frame_addr + 0] == 1
+    assert mem[timer_addr + secret_idx] == key_dur
+    assert mem[frame_addr + secret_idx] == 1
 
     # PMG_MISSILES rows must now match the sprite's frame 1 (sprite id read at runtime)
-    assert secret_pmg_rows(mem, labels, 0) == secret_frame_bytes(mem, labels, 0, frame=1), (
+    assert secret_pmg_rows(mem, labels, secret_idx) == secret_frame_bytes(mem, labels, secret_idx, frame=1), (
         f"PMG_MISSILES rows do not match Frame 1 after {key_dur} ticks"
     )
 
@@ -182,12 +191,12 @@ def test_secrets_animation_progression():
     for f in range(2, key_frame_count):
         for _ in range(key_dur):
             run_subroutine(mpu, labels["SECRETS_UPDATE"])
-        assert mem[frame_addr + 0] == f
+        assert mem[frame_addr + secret_idx] == f
 
     # Next key_dur ticks should wrap back to frame 0 (loop=True)
     for _ in range(key_dur):
         run_subroutine(mpu, labels["SECRETS_UPDATE"])
-    assert mem[frame_addr + 0] == 0
+    assert mem[frame_addr + secret_idx] == 0
 
 
 def test_secrets_init_scene1():

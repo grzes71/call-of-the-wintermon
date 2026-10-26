@@ -16,7 +16,7 @@
         "height": 42
       },
       "position": {
-        "x": 85,
+        "x": 82,
         "y": 45
       },
       "flip_x": false,
@@ -32,7 +32,7 @@
         "height": 42
       },
       "position": {
-        "x": 0,
+        "x": -3,
         "y": 45
       },
       "flip_x": false,
@@ -48,7 +48,7 @@
         "height": 44
       },
       "position": {
-        "x": -19,
+        "x": -14,
         "y": -2
       },
       "flip_x": true,
@@ -64,7 +64,7 @@
         "height": 44
       },
       "position": {
-        "x": 66,
+        "x": 72,
         "y": -1
       },
       "flip_x": false,
@@ -81,7 +81,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 22
     },
     {
       "id": "platform-002",
@@ -92,7 +92,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 22
     },
     {
       "id": "platform-003",
@@ -103,7 +103,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 16
     },
     {
       "id": "platform-004",
@@ -114,7 +114,7 @@
       },
       "width": 24,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 16
     },
     {
       "id": "platform-005",
@@ -125,7 +125,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 18
     },
     {
       "id": "platform-006",
@@ -136,7 +136,7 @@
       },
       "width": 96,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 15
     },
     {
       "id": "platform-008",
@@ -147,7 +147,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 18
     },
     {
       "id": "platform-009",
@@ -158,7 +158,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 16
     },
     {
       "id": "platform-012",
@@ -169,7 +169,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 22
     },
     {
       "id": "platform-013",
@@ -180,7 +180,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 22
     },
     {
       "id": "platform-014",
@@ -191,7 +191,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 18
     },
     {
       "id": "platform-015",
@@ -202,7 +202,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 16
     },
     {
       "id": "platform-016",
@@ -213,7 +213,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 1
+      "color_profile_id": 16
     },
     {
       "id": "platform-017",
@@ -224,7 +224,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 16
     },
     {
       "id": "platform-018",
@@ -235,7 +235,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 16
     },
     {
       "id": "platform-019",
@@ -246,7 +246,31 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 18
+    },
+    {
+      "id": "platform-020",
+      "type": "sprite",
+      "position": {
+        "x": 35,
+        "y": 8
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 18,
+      "movement": "left-pause-right",
+      "movement_speed": "slow"
+    },
+    {
+      "id": "platform-021",
+      "type": "missile",
+      "position": {
+        "x": 0,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 18
     }
   ],
   "objects": [
@@ -282,13 +306,6 @@
       "dependency": 1
     },
     {
-      "id": 2,
-      "type": "secret",
-      "definition_id": 1,
-      "platform_id": "platform-005",
-      "x": 115
-    },
-    {
       "id": 6,
       "type": "secret",
       "definition_id": 1,
@@ -309,9 +326,9 @@
       "type": "enemy",
       "definition_id": 2,
       "platform_id": "platform-017",
-      "x": 55,
-      "speed": "medium",
-      "movement_strategy": "stationary"
+      "x": 69,
+      "speed": "slow",
+      "movement_strategy": "left_pause_right"
     },
     {
       "id": 10,
@@ -352,6 +369,13 @@
       "platform_id": "platform-006",
       "x": 32,
       "dependency": 1
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-021",
+      "x": 0
     }
   ],
   "player_spawn": {
@@ -360,12 +384,12 @@
     "color": 222
   },
   "row_color_profiles": [
-    5,
-    1,
-    4,
-    1,
-    2,
-    3
+    18,
+    22,
+    22,
+    16,
+    16,
+    15
   ],
   "background_palette": {
     "upper": [

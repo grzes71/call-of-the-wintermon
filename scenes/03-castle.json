@@ -7,22 +7,6 @@
   },
   "elements": [
     {
-      "id": "element-001",
-      "source": "tiles/castles.png",
-      "source_rect": {
-        "x": 0,
-        "y": 0,
-        "width": 84,
-        "height": 44
-      },
-      "position": {
-        "x": 1,
-        "y": 1
-      },
-      "flip_x": false,
-      "z_index": 0
-    },
-    {
       "id": "element-002",
       "source": "tiles/castles.png",
       "source_rect": {
@@ -32,11 +16,11 @@
         "height": 44
       },
       "position": {
-        "x": 85,
-        "y": 1
+        "x": 32,
+        "y": 0
       },
       "flip_x": false,
-      "z_index": 1
+      "z_index": 0
     },
     {
       "id": "element-003",
@@ -52,7 +36,7 @@
         "y": 46
       },
       "flip_x": true,
-      "z_index": 2
+      "z_index": 1
     },
     {
       "id": "element-004",
@@ -68,7 +52,39 @@
         "y": 46
       },
       "flip_x": true,
+      "z_index": 2
+    },
+    {
+      "id": "element-008",
+      "source": "tiles/castles.png",
+      "source_rect": {
+        "x": 48,
+        "y": 0,
+        "width": 36,
+        "height": 44
+      },
+      "position": {
+        "x": 123,
+        "y": 0
+      },
+      "flip_x": true,
       "z_index": 3
+    },
+    {
+      "id": "element-009",
+      "source": "tiles/castles.png",
+      "source_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 44
+      },
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "flip_x": true,
+      "z_index": 4
     }
   ],
   "platforms": [
@@ -81,7 +97,7 @@
       },
       "width": 64,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 16
     },
     {
       "id": "platform-002",
@@ -92,7 +108,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 3
+      "color_profile_id": 16
     },
     {
       "id": "platform-003",
@@ -103,7 +119,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 17
     },
     {
       "id": "platform-004",
@@ -114,7 +130,7 @@
       },
       "width": 24,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 17
     },
     {
       "id": "platform-005",
@@ -125,7 +141,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 17
     },
     {
       "id": "platform-006",
@@ -136,7 +152,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 17
     },
     {
       "id": "platform-007",
@@ -147,7 +163,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 4
+      "color_profile_id": 17
     },
     {
       "id": "platform-008",
@@ -158,7 +174,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 22
     },
     {
       "id": "platform-009",
@@ -169,7 +185,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 22
     },
     {
       "id": "platform-010",
@@ -180,7 +196,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 22
     },
     {
       "id": "platform-011",
@@ -191,7 +207,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 22
     },
     {
       "id": "platform-012",
@@ -202,7 +218,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 22
     },
     {
       "id": "platform-013",
@@ -213,7 +229,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 5
+      "color_profile_id": 22
     },
     {
       "id": "platform-014",
@@ -223,7 +239,8 @@
         "y": 8
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 18
     },
     {
       "id": "platform-015",
@@ -233,7 +250,8 @@
         "y": 8
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 18
     },
     {
       "id": "platform-016",
@@ -243,7 +261,8 @@
         "y": 8
       },
       "width": 16,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 18
     },
     {
       "id": "platform-017",
@@ -254,7 +273,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 2
+      "color_profile_id": 17
     }
   ],
   "objects": [
@@ -263,7 +282,68 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-002",
-      "x": 100
+      "x": 122,
+      "dependency": 2
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-016",
+      "x": 0
+    },
+    {
+      "id": 3,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-008",
+      "x": 125,
+      "dependency": 1
+    },
+    {
+      "id": 4,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-004",
+      "x": 12
+    },
+    {
+      "id": 5,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-009",
+      "x": 87
+    },
+    {
+      "id": 6,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-011",
+      "x": 147
+    },
+    {
+      "id": 7,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-006",
+      "x": 96,
+      "dependency": 1
+    },
+    {
+      "id": 8,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-017",
+      "x": 4,
+      "dependency": 1
+    },
+    {
+      "id": 9,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-013",
+      "x": 60,
+      "dependency": 2
     }
   ],
   "player_spawn": {
@@ -272,12 +352,12 @@
     "color": 222
   },
   "row_color_profiles": [
-    null,
-    2,
-    5,
-    4,
-    2,
-    3
+    18,
+    22,
+    22,
+    17,
+    17,
+    16
   ],
   "background_palette": {
     "upper": [

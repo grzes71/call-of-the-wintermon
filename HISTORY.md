@@ -2,6 +2,18 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-26] - Dynamic Active Secret Selection in Animation Progression Test
+
+- **Bug**: In [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), `test_secrets_animation_progression` hardcoded secret index 0 when testing timer decrement and frame advancing (`key_dur = mem[dur_addr + 0]`).
+- **Cause**: After reordering scenes in [scenes/scenes.json](scenes/scenes.json), the fixture scene became `03-castle.json`. In this scene, secret index 0 is inactive at init time due to an authored dependency (`dependency: 2`). Because `secrets_update` skips inactive secrets, `secrets_timer[0]` remained un-decremented at 4 (`assert mem[timer_addr + 0] == 3` failed with `assert 4 == 3`).
+- **Fix**: Made the test dynamically locate the first active secret in the scene that has multiple animation frames (`secrets_active[i] == 1` and `secrets_frame_count[i] > 1`) per Rule 05. All 714 tests pass.
+
+## [2026-10-26] - Fix Status Line Special Icons Test Boundary Assertion
+
+- **Bug**: In [tests/test_status_line.py](tests/test_status_line.py), `test_status_line_special_icons_fill_right_to_left` asserted that the column immediately left of the icon row was blank (`mem[vram + STATUS_LINE_WIDTH - count - 1] == 0`) on every iteration up to `capacity`.
+- **Cause**: When `count == capacity` (all special icons collected), the icon block reaches the reserved boundary `name_end = STATUS_LINE_WIDTH - capacity`. The column immediately to its left (`name_end - 1`) is the final column of the scene name. When scene 0 was switched to `01-forest.json` ("The Forest Whispers My Name", length 27 = `name_max`), this column held the ASCII/screencode for 'e' (`101 != 0`), causing an assertion failure.
+- **Fix**: Restricted the blank-slot assertion to `count < capacity` (when uncollected icon slots remain). Verified that the entire scene name slice `[STATUS_NAME_COL:name_end]` continues to be asserted as untouched across all collections. Used fixture `SCENE` instead of hardcoded 0. All 714 tests pass.
+
 ## [2026-10-26] - Platform Movement Speed in Editor and 6502 Engine
 
 - **Feature**: Added "Movement Speed" configuration to platforms in the Atari Scene Editor and implemented multi-speed cadence support in the 6502 game engine.
