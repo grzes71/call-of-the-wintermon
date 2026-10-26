@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "atari-scene-edi
 import pytest
 from scene_editor.commands import (
     AddPlatformCommand,
+    ChangePlatformMovementCommand,
     ChangePlatformTypeCommand,
     MovePlatformCommand,
     RemovePlatformCommand,
@@ -25,12 +26,16 @@ from scene_editor.scene_model import (
     MISSILE_WIDTHS,
     ModelValidationError,
     PLATFORM_HEIGHT,
+    PLATFORM_MOVEMENT_LABELS,
+    PLATFORM_MOVEMENT_NONE,
+    PLATFORM_MOVEMENTS,
     PLATFORM_TYPE_MISSILE,
     PLATFORM_TYPE_SPRITE,
     PlatformCollisionError,
     PlatformElement,
     Position,
     Scene,
+    normalize_platform_movement,
     SPRITE_WIDTHS,
     can_add_platform_to_row,
     check_platform_collision,
@@ -1025,3 +1030,84 @@ class TestPlatformCollisions:
 
         # Partially overlapping vertically (y=11..15, overlapping by 1px at y=11)
         assert platforms_overlap(10, 8, 16, 4, 10, 11, 16, 4) is True
+
+
+class TestPlatformMovement:
+    """Tests for platform movement property, normalization, and commands."""
+
+    def test_default_movement_is_none(self):
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        assert plat.movement == PLATFORM_MOVEMENT_NONE
+        assert plat.movement == "none"
+
+    @pytest.mark.parametrize(
+        "movement_value",
+        [
+            "none",
+            "left-right",
+            "right-left",
+            "left-pause-right",
+            "right-pause-left",
+        ],
+    )
+    def test_all_valid_movements_accepted(self, movement_value: str):
+        plat = PlatformElement(
+            "p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement=movement_value
+        )
+        plat.validate()
+        assert plat.movement == movement_value
+
+    def test_movement_typo_and_alias_normalization(self):
+        # User typo 'left-rigth' is seamlessly normalized to 'left-right'
+        assert normalize_platform_movement("Left-rigth") == "left-right"
+        assert normalize_platform_movement("left-rigth") == "left-right"
+        assert normalize_platform_movement("left_right") == "left-right"
+        assert normalize_platform_movement("Left-Right") == "left-right"
+
+        # None variants
+        assert normalize_platform_movement(None) == "none"
+        assert normalize_platform_movement("None (default)") == "none"
+        assert normalize_platform_movement("default") == "none"
+        assert normalize_platform_movement("none") == "none"
+
+        # Snake_case variants
+        assert normalize_platform_movement("right_left") == "right-left"
+        assert normalize_platform_movement("left_pause_right") == "left-pause-right"
+        assert normalize_platform_movement("right_pause_left") == "right-pause-left"
+
+    def test_invalid_movement_rejected(self):
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement="circular")
+        with pytest.raises(ModelValidationError, match="Platform 'movement' must be one of"):
+            plat.validate()
+
+    def test_movement_serialization_roundtrip(self):
+        # When movement is default 'none', to_dict omits it
+        p_default = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        d_default = p_default.to_dict()
+        assert "movement" not in d_default
+        p_loaded = PlatformElement.from_dict(d_default)
+        assert p_loaded.movement == "none"
+
+        # When movement is non-default, to_dict includes it
+        p_moving = PlatformElement("p2", PLATFORM_TYPE_SPRITE, Position(10, 8), 16, movement="left-right")
+        d_moving = p_moving.to_dict()
+        assert d_moving["movement"] == "left-right"
+        p_loaded2 = PlatformElement.from_dict(d_moving)
+        assert p_loaded2.movement == "left-right"
+
+        # from_dict with alias/typo 'left-rigth'
+        d_typo = {"id": "p3", "type": "sprite", "position": {"x": 10, "y": 8}, "width": 16, "movement": "Left-rigth"}
+        p_loaded3 = PlatformElement.from_dict(d_typo)
+        assert p_loaded3.movement == "left-right"
+
+    def test_change_platform_movement_command(self):
+        scene = Scene(width=160, height=96)
+        plat = PlatformElement("p1", PLATFORM_TYPE_SPRITE, Position(10, 8), 16)
+        scene.add_platform(plat)
+
+        cmd = ChangePlatformMovementCommand(scene, "p1", "none", "right-left")
+        cmd.redo()
+        assert plat.movement == "right-left"
+
+        cmd.undo()
+        assert plat.movement == "none"

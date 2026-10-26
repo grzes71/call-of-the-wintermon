@@ -62,6 +62,7 @@ from .commands import (
     AddPlatformCommand,
     AddSceneObjectCommand,
     ChangePlatformColorProfileCommand,
+    ChangePlatformMovementCommand,
     ChangeRowColorProfileCommand,
     ChangePlatformTypeCommand,
     ChangeSceneObjectIdCommand,
@@ -126,6 +127,12 @@ from .scene_model import (
     OBJECT_TYPES,
     ObjectLimitExceededError,
     PLATFORM_HEIGHT,
+    PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT,
+    PLATFORM_MOVEMENT_LEFT_RIGHT,
+    PLATFORM_MOVEMENT_NONE,
+    PLATFORM_MOVEMENT_RIGHT_LEFT,
+    PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT,
+    PLATFORM_MOVEMENTS,
     PLATFORM_TYPE_MISSILE,
     PLATFORM_TYPE_SPRITE,
     PLATFORM_TYPES,
@@ -559,6 +566,10 @@ class MainWindow(QMainWindow):
         self._populate_scroll_combo(self.new_plat_scroll_combo)
         pc_layout.addRow("Scroll:", self.new_plat_scroll_combo)
 
+        self.new_plat_movement_combo = QComboBox()
+        self._populate_movement_combo(self.new_plat_movement_combo)
+        pc_layout.addRow("Movement:", self.new_plat_movement_combo)
+
         self.new_plat_x_spin = QSpinBox()
         self.new_plat_x_spin.setRange(-500, 500)
         self.new_plat_x_spin.setValue(20)
@@ -599,6 +610,11 @@ class MainWindow(QMainWindow):
         self._populate_scroll_combo(self.plat_prop_scroll_combo)
         self.plat_prop_scroll_combo.currentIndexChanged.connect(self._on_plat_prop_scroll_changed)
         pe_layout.addRow("Scroll:", self.plat_prop_scroll_combo)
+
+        self.plat_prop_movement_combo = QComboBox()
+        self._populate_movement_combo(self.plat_prop_movement_combo)
+        self.plat_prop_movement_combo.currentIndexChanged.connect(self._on_plat_prop_movement_changed)
+        pe_layout.addRow("Movement:", self.plat_prop_movement_combo)
 
         self.plat_prop_x_spin = QSpinBox()
         self.plat_prop_x_spin.setRange(-500, 500)
@@ -1783,6 +1799,38 @@ class MainWindow(QMainWindow):
         self._is_dirty = True
         self._refresh_platform_list(selected_id)
 
+    @staticmethod
+    def _populate_movement_combo(combo: QComboBox) -> None:
+        """Fill a Movement combo with platform movement modes."""
+        combo.addItem("None (default)", PLATFORM_MOVEMENT_NONE)
+        combo.addItem("Left-right", PLATFORM_MOVEMENT_LEFT_RIGHT)
+        combo.addItem("Right-left", PLATFORM_MOVEMENT_RIGHT_LEFT)
+        combo.addItem("Left-pause-right", PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT)
+        combo.addItem("Right-pause-left", PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT)
+        combo.setToolTip("Horizontal movement pattern of this platform in game.")
+
+    def _on_plat_prop_movement_changed(self, _index: int) -> None:
+        """Apply the Movement mode picked for the selected platform."""
+        selected_id = self.scene_view.get_selected_platform_id()
+        if not selected_id:
+            return
+        plat = self.scene_model.get_platform(selected_id)
+        if plat is None:
+            return
+
+        value = str(self.plat_prop_movement_combo.currentData() or PLATFORM_MOVEMENT_NONE)
+        if value == plat.movement:
+            return  # guard against programmatic refresh in _update_platform_property_panel
+
+        cmd = ChangePlatformMovementCommand(
+            self.scene_model,
+            selected_id,
+            plat.movement,
+            value,
+            callback=lambda: self._on_platform_command_executed(selected_id),
+        )
+        self.undo_stack.push(cmd)
+
     def _on_new_plat_type_changed(self) -> None:
         """Update allowed widths in creator combo when type changes."""
         p_type = self.new_plat_type_combo.currentData()
@@ -1842,6 +1890,7 @@ class MainWindow(QMainWindow):
             height=PLATFORM_HEIGHT,
             color_profile_id=prof_id,
             scroll=str(self.new_plat_scroll_combo.currentData() or SCROLL_NONE),
+            movement=str(self.new_plat_movement_combo.currentData() or PLATFORM_MOVEMENT_NONE),
         )
 
         cmd = AddPlatformCommand(
@@ -2104,6 +2153,9 @@ class MainWindow(QMainWindow):
             self.plat_prop_scroll_combo.blockSignals(True)
             self.plat_prop_scroll_combo.setCurrentIndex(0)
             self.plat_prop_scroll_combo.blockSignals(False)
+            self.plat_prop_movement_combo.blockSignals(True)
+            self.plat_prop_movement_combo.setCurrentIndex(0)
+            self.plat_prop_movement_combo.blockSignals(False)
             self.plat_prop_x_spin.blockSignals(True)
             self.plat_prop_x_spin.setValue(0)
             self.plat_prop_x_spin.blockSignals(False)
@@ -2171,6 +2223,12 @@ class MainWindow(QMainWindow):
         s_idx = self.plat_prop_scroll_combo.findData(plat.scroll)
         self.plat_prop_scroll_combo.setCurrentIndex(s_idx if s_idx >= 0 else 0)
         self.plat_prop_scroll_combo.blockSignals(False)
+
+        # Movement combo
+        self.plat_prop_movement_combo.blockSignals(True)
+        m_idx = self.plat_prop_movement_combo.findData(plat.movement)
+        self.plat_prop_movement_combo.setCurrentIndex(m_idx if m_idx >= 0 else 0)
+        self.plat_prop_movement_combo.blockSignals(False)
 
         # X spinbox
         self.plat_prop_x_spin.blockSignals(True)

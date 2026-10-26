@@ -116,7 +116,8 @@
         "y": 40
       },
       "width": 16,
-      "height": 4
+      "height": 4,
+      "movement": "left-right"
     }
   ],
   "objects": [

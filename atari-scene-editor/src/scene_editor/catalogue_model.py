@@ -53,6 +53,47 @@ SCROLL_NONE = "none"
 SCROLL_PERIODS_FRAMES: dict[str, int] = {"slow": 10, "medium": 5, "fast": 2}
 SCROLL_MODES = (SCROLL_NONE,) + tuple(SCROLL_PERIODS_FRAMES)
 
+# Platform horizontal movement pattern modes:
+PLATFORM_MOVEMENT_NONE = "none"
+PLATFORM_MOVEMENT_LEFT_RIGHT = "left-right"
+PLATFORM_MOVEMENT_RIGHT_LEFT = "right-left"
+PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT = "left-pause-right"
+PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT = "right-pause-left"
+
+PLATFORM_MOVEMENTS = (
+    PLATFORM_MOVEMENT_NONE,
+    PLATFORM_MOVEMENT_LEFT_RIGHT,
+    PLATFORM_MOVEMENT_RIGHT_LEFT,
+    PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT,
+    PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT,
+)
+
+PLATFORM_MOVEMENT_LABELS: dict[str, str] = {
+    PLATFORM_MOVEMENT_NONE: "None (default)",
+    PLATFORM_MOVEMENT_LEFT_RIGHT: "Left-right",
+    PLATFORM_MOVEMENT_RIGHT_LEFT: "Right-left",
+    PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT: "Left-pause-right",
+    PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT: "Right-pause-left",
+}
+
+
+def normalize_platform_movement(val: Any) -> str:
+    """Normalize platform movement value, accepting variations, aliases, and typos."""
+    if val is None:
+        return PLATFORM_MOVEMENT_NONE
+    s = str(val).strip().lower().replace("_", "-")
+    if s in ("none", "default", "none (default)", ""):
+        return PLATFORM_MOVEMENT_NONE
+    if s in ("left-right", "left-rigth"):
+        return PLATFORM_MOVEMENT_LEFT_RIGHT
+    if s == "right-left":
+        return PLATFORM_MOVEMENT_RIGHT_LEFT
+    if s == "left-pause-right":
+        return PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT
+    if s == "right-pause-left":
+        return PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT
+    return s
+
 
 class CorruptedCatalogueFileError(CatalogueError):
     """Raised when a catalogue JSON file is malformed or corrupted."""

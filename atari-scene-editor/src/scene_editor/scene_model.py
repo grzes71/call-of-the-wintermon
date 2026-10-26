@@ -9,11 +9,19 @@ from typing import Any, Optional
 import warnings
 
 from .catalogue_model import (
+    PLATFORM_MOVEMENT_LABELS,
+    PLATFORM_MOVEMENT_LEFT_PAUSE_RIGHT,
+    PLATFORM_MOVEMENT_LEFT_RIGHT,
+    PLATFORM_MOVEMENT_NONE,
+    PLATFORM_MOVEMENT_RIGHT_LEFT,
+    PLATFORM_MOVEMENT_RIGHT_PAUSE_LEFT,
+    PLATFORM_MOVEMENTS,
     SCROLL_MODES,
     SCROLL_NONE,
     SCROLL_PERIODS_FRAMES,
     SECRET_CHANNEL_MISSILES,
     SECRET_CHANNEL_PLAYER,
+    normalize_platform_movement,
 )
 
 
@@ -440,6 +448,9 @@ class PlatformElement:
     # row-wide property: every platform in the same row must use the same value (the DLI paints
     # the row's colours once, so the game can only scroll them together).
     scroll: str = SCROLL_NONE
+    # Horizontal movement pattern: "none" (default, static), "left-right", "right-left",
+    # "left-pause-right", "right-pause-left".
+    movement: str = PLATFORM_MOVEMENT_NONE
 
     @property
     def row_index(self) -> int:
@@ -495,6 +506,15 @@ class PlatformElement:
             raise ModelValidationError(
                 f"Platform 'scroll' must be one of {SCROLL_MODES}, got {self.scroll!r}."
             )
+        if not isinstance(self.movement, str):
+            raise ModelValidationError(
+                f"Platform 'movement' must be a string, got {self.movement!r}."
+            )
+        self.movement = normalize_platform_movement(self.movement)
+        if self.movement not in PLATFORM_MOVEMENTS:
+            raise ModelValidationError(
+                f"Platform 'movement' must be one of {PLATFORM_MOVEMENTS}, got {self.movement!r}."
+            )
 
     def clone(self) -> PlatformElement:
         return copy.deepcopy(self)
@@ -511,6 +531,8 @@ class PlatformElement:
             d["color_profile_id"] = int(self.color_profile_id)
         if self.scroll != SCROLL_NONE:
             d["scroll"] = self.scroll
+        if self.movement != PLATFORM_MOVEMENT_NONE:
+            d["movement"] = self.movement
         return d
 
     @classmethod
@@ -546,6 +568,7 @@ class PlatformElement:
             height=raw_h,
             color_profile_id=color_profile_id,
             scroll=str(data.get("scroll", SCROLL_NONE)),
+            movement=normalize_platform_movement(data.get("movement", PLATFORM_MOVEMENT_NONE)),
         )
         p.validate()
         return p

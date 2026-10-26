@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-26] - Platform Movement Property in Atari Scene Editor
+
+- **Feature**: Added "Movement" property to hardware platforms in the Atari Scene Editor, allowing per-platform horizontal movement patterns.
+- **Values**: QComboBox with 5 modes: `None (default)` (`"none"`), `Left-right` (`"left-right"`), `Right-left` (`"right-left"`), `Left-pause-right` (`"left-pause-right"`), `Right-pause-left` (`"right-pause-left"`). Normalization in [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py) automatically handles typos and aliases such as `Left-rigth` and snake_case equivalents.
+- **Model & Persistence**: [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py) `PlatformElement` gained `movement: str = "none"`, validation against `PLATFORM_MOVEMENTS`, and serialization/deserialization in `to_dict()` (omitted when default `"none"`) and `from_dict()`.
+- **Editor GUI & Undo/Redo**: [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py) added `new_plat_movement_combo` in platform creation controls and `plat_prop_movement_combo` in selected platform properties, backed by `ChangePlatformMovementCommand` in [atari-scene-editor/src/scene_editor/commands.py](atari-scene-editor/src/scene_editor/commands.py).
+- **Compiler Compatibility**: [scripts/compile_scenes.py](scripts/compile_scenes.py) `PlatformData` updated to parse and store `movement`.
+- **Tests**: [tests/test_platform_editor.py](tests/test_platform_editor.py) added `TestPlatformMovement` suite; [tests/test_gui_integration.py](tests/test_gui_integration.py) added `test_platform_movement_gui_combos`. All 691 tests passed (`make all`).
+
 ## [2026-10-24] - Lower Background Palette Owns the Whole Bottom of the Screen
 
 - **Reported** (scene `04-castle-hell.json`, "Hell Awaits"): the colours in the lower part of the screen did not match the authored `background_palette` (`lower` = `$32, $36, $FC`) and below the lowest platform row (row 5, y=88) the *upper* scheme came back.

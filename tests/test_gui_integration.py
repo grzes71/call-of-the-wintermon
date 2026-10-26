@@ -380,3 +380,66 @@ class TestMainWindowIntegration:
         assert window.platforms_list.minimumHeight() >= 100
         assert window.objects_list.minimumHeight() >= 100
 
+    def test_platform_movement_gui_combos(self, test_app):
+        """Verify that platform movement comboboxes exist, have 5 options, and update platforms."""
+        window, _, _ = test_app
+
+        # 1. Check creator combo
+        creator_combo = window.new_plat_movement_combo
+        assert creator_combo.count() == 5
+        expected_labels = [
+            "None (default)",
+            "Left-right",
+            "Right-left",
+            "Left-pause-right",
+            "Right-pause-left",
+        ]
+        expected_data = [
+            "none",
+            "left-right",
+            "right-left",
+            "left-pause-right",
+            "right-pause-left",
+        ]
+        for i, (label, data) in enumerate(zip(expected_labels, expected_data)):
+            assert creator_combo.itemText(i) == label
+            assert creator_combo.itemData(i) == data
+
+        # 2. Check property combo
+        prop_combo = window.plat_prop_movement_combo
+        assert prop_combo.count() == 5
+        for i, (label, data) in enumerate(zip(expected_labels, expected_data)):
+            assert prop_combo.itemText(i) == label
+            assert prop_combo.itemData(i) == data
+
+        # 3. Add a platform with movement "left-pause-right"
+        window.prop_tabs.setCurrentIndex(1)
+        window.new_plat_x_spin.setValue(20)
+        idx = creator_combo.findData("left-pause-right")
+        assert idx >= 0
+        creator_combo.setCurrentIndex(idx)
+        window.btn_add_plat.click()
+
+        assert len(window.scene_model.platforms) == 1
+        p = window.scene_model.platforms[0]
+        assert p.movement == "left-pause-right"
+
+        # 4. Property combo should reflect the selected platform's movement
+        window._on_platform_selected(p.id)
+        assert prop_combo.currentData() == "left-pause-right"
+
+        # 5. Change movement via property combo
+        new_idx = prop_combo.findData("right-left")
+        assert new_idx >= 0
+        prop_combo.setCurrentIndex(new_idx)
+        assert p.movement == "right-left"
+
+        # 6. Test undo/redo
+        window.undo_stack.undo()
+        assert p.movement == "left-pause-right"
+        assert prop_combo.currentData() == "left-pause-right"
+
+        window.undo_stack.redo()
+        assert p.movement == "right-left"
+        assert prop_combo.currentData() == "right-left"
+

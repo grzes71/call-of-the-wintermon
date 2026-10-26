@@ -232,6 +232,9 @@ class PlatformData:
     # Colour scroll of this row's platform colours: 0 = none, 1 = slow (10 frames/step),
     # 2 = medium (5), 3 = fast (2). Row-wide, like the colour profile itself.
     scroll: int = 0
+    # Horizontal movement pattern: "none" (default), "left-right", "right-left",
+    # "left-pause-right", "right-pause-left".
+    movement: str = "none"
     colors: list[int] = field(default_factory=lambda: [0x8E, 0x8C, 0x8A, 0x88, 0x86, 0x84, 0x82, 0x80])
 
 
@@ -1312,6 +1315,7 @@ def parse_scene_json(
                 height=ph,
                 color_profile_id=cprof_id,
                 scroll=SCROLL_CODES.get(str(p.get("scroll", "none")).strip().lower(), 0),
+                movement=str(p.get("movement", "none")).strip().lower(),
                 colors=colors,
             )
         )
