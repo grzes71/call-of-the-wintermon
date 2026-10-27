@@ -1383,6 +1383,48 @@ class Scene:
                     return f"'{sec.name}' (ID {dependency})"
         return f"ID {dependency}"
 
+    def is_secret_optional(self, definition_id: Any, obj: Optional[SceneObjectElement] = None) -> bool:
+        """Return True if secret definition has extra_life or killer flag set."""
+        cat_item = None
+        if self.catalogues is not None:
+            if hasattr(self.catalogues, "get_secret"):
+                cat_item = self.catalogues.get_secret(definition_id)
+            if cat_item is None and hasattr(self.catalogues, "secrets"):
+                try:
+                    cat_item = self.catalogues.secrets.get(int(definition_id))
+                except (TypeError, ValueError):
+                    cat_item = None
+        if cat_item is not None:
+            return bool(getattr(cat_item, "extra_life", False) or getattr(cat_item, "killer", False))
+        return False
+
+    def get_descendant_dependencies(self, dep_id: Optional[int]) -> set[int]:
+        """Return set of dependency definition IDs that are the same as or derived from dep_id on this scene.
+
+        Includes dep_id itself, plus the definition_id of all secrets depending on it,
+        and transitively all secrets depending on those.
+        """
+        if dep_id is None:
+            return set()
+
+        dep_int = int(dep_id)
+        forbidden: set[int] = {dep_int}
+        changed = True
+        while changed:
+            changed = False
+            for o in self.objects:
+                if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and o.definition_id:
+                    try:
+                        s_def = int(o.definition_id)
+                        s_dep = self.get_secret_dependency(s_def, obj=o)
+                        if s_dep is not None and int(s_dep) in forbidden:
+                            if s_def not in forbidden:
+                                forbidden.add(s_def)
+                                changed = True
+                    except (ValueError, TypeError):
+                        pass
+        return forbidden
+
     def get_secret_channel_kind(self, definition_id: Any, obj: Optional[SceneObjectElement] = None) -> str:
         """Rendering channel kind of a secret definition: "player" or "missiles".
 
@@ -1584,6 +1626,44 @@ class Scene:
                         f"({row_enemy_counts[row_y]}/{MAX_ENEMIES_PER_ROW})."
                     )
 
+        # Check optional secret row placement restrictions:
+        # 1. If an optional secret (Extra Life / Killer) has no dependency (root),
+        #    no other secret can be placed in that row.
+        # 2. If it has a dependency, no secret in that row may have the same or derived dependency.
+        row_platform_map: dict[str, int] = {p.id: p.position.y for p in self.platforms}
+        secrets_by_row_y: dict[int, list[SceneObjectElement]] = {}
+        for o in self.objects:
+            if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and o.platform_id in row_platform_map:
+                row_y = row_platform_map[o.platform_id]
+                secrets_by_row_y.setdefault(row_y, []).append(o)
+
+        for row_y, row_secs in secrets_by_row_y.items():
+            for s_opt in row_secs:
+                if not self.is_secret_optional(s_opt.definition_id, obj=s_opt):
+                    continue
+                opt_dep = self.get_secret_dependency(s_opt.definition_id, obj=s_opt)
+                if opt_dep is None:
+                    if len(row_secs) > 1:
+                        other = next(o for o in row_secs if o.id != s_opt.id)
+                        raise ModelValidationError(
+                            f"Platform row y={row_y}: Contains root Extra Life / Killer secret '{s_opt.id}'. "
+                            f"No other secret (such as '{other.id}') can share this row because optional root "
+                            f"secrets remain on screen until the scene completes."
+                        )
+                else:
+                    forbidden = self.get_descendant_dependencies(opt_dep)
+                    for other in row_secs:
+                        if other.id == s_opt.id:
+                            continue
+                        other_dep = self.get_secret_dependency(other.definition_id, obj=other)
+                        if other_dep is not None and int(other_dep) in forbidden:
+                            raise ModelValidationError(
+                                f"Platform row y={row_y}: Contains Extra Life / Killer secret '{s_opt.id}' "
+                                f"dependent on {self.get_dependency_display_name(opt_dep)}. Secret '{other.id}' "
+                                f"has the same or derived dependency ({self.get_dependency_display_name(other_dep)}) "
+                                f"and cannot share this row."
+                            )
+
         for row_y in sorted({p.position.y for p in self.platforms}):
             usage = self.get_row_channel_usage(row_y)
             if usage["errors"]:
@@ -1616,6 +1696,27 @@ class Scene:
                 curr = scene_secret_defs[curr]
                 if curr is None:
                     break
+
+        # Check that required secrets do not depend on optional secrets (Extra Life / Killer)
+        for o in self.objects:
+            if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE) and o.definition_id:
+                try:
+                    s_def = int(o.definition_id)
+                    s_dep = self.get_secret_dependency(s_def, obj=o)
+                    if s_dep is not None:
+                        sec_def = self.catalogues.get_secret(s_def) if hasattr(self.catalogues, "get_secret") else None
+                        parent_def = self.catalogues.get_secret(s_dep) if hasattr(self.catalogues, "get_secret") else None
+                        is_opt = bool(getattr(sec_def, "extra_life", False) or getattr(sec_def, "killer", False))
+                        parent_opt = bool(getattr(parent_def, "extra_life", False) or getattr(parent_def, "killer", False))
+                        if not is_opt and parent_opt:
+                            raise ModelValidationError(
+                                f"Required secret '{o.id}' (def_id={s_def}) cannot depend on optional secret "
+                                f"(def_id={s_dep}, Extra Life/Killer)."
+                            )
+                except ModelValidationError:
+                    raise
+                except (ValueError, TypeError):
+                    pass
 
         # Validate player spawn if present
         if self.player_spawn is not None:
@@ -2064,6 +2165,64 @@ class Scene:
                 eff_dep = dependency
             else:
                 eff_dep = self.get_secret_dependency(definition_id, obj=obj)
+
+            eff_dep_int = int(eff_dep) if eff_dep is not None else None
+            eff_is_opt = self.is_secret_optional(definition_id, obj=obj)
+            row_secrets = [o for o in row_objs if o.type in (OBJECT_TYPE_SECRET, OBJECT_TYPE_TREASURE)]
+
+            # Check optional secret row placement restrictions:
+            # 1. If placed secret is Extra Life / Killer:
+            if eff_is_opt:
+                if eff_dep_int is None:
+                    if len(row_secrets) > 0:
+                        first = row_secrets[0]
+                        return (
+                            False,
+                            f"Platform row y={plat.position.y} already contains secret '{first.id}'. "
+                            f"An Extra Life / Killer secret without dependencies appears from the start and stays on screen; "
+                            f"no other secrets can share this row."
+                        )
+                else:
+                    forbidden = self.get_descendant_dependencies(eff_dep_int)
+                    for s in row_secrets:
+                        s_dep = self.get_secret_dependency(s.definition_id, obj=s)
+                        s_dep_int = int(s_dep) if s_dep is not None else None
+                        s_is_opt = self.is_secret_optional(s.definition_id, obj=s)
+                        if s_is_opt and s_dep_int is None:
+                            return (
+                                False,
+                                f"Platform row y={plat.position.y} already contains root Extra Life / Killer secret '{s.id}'. "
+                                f"No other secrets can share this row."
+                            )
+                        if s_dep_int is not None and s_dep_int in forbidden:
+                            return (
+                                False,
+                                f"Platform row y={plat.position.y} already contains secret '{s.id}' with the same or "
+                                f"derived dependency ({self.get_dependency_display_name(s_dep_int)}). "
+                                f"Extra Life / Killer secret dependent on {self.get_dependency_display_name(eff_dep_int)} "
+                                f"cannot share this row."
+                            )
+            else:
+                # 2. If placed secret is regular, but row already contains an Extra Life / Killer secret:
+                for s in row_secrets:
+                    if self.is_secret_optional(s.definition_id, obj=s):
+                        opt_dep = self.get_secret_dependency(s.definition_id, obj=s)
+                        opt_dep_int = int(opt_dep) if opt_dep is not None else None
+                        if opt_dep_int is None:
+                            return (
+                                False,
+                                f"Platform row y={plat.position.y} contains root Extra Life / Killer secret '{s.id}'. "
+                                f"No other secrets can be placed in this row."
+                            )
+                        forbidden = self.get_descendant_dependencies(opt_dep_int)
+                        if eff_dep_int is not None and eff_dep_int in forbidden:
+                            return (
+                                False,
+                                f"Platform row y={plat.position.y} contains Extra Life / Killer secret '{s.id}' "
+                                f"dependent on {self.get_dependency_display_name(opt_dep_int)}. "
+                                f"Secrets with the same or derived dependency ({self.get_dependency_display_name(eff_dep_int)}) "
+                                f"cannot be placed in this row."
+                            )
 
             kind = self.get_secret_channel_kind(definition_id, obj=obj)
             usage = self.get_row_channel_usage(plat.position.y, exclude_id=eff_exclude)

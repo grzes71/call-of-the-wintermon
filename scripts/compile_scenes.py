@@ -230,6 +230,8 @@ class CatalogueItem:
     blink: bool = False
     dependency: Optional[int] = None
     special: bool = False
+    extra_life: bool = False
+    killer: bool = False
     sprite_id: Optional[int] = None
     sprite: Optional[str] = None
     # Secrets only: rendering channel, "player" (P1..P3) or "missiles" (5th player).
@@ -319,6 +321,8 @@ class SceneSecretData:
     zone_idx: int = 0
     blink: bool = False
     special: bool = False
+    extra_life: bool = False
+    killer: bool = False
     # Sprite channel in its platform row: 0..2 = Players 1..3, 3 = 5th player (missiles).
     channel: int = 3
     # Channel kind requested by the definition ("player" or "missiles"); assigned in the
@@ -1041,6 +1045,8 @@ def load_catalogues(
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
                     special=bool(item.get("special", False)),
+                    extra_life=bool(item.get("extra_life", False)),
+                    killer=bool(item.get("killer", False)),
                     sprite_id=sid,
                     sprite=sname,
                     channel=secret_channel_of(item),
@@ -1090,6 +1096,8 @@ def load_catalogues(
                     blink=bool(item.get("blink", False)),
                     dependency=dep,
                     special=bool(item.get("special", False)),
+                    extra_life=bool(item.get("extra_life", False)),
+                    killer=bool(item.get("killer", False)),
                     sprite_id=item.get("sprite_id"),
                     channel=secret_channel_of(item),
                 )
@@ -1411,6 +1419,8 @@ def parse_scene_json(
             color = cat_item.atari_color if cat_item else 0x1A
             blink = cat_item.blink if cat_item else False
             special = bool(getattr(cat_item, "special", False)) if cat_item else False
+            extra_life = bool(getattr(cat_item, "extra_life", False)) if cat_item else False
+            killer = bool(getattr(cat_item, "killer", False)) if cat_item else False
             dep_val = obj.get("dependency")
             if dep_val is None and "dependency_id" in obj:
                 dep_val = obj.get("dependency_id")
@@ -1480,6 +1490,8 @@ def parse_scene_json(
                     zone_idx=zid,
                     blink=blink,
                     special=special,
+                    extra_life=extra_life,
+                    killer=killer,
                     channel_kind=channel_kind,
                 )
             )
@@ -1604,7 +1616,64 @@ def parse_scene_json(
             f"powinien być ustawiony co najmniej jeden sekret (znaleziono {len(scene_secrets)})."
         )
 
-    # 3b. Sprite channel budget. Every platform row (= one DLI zone slot) provides
+    # 3a. Dependency validation: required secrets cannot depend on optional secrets (Extra Life / Killer),
+    # because the player could skip the optional secret and softlock the level.
+    secrets_by_def_id = {s.def_id: s for s in scene_secrets}
+    for s in scene_secrets:
+        is_optional = bool(s.killer or s.extra_life)
+        if not is_optional and s.dep_id != 0:
+            parent = secrets_by_def_id.get(s.dep_id)
+            if parent and (parent.killer or parent.extra_life):
+                raise ValueError(
+                    f"Błąd w scenie '{name}' ({scene_file.name}): wymagany sekret '{s.id}' (typ {s.def_id}) "
+                    f"zależy od sekretu opcjonalnego (typ {parent.def_id}, Extra Life/Killer). "
+                    f"Wymagane sekrety nie mogą zależeć od sekretów opcjonalnych, aby uniknąć softlocku."
+                )
+
+    # 3b. Optional secret row placement restrictions:
+    # If a row contains an optional secret (Extra Life / Killer):
+    # 1. If it has no dependency (dep_id == 0), no other secret may exist in that row.
+    # 2. If it has a dependency (dep_id != 0), no other secret in that row may have
+    #    the same dependency or a derived dependency.
+    secrets_by_row: dict[int, list[SceneSecretData]] = {}
+    for s in scene_secrets:
+        secrets_by_row.setdefault(s.zone_idx, []).append(s)
+
+    for zone_idx, row_secs in secrets_by_row.items():
+        row_y = 8 + zone_idx * 16
+        for s_opt in row_secs:
+            if not (s_opt.extra_life or s_opt.killer):
+                continue
+            if s_opt.dep_id == 0:
+                if len(row_secs) > 1:
+                    other_ids = [o.id for o in row_secs if o.id != s_opt.id]
+                    raise ValueError(
+                        f"Błąd w scenie '{name}' ({scene_file.name}): wiersz platformy y={row_y} zawiera "
+                        f"sekret Extra Life / Killer bez zależności ('{s_opt.id}'). W tym wierszu nie można "
+                        f"umieszczać żadnych innych sekretów (znaleziono inne sekrety: {other_ids})."
+                    )
+            else:
+                forbidden = {s_opt.dep_id}
+                changed = True
+                while changed:
+                    changed = False
+                    for s in scene_secrets:
+                        if s.dep_id != 0 and s.dep_id in forbidden:
+                            if s.def_id not in forbidden:
+                                forbidden.add(s.def_id)
+                                changed = True
+                for other in row_secs:
+                    if other.id == s_opt.id:
+                        continue
+                    if other.dep_id != 0 and other.dep_id in forbidden:
+                        raise ValueError(
+                            f"Błąd w scenie '{name}' ({scene_file.name}): wiersz platformy y={row_y} zawiera "
+                            f"sekret Extra Life / Killer '{s_opt.id}' (zależny od {s_opt.dep_id}) oraz sekret "
+                            f"'{other.id}' o takiej samej lub pochodnej zależności ({other.dep_id}). "
+                            f"Sekrety o takich samych lub pochodnych zależnościach nie mogą dzielić wiersza z sekretem opcjonalnym."
+                        )
+
+    # 3c. Sprite channel budget. Every platform row (= one DLI zone slot) provides
     # MAX_CHANNELS_PER_ROW channels: Players 1..3 plus the 5th player (the four missiles combined).
     # Enemies are on screen in every stage, so they claim their channels first; secrets of one
     # dependency stage fill the remaining ones. Different stages may reuse a channel because they
@@ -1872,6 +1941,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(1 if s.blink else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_special")
             lines.append("    .byte " + ", ".join(str(1 if s.special else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_killer")
+            lines.append("    .byte " + ", ".join(str(1 if s.killer else 0) for s in sc.secrets))
+            lines.append(f"scene_{sym}_secret_extra_life")
+            lines.append("    .byte " + ", ".join(str(1 if s.extra_life else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_channel")
             lines.append("    .byte " + ", ".join(str(s.channel) for s in sc.secrets))
             lines.append(f"scene_{sym}_plat_scroll")
@@ -1893,6 +1966,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
                 f"scene_{sym}_secret_zone       .byte 0",
                 f"scene_{sym}_secret_blink      .byte 0",
                 f"scene_{sym}_secret_special    .byte 0",
+                f"scene_{sym}_secret_killer     .byte 0",
+                f"scene_{sym}_secret_extra_life .byte 0",
                 f"scene_{sym}_secret_channel    .byte 0",
                 f"scene_{sym}_plat_scroll       .byte 0",
             ])
@@ -2104,6 +2179,14 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_special" for sc in scenes),
         "scene_secret_special_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_special" for sc in scenes),
+        "scene_secret_killer_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_killer" for sc in scenes),
+        "scene_secret_killer_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_killer" for sc in scenes),
+        "scene_secret_extra_life_lo",
+        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_extra_life" for sc in scenes),
+        "scene_secret_extra_life_hi",
+        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_extra_life" for sc in scenes),
         "scene_secret_channel_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_channel" for sc in scenes),
         "scene_secret_channel_hi",

@@ -86,6 +86,8 @@ def scene_objects(scene_file: str, kind: str) -> list[dict[str, Any]]:
                 "atari_color": definition.get("atari_color"),
                 "blink": bool(definition.get("blink", False)),
                 "special": bool(definition.get("special", False)),
+                "extra_life": bool(definition.get("extra_life", False)),
+                "killer": bool(definition.get("killer", False)),
             }
         )
     return objects
@@ -535,14 +537,18 @@ class SecretProgressionModel:
 
     - a secret is initially active iff it has no dependency;
     - collecting a secret marks it collected=1 / active=0;
-    - once no active secret remains, every uncollected secret whose dependency matches
-      the definition id of *any* secret collected so far is activated (one stage at a
-      time) - a stage may mix definitions, e.g. keys + skulls;
-    - if nothing was unlocked and every secret is collected, the scene advances.
+    - a secret is optional if it has extra_life=True or killer=True;
+    - once no active REQUIRED secret remains, every uncollected secret whose dependency
+      matches the definition id of *any* secret collected so far is activated;
+    - if nothing was unlocked and every REQUIRED secret is collected, the scene advances.
     """
 
     def __init__(self, secrets: list[dict[str, Any]]) -> None:
         self.secrets = secrets
+        self.optional = [
+            bool(s.get("extra_life") or s.get("killer"))
+            for s in secrets
+        ]
         self.active = [not secret.get("dependency") for secret in secrets]
         self.collected = [False] * len(secrets)
         self.scene_advanced = False
@@ -551,12 +557,18 @@ class SecretProgressionModel:
     def pending(self) -> list[int]:
         return [i for i in range(len(self.secrets)) if self.active[i] and not self.collected[i]]
 
+    def has_active_required(self) -> bool:
+        return any(self.active[i] and not self.optional[i] for i in range(len(self.secrets)))
+
+    def all_required_collected(self) -> bool:
+        return all(self.collected[i] for i in range(len(self.secrets)) if not self.optional[i])
+
     def collect(self, index: int) -> list[int]:
         """Collect `index`; return the indices unlocked by this step."""
         assert self.active[index] and not self.collected[index]
         self.collected[index] = True
         self.active[index] = False
-        if any(self.active):
+        if self.has_active_required():
             return []
         # Mirror of the nested scan in secret_collect (scenes/game.asm): unlock by the
         # definition of any collected secret, not only by the one collected last.
@@ -568,11 +580,13 @@ class SecretProgressionModel:
         unlocked = [
             i
             for i, secret in enumerate(self.secrets)
-            if not self.collected[i] and (secret.get("dependency") or 0) in collected_defs
+            if not self.collected[i]
+            and not self.active[i]
+            and (secret.get("dependency") or 0) in collected_defs
         ]
         for i in unlocked:
             self.active[i] = True
-        if not unlocked and all(self.collected):
+        if not unlocked and self.all_required_collected():
             self.scene_advanced = True
         return unlocked
 
@@ -609,7 +623,7 @@ def drive_secret_progression(mpu, mem, labels, model: SecretProgressionModel, ru
     Returns the number of collection steps performed.
     """
     steps = 0
-    while model.pending:
+    while model.pending and not model.scene_advanced:
         target = model.pending[0]
         hero_x = mem[labels["SECRETS_X"] + target]
         hero_y = mem[labels["SECRETS_PMG_Y"] + target]

@@ -303,6 +303,8 @@ class SecretDefinition(CatalogDefinition):
     # Editor-only flag marking a "special" secret. Its in-game behaviour is not
     # implemented yet - the flag is stored in the catalogue for later stages.
     special: bool = False
+    extra_life: bool = False
+    killer: bool = False
     # Rendering channel: SECRET_CHANNEL_MISSILES (default, the 5th player built from the four
     # missiles) or SECRET_CHANNEL_PLAYER (one of Players 1..3). The compiler packs the sprite
     # for that channel and keeps every platform row inside the 4-channel budget
@@ -330,6 +332,16 @@ class SecretDefinition(CatalogDefinition):
                 f"Secret 'special' must be a boolean, got {self.special!r}."
             )
 
+        if not isinstance(self.extra_life, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'extra_life' must be a boolean, got {self.extra_life!r}."
+            )
+
+        if not isinstance(self.killer, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'killer' must be a boolean, got {self.killer!r}."
+            )
+
         if not isinstance(self.channel, str):
             raise InvalidDefinitionError(
                 f"Secret 'channel' must be a string, got {self.channel!r}."
@@ -347,6 +359,10 @@ class SecretDefinition(CatalogDefinition):
             d["dependency"] = int(self.dependency)
         if self.special:
             d["special"] = True
+        if self.extra_life:
+            d["extra_life"] = True
+        if self.killer:
+            d["killer"] = True
         if self.channel != SECRET_CHANNEL_MISSILES:
             d["channel"] = self.channel
         return d
@@ -377,6 +393,18 @@ class SecretDefinition(CatalogDefinition):
                 f"Secret 'special' must be a boolean, got {raw_special!r}."
             )
 
+        raw_extra_life = data.get("extra_life", False)
+        if not isinstance(raw_extra_life, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'extra_life' must be a boolean, got {raw_extra_life!r}."
+            )
+
+        raw_killer = data.get("killer", False)
+        if not isinstance(raw_killer, bool):
+            raise InvalidDefinitionError(
+                f"Secret 'killer' must be a boolean, got {raw_killer!r}."
+            )
+
         raw_channel = data.get("channel", SECRET_CHANNEL_MISSILES)
         if not isinstance(raw_channel, str):
             raise InvalidDefinitionError(
@@ -398,6 +426,8 @@ class SecretDefinition(CatalogDefinition):
             sprite=base_defn.sprite,
             dependency=dep,
             special=raw_special,
+            extra_life=raw_extra_life,
+            killer=raw_killer,
             channel=channel,
         )
         defn.validate()

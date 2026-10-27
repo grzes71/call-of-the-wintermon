@@ -2,6 +2,92 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-27] - Enforce Row Placement Constraints for Extra Life and Killer Secrets
+
+- **Architecture & Hardware Invariants**:
+  - Because Extra Life and Killer secrets can remain uncollected until the level completes, they cannot share their platform row/DLI zone with secrets that could appear concurrently or subsequently, preventing PMG channel and hardware register conflicts.
+  - Rule 1 (Root optional secret): When placed without dependencies, no other secret may share its platform row.
+  - Rule 2 (Dependent optional secret): When placed with dependency $D_{opt}$, no secret with the same dependency or any derived dependency (descendant in the dependency graph) may share its platform row. Secrets that are ancestors of $D_{opt}$ remain permitted.
+- **Scene Editor Model & Validation**:
+  - In [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py):
+    - Added helper methods `is_secret_optional` and `get_descendant_dependencies` traversing the scene dependency graph.
+    - Updated `can_add_object_to_platform`: blocks adding, dragging, or reassigning secrets to rows violating Rule 1 or Rule 2, returning descriptive user-facing explanations.
+    - Updated `SceneData.validate()`: validates optional secret row constraints across all scene platforms, raising `ModelValidationError` upon conflict.
+- **Data Compiler**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), integrated row-level optional secret placement validation prior to sprite channel assignment, raising descriptive `ValueError` on any violation in `scenes/*.json`.
+- **Testing**:
+  - In [tests/test_secret_row_constraints.py](tests/test_secret_row_constraints.py), added test suite `TestOptionalSecretRowConstraints` covering:
+    - Blocking placement of any other secret in a row containing a root Extra Life / Killer.
+    - Blocking placement of root Killer in a row containing an existing secret.
+    - Rejecting secrets sharing the same dependency in a row with a dependent Killer.
+    - Rejecting secrets with derived dependencies in a row with a dependent Killer.
+    - Permitting ancestor secrets in the same row as a dependent Killer.
+    - Verifying `scene.validate()` rejects row constraint violations.
+  - Full test suite passing with 744 tests. All memory segments validated below `$C000`.
+
+## [2026-10-27] - Make Extra Life and Killer Secrets Optional for Level Progression
+
+- **Architecture & Rules**:
+  - Secrets marked with `extra_life: true` or `killer: true` are treated as optional bonus secrets. They can participate in the dependency chain (determining when they appear on screen), but collecting them is not required to advance stages or finish the scene.
+  - Implemented anti-softlock validation: required secrets cannot depend on optional secrets (verified in both compiler and scene editor).
+- **Engine State & Runtime**:
+  - In [scenes/game.asm](scenes/game.asm), modified `secret_collect`:
+    - `@chk_act`: checks only active required secrets (`secrets_killer | secrets_extra_life == 0`); advances to `@stage_cleared` when all required active secrets are collected, leaving active optional secrets on screen.
+    - `@unl_loop`: skips re-unlocking secrets already active on screen (`secrets_active != 0`).
+    - `@chk_all`: only requires completion of non-optional secrets (`secrets_killer | secrets_extra_life == 0`), transitioning to `@all_cleared` even if uncollected optional secrets remain active.
+    - Replaced long conditional branches with unconditional `jmp` to prevent branch-out-of-range errors.
+- **Data Pipeline & Tooling**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), added validation enforcing that required secrets never depend on optional secrets (Extra Life / Killer).
+  - In [atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), added model validation detecting and rejecting required secrets depending on optional secrets.
+- **Testing & Expectations**:
+  - In [tests/scene_expectations.py](tests/scene_expectations.py), updated `scene_objects` to include `extra_life` and `killer`. Updated `SecretProgressionModel` and `drive_secret_progression` to track optional secrets and advance stages/scenes upon completing required secrets.
+  - In [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), added `test_optional_secrets_do_not_block_stage_or_scene_progression` py65 integration test covering stage advancement with uncollected root Extra Life and scene completion with uncollected optional secrets.
+  - Updated `test_secret_collect_blip_variant_and_final_secret_silence` to assert scene completion against required secret count. All 737 tests pass.
+
+## [2026-10-27] - Implement Extra Life Secret In-Game Mechanics
+
+- **Feature**: Implemented in-game Extra Life functionality when collecting a secret with `extra_life: true`. Upon collection, the player's life count increases by 1 and the status line hearts display refreshes.
+- **Data Pipeline**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), emitted per-scene `scene_<scene>_secret_extra_life` SoA tables and master pointer tables `scene_secret_extra_life_lo/hi`.
+- **Engine State & Runtime**:
+  - In [engine/secrets.asm](engine/secrets.asm), allocated `secrets_extra_life: :MAX_SECRETS .byte 0` in RAM and copied scene flags in `secrets_init`.
+  - In [scenes/game.asm](scenes/game.asm), updated `secret_collect` to check `secrets_extra_life,x`, increment `player_lives`, and refresh the HUD hearts via `status_line_refresh_lives`.
+- **Testing**:
+  - Added py65 integration tests in [tests/test_killer_mode.py](tests/test_killer_mode.py) validating life increment, heart restoration on the status line upon collection, and ROM table loading. All 736 tests pass.
+
+## [2026-10-27] - Implement 5-Second Killer Mode and Enemy Elimination Mechanics
+
+- **Feature**: Implemented the in-game Killer Mode activated upon collecting a secret with `killer: true`. The hero gains temporary invincibility and the ability to eliminate enemies on contact for 5 seconds (250 frames at 50 Hz PAL), while character luminance pulsates.
+- **Data Pipeline & Memory Layout**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), compiled per-scene `scene_<scene>_secret_killer` SoA tables and master pointer tables `scene_secret_killer_lo/hi`.
+  - In [main.asm](main.asm), relocated `engine/scroll.asm` from `SCENES_DATA` ($5000) to `TILES_META` ($2A30), reclaiming 178 bytes of headroom in segment $5000 (ends at $5B4D, 178 B free before $5C00).
+- **Engine State & Mechanics**:
+  - In [zeropage.asm](zeropage.asm), allocated `player_killer_timer = $E6` and constant `KILLER_MODE_DURATION = 250`.
+  - In [engine/secrets.asm](engine/secrets.asm), allocated `secrets_killer: :MAX_SECRETS .byte 0` and copied scene flags in `secrets_init`.
+  - In [scenes/game.asm](scenes/game.asm), updated `secret_collect` to set `player_killer_timer = KILLER_MODE_DURATION` when collecting a secret with `secrets_killer` set.
+  - In [engine/player.asm](engine/player.asm), zero-initialized `player_killer_timer` in `player_init` and reset upon death in `player_handle_death`. In `player_update`, decremented the timer once per frame and modulated `COLPM0`/`PCOLR0` luminance using a 2-frame divider; fully restored `player_color` on timer expiry.
+  - In [engine/enemies.asm](engine/enemies.asm), updated `enemies_check_player_collision` to branch on `player_killer_timer`: if active, calls `enemy_eliminate` (erases enemy PMG scanlines via `clear_enemy_rows`, zeroes DLI horizontal position via new `clear_enemy_hpos`, and clears `enemies_active,x`), bypassing player damage.
+- **Testing & Documentation**:
+  - Updated [atari-scene-editor/README.md](atari-scene-editor/README.md) and [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py) with Killer mode documentation and tooltips.
+  - Created automated py65 integration test suite in [tests/test_killer_mode.py](tests/test_killer_mode.py) testing activation upon secret collect, timer countdown and color modulation, enemy collision killing player when inactive, and enemy elimination while active. All 734 tests pass.
+
+## [2026-10-27] - Add Extra Life and Killer Flags to Secret Definitions in Atari Scene Editor
+
+- **Feature**: Added `extra_life` and `killer` flags to Secret definitions in Atari Scene Editor, matching the architecture and data contract of the existing `special` flag.
+- **Model & Validation**:
+  - In [atari-scene-editor/src/scene_editor/catalogue_model.py](atari-scene-editor/src/scene_editor/catalogue_model.py), added `extra_life: bool = False` and `killer: bool = False` to `SecretDefinition`.
+  - Added strict boolean type validation in `SecretDefinition.validate()` and deserialization in `SecretDefinition.from_dict()`.
+  - Updated `to_dict()` serialization to omit `extra_life` and `killer` when `False`, and serialize `"extra_life": true` / `"killer": true` only when enabled, maintaining backwards compatibility with existing definitions files.
+- **GUI Editor**:
+  - In [atari-scene-editor/src/scene_editor/catalogue_dialog.py](atari-scene-editor/src/scene_editor/catalogue_dialog.py), added `Extra Life (dodatkowe życie)` and `Killer (zabójczy sekret / pułapka)` check boxes to the Secrets tab form layout.
+  - Linked them to `self.secret_extra_life_check` and `self.secret_killer_check`, populating them upon secret selection, resetting them on "+ New Entry", and saving them to the definition.
+- **Tooling & Data Compiler**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), updated `CatalogueItem` and `SceneSecretData` models to include `extra_life` and `killer`.
+  - In [scripts/migrate_sprite_links.py](scripts/migrate_sprite_links.py), preserved key order during secret dictionary serialization.
+- **Documentation & Tests**:
+  - Updated [atari-scene-editor/README.md](atari-scene-editor/README.md) with documentation for both flags.
+  - Added test suite `TestSecretExtraLifeAndKillerFlags` in [tests/test_catalogues.py](tests/test_catalogues.py) covering validation, omission of defaults, JSON roundtrip, persistence, and GUI state synchronization. All 730 tests pass.
+
 ## [2026-10-27] - Synthesize Adjacent Platforms in RAM for Movement Integration Test
 
 - **Bug**: In [tests/test_player_movement.py](tests/test_player_movement.py), `test_player_walks_across_adjacent_platforms` failed with `AssertionError: At least one scene must have adjacent touching platforms` after reordering scenes in [scenes/scenes.json](scenes/scenes.json) and modifying platform positions in `03-castle.json`.

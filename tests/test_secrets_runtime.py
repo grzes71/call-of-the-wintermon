@@ -550,7 +550,8 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     played = 0
     silent = 0
     specials_collected = 0
-    while model.pending:
+    required_count = sum(1 for s in secrets if not (s.get("extra_life") or s.get("killer")))
+    while model.pending and not model.scene_advanced:
         target = model.pending[0]
         hits = engine_colliding_secrets(mem, labels, mem[x_addr + target], mem[y_addr + target])
         assert hits, f"hero placed on secret {target} must overlap it"
@@ -580,7 +581,7 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
         )
 
         model.collect(expected)
-        if model.pending:
+        if not model.scene_advanced:
             # Scene continues: the blip plays, with the variant of the collected secret
             expected_duration = (
                 labels["SFX_SECRET_SPECIAL_DURATION"]
@@ -600,8 +601,108 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
             assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_VICTORY"]
             silent += 1
 
-    assert played == count - 1, f"every secret but the last must play a blip (count={count})"
+    assert played == required_count - 1, f"every required secret but the last must play a blip (required_count={required_count})"
     assert silent == 1, "exactly one secret finishes the scene"
     assert specials_collected == scene_special_secret_count(0), (
         "the HUD must show exactly the special secrets placed in the scene"
     )
+
+
+def test_optional_secrets_do_not_block_stage_or_scene_progression():
+    """Verify that extra_life and killer secrets are optional for progression:
+
+    1. Root extra_life secret does not block stage unlock when required root is collected.
+    2. Scene completes (@all_cleared / GAME_PHASE_VICTORY) once all required secrets are
+       collected, even if optional extra_life or killer secrets remain uncollected on screen.
+    3. Dependent optional secrets unlock when parent is collected, but still do not block completion.
+    """
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Initialize scene 0 and game
+    mem[labels["ACTIVE_SCENE_ID"]] = SCENE
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mpu.a = SCENE
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = SCENE
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    mpu.a = SCENE
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+    run_subroutine(mpu, labels["STATUS_LINE_RESET"])
+
+    # Configure a 3-secret scenario in engine memory:
+    # Secret 0: Required root (def_id=10, dep_id=0, extra_life=0, killer=0)
+    # Secret 1: Optional root Extra Life (def_id=11, dep_id=0, extra_life=1, killer=0)
+    # Secret 2: Required dependent (def_id=12, dep_id=10, extra_life=0, killer=0)
+    count = 3
+    mem[labels["SECRETS_COUNT"]] = count
+
+    for i in range(count):
+        mem[labels["SECRETS_COLLECTED"] + i] = 0
+        mem[labels["SECRETS_X"] + i] = 20 + i * 20
+        mem[labels["SECRETS_PMG_Y"] + i] = 40
+        mem[labels["SECRETS_HEIGHT"] + i] = 8
+        mem[labels["SECRETS_FRAME_DUR"] + i] = 4
+        mem[labels["SECRETS_FRAME_COUNT"] + i] = 1
+
+    # Secret 0: required root
+    mem[labels["SECRETS_DEF_ID"] + 0] = 10
+    mem[labels["SECRETS_DEP_ID"] + 0] = 0
+    mem[labels["SECRETS_ACTIVE"] + 0] = 1
+    mem[labels["SECRETS_EXTRA_LIFE"] + 0] = 0
+    mem[labels["SECRETS_KILLER"] + 0] = 0
+
+    # Secret 1: optional root Extra Life
+    mem[labels["SECRETS_DEF_ID"] + 1] = 11
+    mem[labels["SECRETS_DEP_ID"] + 1] = 0
+    mem[labels["SECRETS_ACTIVE"] + 1] = 1
+    mem[labels["SECRETS_EXTRA_LIFE"] + 1] = 1
+    mem[labels["SECRETS_KILLER"] + 1] = 0
+
+    # Secret 2: required dependent on Secret 0
+    mem[labels["SECRETS_DEF_ID"] + 2] = 12
+    mem[labels["SECRETS_DEP_ID"] + 2] = 10
+    mem[labels["SECRETS_ACTIVE"] + 2] = 0
+    mem[labels["SECRETS_EXTRA_LIFE"] + 2] = 0
+    mem[labels["SECRETS_KILLER"] + 2] = 0
+
+    # Player collects Secret 0 (required root)
+    mem[labels["PLAYER_X"]] = mem[labels["SECRETS_X"] + 0]
+    mem[labels["PLAYER_PMG_Y"]] = mem[labels["SECRETS_PMG_Y"] + 0]
+    mem[labels["M0PL"]] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    # Secret 0 must be collected
+    assert mem[labels["SECRETS_COLLECTED"] + 0] == 1
+    assert mem[labels["SECRETS_ACTIVE"] + 0] == 0
+
+    # Secret 1 (Extra Life) must still be active and uncollected
+    assert mem[labels["SECRETS_COLLECTED"] + 1] == 0
+    assert mem[labels["SECRETS_ACTIVE"] + 1] == 1
+
+    # Secret 2 (dependent) must have been unlocked, because all REQUIRED active secrets were collected!
+    assert mem[labels["SECRETS_COLLECTED"] + 2] == 0
+    assert mem[labels["SECRETS_ACTIVE"] + 2] == 1, (
+        "Secret 2 must unlock because the only remaining active secret is optional (extra_life)"
+    )
+
+    # Now player collects Secret 2 without collecting Secret 1
+    mem[labels["PLAYER_X"]] = mem[labels["SECRETS_X"] + 2]
+    mem[labels["PLAYER_PMG_Y"]] = mem[labels["SECRETS_PMG_Y"] + 2]
+    mem[labels["M0PL"]] = 1
+    run_subroutine(mpu, labels["SECRETS_CHECK_PLAYER_COLLISION"])
+
+    assert mem[labels["SECRETS_COLLECTED"] + 2] == 1
+    assert mem[labels["SECRETS_ACTIVE"] + 2] == 0
+
+    # Level must be finished (GAME_PHASE_VICTORY) even though Secret 1 is still uncollected!
+    assert mem[labels["SECRETS_COLLECTED"] + 1] == 0
+    assert mem[labels["SECRETS_ACTIVE"] + 1] == 1
+    assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_VICTORY"], (
+        "Scene must finish when all required secrets are collected, even with uncollected optional secrets"
+    )
+    assert mem[labels["SCENE_VICTORY_TIMER"]] == labels["SFX_VICTORY_DURATION"]
+

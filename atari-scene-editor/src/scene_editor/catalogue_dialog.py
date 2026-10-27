@@ -271,8 +271,10 @@ class CataloguesDialog(QDialog):
         blink_check = QCheckBox("Blink (cycle luminance)")
         form_layout.addRow("", blink_check)
 
-        # Secret-only "special" flag (behaviour implemented in a later stage)
+        # Secret-only flags (special, extra_life, killer)
         special_check: Optional[QCheckBox] = None
+        extra_life_check: Optional[QCheckBox] = None
+        killer_check: Optional[QCheckBox] = None
         channel_combo: Optional[QComboBox] = None
         if not is_enemy:
             special_check = QCheckBox("Special (specjalny sekret)")
@@ -282,6 +284,23 @@ class CataloguesDialog(QDialog):
                 "sound (3 notes instead of 2). Saved in the catalogue as \"special\": true."
             )
             form_layout.addRow("", special_check)
+
+            extra_life_check = QCheckBox("Extra Life (dodatkowe życie)")
+            extra_life_check.setChecked(False)
+            extra_life_check.setToolTip(
+                "Marks this secret as granting an extra life when collected. "
+                "Saved in the catalogue as \"extra_life\": true."
+            )
+            form_layout.addRow("", extra_life_check)
+
+            killer_check = QCheckBox("Killer (tryb killera / pogromcy)")
+            killer_check.setChecked(False)
+            killer_check.setToolTip(
+                "Marks this secret as a killer power-up: collecting it turns the player into "
+                "Killer mode for 5 seconds, allowing the player to eliminate enemies on contact "
+                "while flashing. Saved in the catalogue as \"killer\": true."
+            )
+            form_layout.addRow("", killer_check)
 
             # Sprite channel: Players 1..3 ("player") or the 5th player ("missiles", default)
             channel_combo = QComboBox()
@@ -370,6 +389,8 @@ class CataloguesDialog(QDialog):
             self.secret_atari_hex_lbl = atari_hex_lbl
             self.secret_blink_check = blink_check
             self.secret_special_check = special_check
+            self.secret_extra_life_check = extra_life_check
+            self.secret_killer_check = killer_check
             self.secret_channel_combo = channel_combo
             self.secret_sprite_combo = sprite_combo
             self.secret_btn_save = btn_save
@@ -816,6 +837,10 @@ class CataloguesDialog(QDialog):
 
         self.secret_blink_check.setChecked(defn.blink)
         self.secret_special_check.setChecked(bool(getattr(defn, "special", False)))
+        if getattr(self, "secret_extra_life_check", None) is not None:
+            self.secret_extra_life_check.setChecked(bool(getattr(defn, "extra_life", False)))
+        if getattr(self, "secret_killer_check", None) is not None:
+            self.secret_killer_check.setChecked(bool(getattr(defn, "killer", False)))
         if getattr(self, "secret_channel_combo", None) is not None:
             channel = str(getattr(defn, "channel", SECRET_CHANNEL_MISSILES) or SECRET_CHANNEL_MISSILES).lower()
             index = self.secret_channel_combo.findData(channel)
@@ -852,6 +877,10 @@ class CataloguesDialog(QDialog):
         self._update_atari_enabled(False, False)
         self.secret_blink_check.setChecked(False)
         self.secret_special_check.setChecked(False)
+        if getattr(self, "secret_extra_life_check", None) is not None:
+            self.secret_extra_life_check.setChecked(False)
+        if getattr(self, "secret_killer_check", None) is not None:
+            self.secret_killer_check.setChecked(False)
         if getattr(self, "secret_channel_combo", None) is not None:
             self.secret_channel_combo.setCurrentIndex(0)  # default: 5th player (missiles)
         self._populate_sprite_combo(getattr(self, "secret_sprite_combo", None), None)
@@ -879,6 +908,8 @@ class CataloguesDialog(QDialog):
 
         blink = self.secret_blink_check.isChecked()
         special = self.secret_special_check.isChecked()
+        extra_life = self.secret_extra_life_check.isChecked() if getattr(self, "secret_extra_life_check", None) is not None else False
+        killer = self.secret_killer_check.isChecked() if getattr(self, "secret_killer_check", None) is not None else False
         channel = SECRET_CHANNEL_MISSILES
         if getattr(self, "secret_channel_combo", None) is not None:
             channel = str(self.secret_channel_combo.currentData() or SECRET_CHANNEL_MISSILES)
@@ -902,6 +933,8 @@ class CataloguesDialog(QDialog):
                 blink=blink,
                 dependency=None,
                 special=special,
+                extra_life=extra_life,
+                killer=killer,
                 sprite_id=sprite_id,
                 sprite=None,
                 channel=channel,

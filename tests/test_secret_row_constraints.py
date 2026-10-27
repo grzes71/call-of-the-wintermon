@@ -358,3 +358,123 @@ class TestSecretChannelBudget:
         with pytest.raises(InvalidDefinitionError):
             SecretDefinition.from_dict({"id": 3, "name": "Key", "channel": "fifth"})
 
+
+class TestOptionalSecretRowConstraints:
+    """Validate row placement rules for Extra Life and Killer secrets:
+
+    1. Root Extra Life / Killer: no other secrets allowed in the same row.
+    2. Dependent Extra Life / Killer: secrets with the same or derived dependency
+       cannot be placed in the same row, but ancestor secrets are allowed.
+    """
+
+    def _catalogues(self) -> ProjectCatalogues:
+        """Chain:
+        - 1: Gold Key (dep=None)
+        - 2: Skull (dep=1)
+        - 3: CD (dep=2)
+        - 4: Mjolnir (dep=1, killer=True)
+        - 5: LifePotion (dep=None, extra_life=True)
+        """
+        cats = ProjectCatalogues()
+        cats.secrets[1] = SecretDefinition(id=1, name="Gold Key", dependency=None, channel="missiles")
+        cats.secrets[2] = SecretDefinition(id=2, name="Skull", dependency=1, channel="missiles")
+        cats.secrets[3] = SecretDefinition(id=3, name="CD", dependency=2, channel="missiles")
+        cats.secrets[4] = SecretDefinition(id=4, name="Mjolnir", dependency=1, killer=True, channel="missiles")
+        cats.secrets[5] = SecretDefinition(id=5, name="LifePotion", dependency=None, extra_life=True, channel="missiles")
+        return cats
+
+    def _scene(self, cats: ProjectCatalogues) -> Scene:
+        sc = Scene(name="test_scene", width=160, height=96)
+        sc.catalogues = cats
+        sc.add_platform(PlatformElement(id="plat-01", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 24)))
+        sc.add_platform(PlatformElement(id="plat-02", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(50, 24)))
+        sc.add_platform(PlatformElement(id="plat-03", type=PLATFORM_TYPE_SPRITE, width=32, position=Position(10, 40)))
+        return sc
+
+    def test_root_extra_life_blocks_any_other_secret_in_same_row(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=5, platform_id="plat-01", x=10))
+
+        # Trying to add any secret to the same row (plat-02 at y=24) must be blocked
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=1)
+        assert ok is False
+        assert "No other secrets can be placed in this row" in reason or "no other secrets can share this row" in reason
+
+        # Another row (plat-03 at y=40) must be accepted
+        ok, reason = scene.can_add_object_to_platform("plat-03", obj_type=OBJECT_TYPE_SECRET, definition_id=1)
+        assert ok is True, reason
+
+    def test_root_killer_blocks_adding_to_row_with_existing_secret(self):
+        cats = self._catalogues()
+        cats.secrets[6] = SecretDefinition(id=6, name="Trap", dependency=None, killer=True, channel="missiles")
+        scene = self._scene(cats)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-01", x=10))
+
+        # Trying to add root Trap (killer) to plat-02 (same row) must be blocked
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=6)
+        assert ok is False
+        assert "no other secrets can share this row" in reason
+
+    def test_dependent_killer_same_dependency_rejected(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        # Mjolnir (dep=1) on plat-01
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-01", x=10))
+
+        # Skull (dep=1, same dependency) on plat-02 (same row) must be rejected
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=2)
+        assert ok is False
+        assert "same or derived dependency" in reason
+
+    def test_dependent_killer_derived_dependency_rejected(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        # Add Skull (dep=1) on another row plat-03
+        scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=2, platform_id="plat-03", x=10))
+        # Add Mjolnir (dep=1) on plat-01 (y=24)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-01", x=10))
+
+        # CD (dep=2, derived from Skull which is in the same stage as Mjolnir) on plat-02 must be rejected
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=3)
+        assert ok is False
+        assert "same or derived dependency" in reason
+
+    def test_dependent_killer_ancestor_dependency_allowed(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        # Add Mjolnir (dep=1, Gold Key) on plat-01 (y=24)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-01", x=10))
+
+        # Gold Key (dep=None, ancestor) on plat-02 (y=24) IS allowed
+        ok, reason = scene.can_add_object_to_platform("plat-02", obj_type=OBJECT_TYPE_SECRET, definition_id=1)
+        assert ok is True, reason
+
+        scene.add_object(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-02", x=50))
+        # Validation must pass
+        scene.validate()
+
+    def test_validate_rejects_root_extra_life_sharing_row(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=5, platform_id="plat-01", x=10))
+        scene.objects.append(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=1, platform_id="plat-02", x=50))
+        from scene_editor.scene_model import ModelValidationError
+        with pytest.raises(ModelValidationError, match="Contains root Extra Life / Killer secret"):
+            scene.validate()
+
+    def test_validate_rejects_derived_dependency_sharing_row_with_killer(self):
+        cats = self._catalogues()
+        scene = self._scene(cats)
+        # Add Skull (dep=1) in scene on plat-03
+        scene.add_object(SceneObjectElement(id=3, type=OBJECT_TYPE_SECRET, definition_id=2, platform_id="plat-03", x=10))
+        # Add Mjolnir (dep=1) on plat-01 (y=24)
+        scene.add_object(SceneObjectElement(id=1, type=OBJECT_TYPE_SECRET, definition_id=4, platform_id="plat-01", x=10))
+        # Add CD (dep=2, derived from Skull which has dep=1) on plat-02 (y=24)
+        scene.objects.append(SceneObjectElement(id=2, type=OBJECT_TYPE_SECRET, definition_id=3, platform_id="plat-02", x=50))
+        from scene_editor.scene_model import ModelValidationError
+        with pytest.raises(ModelValidationError, match="same or derived dependency"):
+            scene.validate()
+
+
+

@@ -137,6 +137,7 @@ player_jump_start_y .byte 0
     sta player_fire_released
     sta player_prev_y
     sta player_jump_start_y
+    sta player_killer_timer
     sta SIZEP0                  ; Normal width 1x (8 color clocks)
     lda #PLAYER_FRAME_DUR
     sta player_frame_timer
@@ -371,6 +372,30 @@ player_jump_start_y .byte 0
 ; and updates PMG buffer.
 ; ==============================================================================
 .proc player_update
+    ; Update Killer mode countdown and color pulsation
+    lda player_killer_timer
+    beq @no_killer_timer
+    dec player_killer_timer
+    bne @killer_modulate
+    ; Killer mode just expired: restore base scene player color
+    lda player_color
+    sta COLPM0
+    sta PCOLR0
+    jmp @no_killer_timer
+
+@killer_modulate
+    ; Modulate luminance: shift timer right by 1 to step every 2 frames
+    lda player_killer_timer
+    lsr
+    and #$0E
+    sta zp_temp_a
+    lda player_color
+    and #$F0
+    ora zp_temp_a
+    sta COLPM0
+    sta PCOLR0
+
+@no_killer_timer
     ; 0a. If currently emerging from bottom edge, run emergence update routine
     lda player_state
     cmp #PLAYER_STATE_EMERGE
@@ -1241,10 +1266,14 @@ player_jump_start_y .byte 0
     ; 2. Update hearts display on status line
     jsr status_line_refresh_lives
 
-    ; 3. Stop all horizontal movement
+    ; 3. Stop all horizontal movement and reset Killer mode
     lda #0
     sta player_speed
     sta player_x_sub
+    sta player_killer_timer
+    lda player_color
+    sta COLPM0
+    sta PCOLR0
 
     ; 4. Check if hero died from falling below lowest platform
     lda player_y

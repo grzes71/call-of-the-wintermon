@@ -300,6 +300,13 @@
       "x": 128,
       "speed": "slow",
       "movement_strategy": "right_pause_left"
+    },
+    {
+      "id": 7,
+      "type": "secret",
+      "definition_id": 4,
+      "platform_id": "platform-004",
+      "x": 51
     }
   ],
   "player_spawn": {

@@ -459,16 +459,35 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     jsr status_line_add_special
 
 @no_special_icon
+    ; 3c. Secrets with "killer": true activate Killer mode for 5 seconds (250 frames)
+    lda secrets_killer,x
+    beq @no_killer
+    lda #KILLER_MODE_DURATION
+    sta player_killer_timer
+
+@no_killer
+    ; 3d. Secrets with "extra_life": true increment player lives by 1
+    lda secrets_extra_life,x
+    beq @no_extra_life
+    inc player_lives
+    jsr status_line_refresh_lives
+
+@no_extra_life
     lda #1
     sta secret_coll_sfx
 
-    ; 4. Check if any active secrets remain on the scene
+    ; 4. Check if any active required secrets remain on the scene
     ldy #0
 @chk_act
     cpy secrets_count
     bcs @stage_cleared
     lda secrets_active,y
-    bne @done               ; At least one active secret remains in current stage
+    beq @chk_act_next
+    lda secrets_killer,y
+    ora secrets_extra_life,y
+    bne @chk_act_next
+    jmp @done               ; Active required secret remains in current stage
+@chk_act_next
     iny
     jmp @chk_act
 
@@ -485,6 +504,9 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     bcs @chk_unlocked
     lda secrets_collected,y
     bne @next_unl
+
+    lda secrets_active,y
+    bne @next_unl           ; Already active on screen - do not re-unlock
 
     lda secrets_dep_id,y
     beq @next_unl           ; Root secret (no dependency) - never unlocked here
@@ -527,17 +549,25 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
 
 @chk_unlocked
     lda secret_unl_count
-    bne @done               ; Newly unlocked stage is now active on screen!
+    beq @chk_all_start
+    jmp @done               ; Newly unlocked stage is now active on screen!
 
-    ; No dependent secrets unlocked. Check if ALL scene secrets are collected!
+    ; No dependent secrets unlocked. Check if ALL required scene secrets are collected!
+@chk_all_start
     ldy #0
 @chk_all
     cpy secrets_count
     bcs @all_cleared
+    lda secrets_killer,y
+    ora secrets_extra_life,y
+    bne @chk_all_next       ; Optional secrets (killer / extra life) are not required
     lda secrets_collected,y
-    beq @done               ; Uncollected secret remains
+    beq @chk_all_done       ; Required uncollected secret remains
+@chk_all_next
     iny
     jmp @chk_all
+@chk_all_done
+    jmp @done
 
 @all_cleared
     ; All secrets on level collected: play the victory fanfare IN this scene and only

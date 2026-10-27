@@ -68,11 +68,11 @@
       "name": "Gold Key",
       "blink": false,
       "rgb_color": [
-        255,
-        170,
-        0
+        245,
+        166,
+        49
       ],
-      "atari_color": 26,
+      "atari_color": 29,
       "sprite_id": 8
     },
     {
@@ -105,12 +105,13 @@
       "name": "Mjolnir",
       "blink": false,
       "rgb_color": [
-        137,
-        32,
-        0
+        249,
+        100,
+        27
       ],
-      "atari_color": 53,
-      "sprite_id": 9
+      "atari_color": 59,
+      "sprite_id": 9,
+      "killer": true
     },
     {
       "id": 5,
@@ -123,6 +124,31 @@
       ],
       "atari_color": 126,
       "sprite_id": 10
+    },
+    {
+      "id": 6,
+      "name": "Phantom",
+      "blink": false,
+      "rgb_color": [
+        54,
+        165,
+        109
+      ],
+      "atari_color": 202,
+      "sprite_id": 11
+    },
+    {
+      "id": 7,
+      "name": "Extra",
+      "blink": false,
+      "rgb_color": [
+        255,
+        115,
+        137
+      ],
+      "atari_color": 76,
+      "sprite_id": 12,
+      "extra_life": true
     }
   ],
   "platform_profiles": [

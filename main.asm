@@ -224,6 +224,7 @@ dlist_intro
     icl 'engine/status_line.asm'
     icl 'engine/sfx_victory.asm'
     icl 'engine/sfx_secret.asm'
+    icl 'engine/scroll.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
@@ -329,7 +330,6 @@ title_vs_buf
 ; $5C00-$5F09 and the Title display list starts at $6000).
 ; ==============================================================================
     org SCENES_DATA
-    icl 'engine/scroll.asm'
     icl 'engine/secrets.asm'
     icl 'engine/secrets_channel.asm'
     icl 'engine/enemies.asm'

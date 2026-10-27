@@ -122,3 +122,7 @@ title_gen_x         = $E3   ; 1 byte: Horizontal offset in bytes from row start 
 ; --- Secret Animation & Blinking Zero Page ($E4-$E5) ---
 secrets_blink_lum   = $E4   ; Secret blinking luminance counter ($00-$0E, step 2)
 secrets_blink_timer = $E5   ; Frame divider: frames to hold current luminance step
+
+; --- Killer Mode Zero Page ($E6) ---
+KILLER_MODE_DURATION= 250   ; 5 seconds at 50 Hz PAL frame rate
+player_killer_timer = $E6   ; Countdown timer for active Killer mode (0 = inactive)

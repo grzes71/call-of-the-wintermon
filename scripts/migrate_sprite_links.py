@@ -68,6 +68,10 @@ def order_definition_keys(item: Dict[str, Any], is_enemy: bool) -> Dict[str, Any
         ordered["dependency"] = int(item["dependency"])
     if not is_enemy and item.get("special"):
         ordered["special"] = True
+    if not is_enemy and item.get("extra_life"):
+        ordered["extra_life"] = True
+    if not is_enemy and item.get("killer"):
+        ordered["killer"] = True
     if "sprite_id" in item and item["sprite_id"] is not None:
         ordered["sprite_id"] = int(item["sprite_id"])
     return ordered

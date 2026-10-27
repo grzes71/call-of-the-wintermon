@@ -961,7 +961,196 @@ class TestSecretSpecialFlag:
 
 
 # =============================================================================
-# 9. Sprite Studio Integration Tests
+# 9. Secret "Extra Life" and "Killer" Flags
+# =============================================================================
+
+class TestSecretExtraLifeAndKillerFlags:
+    """The `extra_life` and `killer` flags are stored and validated in the secret catalogue.
+
+    These tests pin down the data contract: default off, JSON round-trip, persistence,
+    and GUI checkbox synchronization in CataloguesDialog.
+    """
+
+    def test_flags_default_to_off_and_are_omitted_from_json(self):
+        defn = SecretDefinition(id=1, name="Gold Key")
+        defn.validate()
+        assert defn.extra_life is False
+        assert defn.killer is False
+        data = defn.to_dict()
+        assert "extra_life" not in data
+        assert "killer" not in data
+
+        legacy = SecretDefinition.from_dict({"id": 1, "name": "Gold Key", "blink": False})
+        assert legacy.extra_life is False
+        assert legacy.killer is False
+        assert legacy == defn
+
+    def test_flags_roundtrip_when_enabled(self):
+        defn_extra = SecretDefinition(id=10, name="Heart Container", extra_life=True)
+        defn_extra.validate()
+        data_extra = defn_extra.to_dict()
+        assert data_extra["extra_life"] is True
+        assert "killer" not in data_extra
+        assert SecretDefinition.from_dict(data_extra) == defn_extra
+
+        defn_killer = SecretDefinition(id=11, name="Poison Skull", killer=True)
+        defn_killer.validate()
+        data_killer = defn_killer.to_dict()
+        assert data_killer["killer"] is True
+        assert "extra_life" not in data_killer
+        assert SecretDefinition.from_dict(data_killer) == defn_killer
+
+        defn_both = SecretDefinition(id=12, name="Cursed Chalice", extra_life=True, killer=True)
+        defn_both.validate()
+        data_both = defn_both.to_dict()
+        assert data_both["extra_life"] is True
+        assert data_both["killer"] is True
+        assert SecretDefinition.from_dict(data_both) == defn_both
+
+    @pytest.mark.parametrize("invalid_val", [1, 0, "true", "yes", None, [], {}])
+    def test_flags_reject_non_boolean_values(self, invalid_val):
+        with pytest.raises(CatalogueValidationError, match="extra_life"):
+            defn = SecretDefinition(id=1, name="Item", extra_life=invalid_val)
+            defn.validate()
+
+        with pytest.raises(CatalogueValidationError, match="extra_life"):
+            SecretDefinition.from_dict({"id": 1, "name": "Item", "extra_life": invalid_val})
+
+        with pytest.raises(CatalogueValidationError, match="killer"):
+            defn = SecretDefinition(id=1, name="Item", killer=invalid_val)
+            defn.validate()
+
+        with pytest.raises(CatalogueValidationError, match="killer"):
+            SecretDefinition.from_dict({"id": 1, "name": "Item", "killer": invalid_val})
+
+    def test_enemy_definitions_do_not_carry_extra_flags(self):
+        enemy = EnemyDefinition(id=1, name="Cave Troll")
+        enemy.validate()
+        assert not hasattr(enemy, "extra_life")
+        assert not hasattr(enemy, "killer")
+        assert "extra_life" not in enemy.to_dict()
+        assert "killer" not in enemy.to_dict()
+
+    def test_flags_persisted_only_for_enabled_entries(self, tmp_path: Path):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Normal Secret"))
+        cats.add_secret(SecretDefinition(id=2, name="Life Potion", extra_life=True))
+        cats.add_secret(SecretDefinition(id=3, name="Spike Trap", killer=True))
+        cats.save_to_dir(tmp_path)
+
+        definitions_file = tmp_path / "scenes" / "definitions.json"
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        by_id = {entry["id"]: entry for entry in data["secrets"]}
+        assert "extra_life" not in by_id[1]
+        assert "killer" not in by_id[1]
+        assert by_id[2]["extra_life"] is True
+        assert "killer" not in by_id[2]
+        assert by_id[3]["killer"] is True
+        assert "extra_life" not in by_id[3]
+
+        loaded = ProjectCatalogues.load_from_dir(tmp_path)
+        assert loaded.get_secret(1).extra_life is False
+        assert loaded.get_secret(1).killer is False
+        assert loaded.get_secret(2).extra_life is True
+        assert loaded.get_secret(2).killer is False
+        assert loaded.get_secret(3).extra_life is False
+        assert loaded.get_secret(3).killer is True
+
+    def test_project_definitions_flags_match_source_data(self):
+        """Rule 05: expectations come from the project data, not hardcoded values."""
+        definitions_file = Path("scenes") / "definitions.json"
+        if not definitions_file.is_file():
+            pytest.skip(f"{definitions_file} not found")
+
+        raw = json.loads(definitions_file.read_text(encoding="utf-8"))
+        secrets = raw.get("secrets", [])
+        if not secrets:
+            pytest.skip("project catalogue defines no secrets")
+
+        cats = ProjectCatalogues.load_from_dir(Path("."))
+        for entry in secrets:
+            defn = cats.get_secret(entry["id"])
+            assert defn is not None, f"secret {entry['id']} missing after load"
+            assert defn.extra_life is bool(entry.get("extra_life", False))
+            assert defn.killer is bool(entry.get("killer", False))
+            assert defn.to_dict() == entry
+
+    def test_gui_secret_extra_flags_checkboxes_are_unchecked_by_default(self, qapp):
+        cats = ProjectCatalogues()
+        cats.add_secret(SecretDefinition(id=1, name="Gold Key"))
+        dlg = CataloguesDialog(cats, parent=None)
+
+        assert dlg.secret_extra_life_check.isChecked() is False
+        assert dlg.secret_killer_check.isChecked() is False
+        assert not hasattr(dlg, "enemy_extra_life_check")
+        assert not hasattr(dlg, "enemy_killer_check")
+
+    def test_gui_secret_extra_flags_checkboxes_save_and_restore(self, qapp, tmp_path: Path):
+        cats = ProjectCatalogues()
+        dlg = CataloguesDialog(cats, base_dir=tmp_path, parent=None)
+
+        dlg._on_new_secret_clicked()
+        assert dlg.secret_extra_life_check.isChecked() is False
+        assert dlg.secret_killer_check.isChecked() is False
+
+        dlg.secret_name_edit.setText("Life Elixir")
+        dlg.secret_extra_life_check.setChecked(True)
+        dlg.secret_killer_check.setChecked(False)
+        dlg._on_save_secret_clicked()
+
+        saved = [s for s in cats.secrets.values() if s.name == "Life Elixir"]
+        assert len(saved) == 1
+        assert saved[0].extra_life is True
+        assert saved[0].killer is False
+
+        definitions_file = tmp_path / "scenes" / "definitions.json"
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        persisted = [e for e in data["secrets"] if e["name"] == "Life Elixir"]
+        assert len(persisted) == 1
+        assert persisted[0]["extra_life"] is True
+        assert "killer" not in persisted[0]
+
+        # Selecting the entry restores the checkbox states
+        dlg._refresh_secrets_list(select_id=saved[0].id)
+        assert dlg.secret_extra_life_check.isChecked() is True
+        assert dlg.secret_killer_check.isChecked() is False
+
+        # "+ New Entry" clears both checkboxes
+        dlg._on_new_secret_clicked()
+        assert dlg.secret_extra_life_check.isChecked() is False
+        assert dlg.secret_killer_check.isChecked() is False
+
+        # Now test Killer checkbox
+        dlg.secret_name_edit.setText("Mimic Chest")
+        dlg.secret_extra_life_check.setChecked(False)
+        dlg.secret_killer_check.setChecked(True)
+        dlg._on_save_secret_clicked()
+
+        saved_killer = [s for s in cats.secrets.values() if s.name == "Mimic Chest"]
+        assert len(saved_killer) == 1
+        assert saved_killer[0].extra_life is False
+        assert saved_killer[0].killer is True
+
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        persisted_k = [e for e in data["secrets"] if e["name"] == "Mimic Chest"]
+        assert len(persisted_k) == 1
+        assert "extra_life" not in persisted_k[0]
+        assert persisted_k[0]["killer"] is True
+
+        # Unticking and re-saving drops killer flag from JSON
+        dlg._refresh_secrets_list(select_id=saved_killer[0].id)
+        assert dlg.secret_killer_check.isChecked() is True
+        dlg.secret_killer_check.setChecked(False)
+        dlg._on_save_secret_clicked()
+
+        data = json.loads(definitions_file.read_text(encoding="utf-8"))
+        persisted_k2 = [e for e in data["secrets"] if e["name"] == "Mimic Chest"]
+        assert len(persisted_k2) == 1
+        assert "killer" not in persisted_k2[0]
+
+
+# =============================================================================
+# 10. Sprite Studio Integration Tests
 # =============================================================================
 
 # =============================================================================

@@ -38,6 +38,8 @@ secrets_color       :MAX_SECRETS .byte 0
 secrets_zone        :MAX_SECRETS .byte 0
 secrets_blink       :MAX_SECRETS .byte 0
 secrets_special     :MAX_SECRETS .byte 0
+secrets_killer      :MAX_SECRETS .byte 0
+secrets_extra_life  :MAX_SECRETS .byte 0
 ; The per-secret sprite channel (secrets_channel), the channel-aware PMG/HPOS writers
 ; (secret_pmg_dst / secret_write_player / secret_clear_player) and the scene->state
 ; channel copy (secrets_copy_channels) live in engine/secrets_channel.asm - the
@@ -471,6 +473,32 @@ secrets_special     :MAX_SECRETS .byte 0
     sta secrets_special,y
     dey
     bpl @copy_spc
+
+    ; 13b. Copy killer flags ("killer": true -> activates killer mode when collected)
+    lda scene_secret_killer_lo,x
+    sta zp_ptr_src
+    lda scene_secret_killer_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_klr
+    lda (zp_ptr_src),y
+    sta secrets_killer,y
+    dey
+    bpl @copy_klr
+
+    ; 13c. Copy extra life flags ("extra_life": true -> awards extra life when collected)
+    lda scene_secret_extra_life_lo,x
+    sta zp_ptr_src
+    lda scene_secret_extra_life_hi,x
+    sta zp_ptr_src+1
+    ldy secrets_count
+    dey
+@copy_xlf
+    lda (zp_ptr_src),y
+    sta secrets_extra_life,y
+    dey
+    bpl @copy_xlf
 
     ; 14. Copy sprite channels (0..2 = Players 1..3, 3 = 5th player / missiles)
     jsr secrets_copy_channels

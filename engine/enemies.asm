@@ -151,7 +151,21 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     lda enemies_x,x
     adc #48
     sta zp_temp_a
+    jmp commit_enemy_hpos
+.endp
 
+; ==============================================================================
+; CLEAR ENEMY HPOS
+; Clears hardware horizontal position (0) in DLI tables to hide sprite.
+; Input: X = enemy index (0..MAX_ENEMIES-1)
+; Preserves: X
+; ==============================================================================
+.proc clear_enemy_hpos
+    lda #0
+    sta zp_temp_a
+.endp ; fall through into commit_enemy_hpos
+
+.proc commit_enemy_hpos
     lda enemies_zone,x
     beq @zone_0
 
@@ -652,7 +666,16 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     beq @next
     bcc @next
 
-    ; Collision detected! Hero dies!
+    ; Collision detected! Check if Hero is in Killer mode
+    lda player_killer_timer
+    beq @hero_dies
+
+    ; Killer mode active! Eliminate enemy X
+    jsr enemy_eliminate
+    sta HITCLR
+    jmp @next
+
+@hero_dies
     jsr player_handle_death
     sta HITCLR
     rts
@@ -662,5 +685,20 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     jmp @loop
 
 @done
+    rts
+.endp
+
+; ==============================================================================
+; ENEMY ELIMINATE
+; Eliminates an enemy when touched by Hero in Killer mode:
+; erases PMG scanlines, clears DLI HPOS, and marks enemy inactive.
+; Input: X = enemy index (0..MAX_ENEMIES-1)
+; Preserves: X
+; ==============================================================================
+.proc enemy_eliminate
+    jsr clear_enemy_rows
+    jsr clear_enemy_hpos
+    lda #0
+    sta enemies_active,x
     rts
 .endp
