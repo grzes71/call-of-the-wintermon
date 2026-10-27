@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-27] - Fix Sprite Studio H Mirror Double-Execution Bug
+
+- **Bug**: Clicking the "H Mirror" button in Sprite Studio did nothing (the frame appeared unchanged).
+- **Cause**: In [sprite_studio/main.py](sprite_studio/main.py), both `self.timeline.mirror_requested` and `self.timeline.mirror_h_requested` were connected to `self._on_mirror_h_frame`. In [sprite_studio/widgets/timeline.py](sprite_studio/widgets/timeline.py), clicking `btn_mirror_h` emitted both signals sequentially for backward compatibility. This resulted in `_on_mirror_h_frame` executing twice in immediate succession on a single click, mirroring the pixels and immediately mirroring them back to the original layout.
+- **Fix**:
+  - Removed duplicate `self.timeline.mirror_requested.connect(...)` in [sprite_studio/main.py](sprite_studio/main.py), keeping the explicit connection to `mirror_h_requested`.
+  - Added unit test `test_timeline_mirror_buttons_click_flip_frame` in [tests/test_sprite_studio.py](tests/test_sprite_studio.py) verifying that clicking `btn_mirror_h` and `btn_mirror_v` flips the active sprite frame pixels exactly once. All 716 tests pass.
+
+
 ## [2026-10-27] - Seamless Walking Across Adjacent Platforms
 
 - **Bug**: In [engine/player.asm](engine/player.asm), hero walking across touching platforms on the same row (e.g. `platform-015` [76..108) and `platform-014` [108..140) at $y=8$ in `03-castle`) fell off into the void the moment their midpoint crossed the first platform's boundary.

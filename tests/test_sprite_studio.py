@@ -373,3 +373,40 @@ def test_frame_h_and_v_mirror_with_undo_redo(qapp):
     assert spr.frames[0].pixels == expected_v
 
 
+def test_timeline_mirror_buttons_click_flip_frame(qapp):
+    window = MainWindow()
+    window._on_add_sprite()
+    spr = window.project.sprites[0]
+    window._on_sprite_selected(spr)
+
+    original_pixels = [
+        "11000000",
+        "11110000",
+        "00000000",
+        "00000011",
+    ]
+    spr.height = 4
+    spr.frames[0].pixels = list(original_pixels)
+
+    # Click the H Mirror button on the timeline
+    window.timeline.btn_mirror_h.click()
+    expected_h = [
+        "00000011",
+        "00001111",
+        "00000000",
+        "11000000",
+    ]
+    assert spr.frames[0].pixels == expected_h, "H Mirror button click must mirror pixels horizontally exactly once"
+
+    # Click the V Mirror button on the timeline
+    window.timeline.btn_mirror_v.click()
+    expected_hv = [
+        "11000000",
+        "00000000",
+        "00001111",
+        "00000011",
+    ]
+    assert spr.frames[0].pixels == expected_hv, "V Mirror button click must mirror rows vertically"
+
+
+

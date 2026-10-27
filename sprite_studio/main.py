@@ -82,7 +82,6 @@ class MainWindow(QMainWindow):
         self.timeline.reorder_requested.connect(self._on_reorder_frame)
         self.timeline.copy_requested.connect(self._on_copy_frame)
         self.timeline.paste_requested.connect(self._on_paste_frame)
-        self.timeline.mirror_requested.connect(self._on_mirror_h_frame)
         self.timeline.mirror_h_requested.connect(self._on_mirror_h_frame)
         self.timeline.mirror_v_requested.connect(self._on_mirror_v_frame)
         self.timeline.inverse_requested.connect(self._on_inverse_frame)
