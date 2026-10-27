@@ -64,7 +64,7 @@
         "height": 44
       },
       "position": {
-        "x": 123,
+        "x": 126,
         "y": 0
       },
       "flip_x": true,
@@ -246,7 +246,7 @@
       "id": "platform-015",
       "type": "sprite",
       "position": {
-        "x": 60,
+        "x": 76,
         "y": 8
       },
       "width": 32,
@@ -257,12 +257,13 @@
       "id": "platform-016",
       "type": "sprite",
       "position": {
-        "x": 0,
+        "x": 8,
         "y": 8
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 18
+      "color_profile_id": 18,
+      "movement": "left-right"
     },
     {
       "id": "platform-017",
@@ -290,7 +291,7 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-016",
-      "x": 0
+      "x": 8
     },
     {
       "id": 3,

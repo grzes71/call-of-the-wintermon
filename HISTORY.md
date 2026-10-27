@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-27] - Seamless Walking Across Adjacent Platforms
+
+- **Bug**: In [engine/player.asm](engine/player.asm), hero walking across touching platforms on the same row (e.g. `platform-015` [76..108) and `platform-014` [108..140) at $y=8$ in `03-castle`) fell off into the void the moment their midpoint crossed the first platform's boundary.
+- **Cause**: `@finish_update` in [engine/player.asm](engine/player.asm) only checked the bounds of the currently standing platform (`player_plat_idx`). When `mid_x >= plat_x + plat_w` or `mid_x < plat_x`, it immediately jumped to `@walked_off_edge`, zeroing speed and transitioning to `PLAYER_STATE_FALL`. On the very next frame, `player_fall_update` decremented player Y (feet descended to $y+1$), missing the adjacent platform at $y$ due to exact equality checks.
+- **Fix**:
+  - In [engine/player.asm](engine/player.asm), replaced the immediate jump to `@walked_off_edge` with `@check_adjacent_platform`. When leaving the current platform's horizontal span, the engine preserves the current platform's $y$ coordinate in `zp_temp_x` and searches active scene platforms for one on the same $y$ supporting `mid_x` (`plat_x <= mid_x < plat_x + plat_w`).
+  - If a supporting adjacent or overlapping platform is found, `player_plat_idx` transitions seamlessly to the new platform and the hero remains in `IDLE`/`WALK` without falling or dropping frames. If no platform is found, the engine executes `@walked_off_edge` as before.
+  - Added py65 integration test `test_player_walks_across_adjacent_platforms` in [tests/test_player_movement.py](tests/test_player_movement.py) verifying bidirectional seamless walking across touching platforms. All 715 tests pass.
+
+
 ## [2026-10-26] - Dynamic Active Secret Selection in Animation Progression Test
 
 - **Bug**: In [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), `test_secrets_animation_progression` hardcoded secret index 0 when testing timer decrement and frame advancing (`key_dur = mem[dur_addr + 0]`).

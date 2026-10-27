@@ -26,6 +26,7 @@ from tests.scene_expectations import (
     scene_platform_count,
     scene_platform_index,
     scene_files,
+    load_scene,
 )
 
 # ---------------------------------------------------------------------------
@@ -1243,3 +1244,79 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
     assert PLAT_JUMP_TO["x"] <= mem[labels["PLAYER_X"]] <= PLAT_JUMP_TO["x"] + PLAT_JUMP_TO["width"], (
         f"Hero must be within {PLAT_JUMP_TO['id']} x bounds"
     )
+
+
+def test_player_walks_across_adjacent_platforms():
+    """Verify Hero seamlessly walks across two touching platforms at the same Y level without falling."""
+    target_scene_info = None
+    for scene_idx, scene_file in enumerate(scene_files()):
+        scene_data = load_scene(scene_file)
+        plats = scene_data.get("platforms", [])
+        for p1 in plats:
+            for p2 in plats:
+                if p1["id"] == p2["id"]:
+                    continue
+                if p1["position"]["y"] == p2["position"]["y"]:
+                    x1, w1 = p1["position"]["x"], p1["width"]
+                    x2, w2 = p2["position"]["x"], p2["width"]
+                    if x1 + w1 == x2:
+                        target_scene_info = (scene_idx, scene_file, p1, p2)
+                        break
+            if target_scene_info:
+                break
+        if target_scene_info:
+            break
+
+    assert target_scene_info is not None, "At least one scene must have adjacent touching platforms"
+    scene_idx, scene_file, left_plat, right_plat = target_scene_info
+
+    left_idx = scene_platform_index(scene_idx, left_plat["id"])
+    right_idx = scene_platform_index(scene_idx, right_plat["id"])
+
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    mpu.a = scene_idx
+    run_subroutine(mpu, labels["PLATFORMS_INIT"])
+    mpu.a = scene_idx
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # 1. Test walking right across boundary: left_plat -> right_plat
+    # Midpoint = player_x + 4. Boundary = left_plat['x'] + left_plat['width'].
+    boundary_x = left_plat["position"]["x"] + left_plat["width"]
+    plat_y = left_plat["position"]["y"]
+    hero_y = (plat_y - labels["PLAYER_SPRITE_HEIGHT"]) & 0xFF
+
+    mem[labels["PLAYER_X"]] = boundary_x - 5  # mid_x = boundary_x - 1
+    mem[labels["PLAYER_Y"]] = hero_y
+    mem[labels["PLAYER_PLAT_IDX"]] = left_idx
+    mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed right
+    mem[labels["PLAYER_DIR"]] = 0       # Right
+    mem[labels["STICK0"]] = 0x07        # Pressing right
+    mem[labels["PLAYER_X_SUB"]] = 0x80  # Step 1px right on next frame
+
+    # Advance 1 frame: player_x becomes boundary_x - 4, mid_x becomes boundary_x
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_X"]] == boundary_x - 4
+    assert mem[labels["PLAYER_STATE"]] != 2, "Hero must not fall when stepping onto adjacent platform"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == right_idx, f"Platform index must switch to {right_plat['id']} ({right_idx})"
+
+    # 2. Test walking left across boundary: right_plat -> left_plat
+    mem[labels["PLAYER_X"]] = boundary_x - 4  # mid_x = boundary_x (on right_plat)
+    mem[labels["PLAYER_PLAT_IDX"]] = right_idx
+    mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed left
+    mem[labels["PLAYER_DIR"]] = 1       # Left
+    mem[labels["STICK0"]] = 0x0B        # Pressing left
+    mem[labels["PLAYER_X_SUB"]] = 0x80  # Step 1px left on next frame
+
+    # Advance 1 frame: player_x becomes boundary_x - 5, mid_x becomes boundary_x - 1
+    run_subroutine(mpu, labels["PLAYER_UPDATE"])
+
+    assert mem[labels["PLAYER_X"]] == boundary_x - 5
+    assert mem[labels["PLAYER_STATE"]] != 2, "Hero must not fall when stepping back onto left platform"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == left_idx, f"Platform index must switch back to {left_plat['id']} ({left_idx})"
+

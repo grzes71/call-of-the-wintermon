@@ -637,16 +637,51 @@ player_jump_start_y .byte 0
 
     ; Left edge check: mid_x < plat_x
     cmp (zp_plat_ptr_x),y
-    bcc @walked_off_edge
+    bcc @check_adjacent_platform
 
     ; Right edge check: mid_x >= plat_x + plat_w
     lda (zp_plat_ptr_x),y
     clc
     adc (zp_plat_ptr_w),y
     cmp zp_temp_a
-    bcc @walked_off_edge
-    beq @walked_off_edge
+    bcc @check_adjacent_platform
+    beq @check_adjacent_platform
     jmp @no_edge_check
+
+@check_adjacent_platform
+    ; Save standing platform Y coordinate
+    lda (zp_plat_ptr_y),y
+    sta zp_temp_x
+
+    ; Search all active scene platforms for one supporting mid_x at the same Y
+    ldy zp_plat_count
+    beq @walked_off_edge
+    dey
+
+@find_adj_loop
+    lda (zp_plat_ptr_y),y
+    cmp zp_temp_x
+    bne @next_adj
+
+    ; Check bounds: plat_x <= mid_x < plat_x + plat_w
+    lda zp_temp_a           ; mid_x
+    cmp (zp_plat_ptr_x),y
+    bcc @next_adj
+
+    lda (zp_plat_ptr_x),y
+    clc
+    adc (zp_plat_ptr_w),y
+    cmp zp_temp_a
+    bcc @next_adj
+    beq @next_adj
+
+    ; Seamless transition onto adjacent/overlapping platform!
+    sty player_plat_idx
+    jmp @no_edge_check
+
+@next_adj
+    dey
+    bpl @find_adj_loop
 
 @walked_off_edge
     lda #PLAYER_STATE_FALL
