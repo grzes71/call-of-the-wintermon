@@ -114,10 +114,10 @@
       "id": "platform-003",
       "type": "sprite",
       "position": {
-        "x": 64,
+        "x": 56,
         "y": 72
       },
-      "width": 32,
+      "width": 48,
       "height": 4,
       "color_profile_id": 2
     },
@@ -246,7 +246,7 @@
       "id": "platform-015",
       "type": "sprite",
       "position": {
-        "x": 78,
+        "x": 70,
         "y": 8
       },
       "width": 32,

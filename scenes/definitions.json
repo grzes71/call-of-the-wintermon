@@ -111,6 +111,18 @@
       ],
       "atari_color": 53,
       "sprite_id": 9
+    },
+    {
+      "id": 5,
+      "name": "Ghost",
+      "blink": false,
+      "rgb_color": [
+        255,
+        138,
+        255
+      ],
+      "atari_color": 126,
+      "sprite_id": 10
     }
   ],
   "platform_profiles": [

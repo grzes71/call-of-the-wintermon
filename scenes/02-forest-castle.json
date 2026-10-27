@@ -109,7 +109,7 @@
       "id": "platform-004",
       "type": "sprite",
       "position": {
-        "x": 129,
+        "x": 128,
         "y": 72
       },
       "width": 24,
@@ -295,7 +295,7 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-004",
-      "x": 129
+      "x": 128
     },
     {
       "id": 5,

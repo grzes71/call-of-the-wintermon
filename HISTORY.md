@@ -2,6 +2,13 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-27] - Synthesize Adjacent Platforms in RAM for Movement Integration Test
+
+- **Bug**: In [tests/test_player_movement.py](tests/test_player_movement.py), `test_player_walks_across_adjacent_platforms` failed with `AssertionError: At least one scene must have adjacent touching platforms` after reordering scenes in [scenes/scenes.json](scenes/scenes.json) and modifying platform positions in `03-castle.json`.
+- **Cause**: The test previously scanned production scene JSON files expecting at least one live scene to contain touching platforms. When scenes were reordered and platforms in `03-castle` were edited in the scene editor (moving `platform-015` and `platform-014` apart), no live scene fulfilled the assumption, violating Rule 05 (resource independence).
+- **Fix**: Refactored `test_player_walks_across_adjacent_platforms` in [tests/test_player_movement.py](tests/test_player_movement.py) to synthesize two contiguous touching platforms directly in emulated RAM using `PLAT_FLOOR_IDX` and `PLAT_SCRATCH_IDX` on `SCENE0`. The test is now fully self-contained and immune to scene reordering and level design edits. All 716 tests pass.
+
+
 ## [2026-10-27] - Fix Sprite Studio H Mirror Double-Execution Bug
 
 - **Bug**: Clicking the "H Mirror" button in Sprite Studio did nothing (the frame appeared unchanged).

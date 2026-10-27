@@ -1248,49 +1248,46 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
 
 def test_player_walks_across_adjacent_platforms():
     """Verify Hero seamlessly walks across two touching platforms at the same Y level without falling."""
-    target_scene_info = None
-    for scene_idx, scene_file in enumerate(scene_files()):
-        scene_data = load_scene(scene_file)
-        plats = scene_data.get("platforms", [])
-        for p1 in plats:
-            for p2 in plats:
-                if p1["id"] == p2["id"]:
-                    continue
-                if p1["position"]["y"] == p2["position"]["y"]:
-                    x1, w1 = p1["position"]["x"], p1["width"]
-                    x2, w2 = p2["position"]["x"], p2["width"]
-                    if x1 + w1 == x2:
-                        target_scene_info = (scene_idx, scene_file, p1, p2)
-                        break
-            if target_scene_info:
-                break
-        if target_scene_info:
-            break
-
-    assert target_scene_info is not None, "At least one scene must have adjacent touching platforms"
-    scene_idx, scene_file, left_plat, right_plat = target_scene_info
-
-    left_idx = scene_platform_index(scene_idx, left_plat["id"])
-    right_idx = scene_platform_index(scene_idx, right_plat["id"])
-
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    mpu.a = scene_idx
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLATFORMS_INIT"])
-    mpu.a = scene_idx
+    mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # 1. Test walking right across boundary: left_plat -> right_plat
-    # Midpoint = player_x + 4. Boundary = left_plat['x'] + left_plat['width'].
-    boundary_x = left_plat["position"]["x"] + left_plat["width"]
-    plat_y = left_plat["position"]["y"]
+    # Configure two touching platforms in RAM on SCENE0 using PLAT_FLOOR and PLAT_SCRATCH_IDX
+    # (built in RAM per Rule 05 so scene edits or reordering cannot remove the test premise).
+    plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+
+    plat_y = PLAT_FLOOR["y"]
+    left_x = 40
+    left_w = 32
+    right_x = left_x + left_w  # 72, exactly touching
+    right_w = 32
+    boundary_x = right_x
+
+    left_idx = PLAT_FLOOR_IDX
+    right_idx = PLAT_SCRATCH_IDX
+
+    mem[plat_ptr_x + left_idx] = left_x
+    mem[plat_ptr_w + left_idx] = left_w
+    mem[plat_ptr_y + left_idx] = plat_y
+
+    mem[plat_ptr_x + right_idx] = right_x
+    mem[plat_ptr_w + right_idx] = right_w
+    mem[plat_ptr_y + right_idx] = plat_y
+
     hero_y = (plat_y - labels["PLAYER_SPRITE_HEIGHT"]) & 0xFF
 
-    mem[labels["PLAYER_X"]] = boundary_x - 5  # mid_x = boundary_x - 1
+    # 1. Test walking right across boundary: left_plat -> right_plat
+    # Midpoint = player_x + 4. Boundary = boundary_x.
+    mem[labels["PLAYER_X"]] = boundary_x - 5  # mid_x = boundary_x - 1 (still on left_plat)
     mem[labels["PLAYER_Y"]] = hero_y
     mem[labels["PLAYER_PLAT_IDX"]] = left_idx
     mem[labels["PLAYER_SPEED"]] = 0x80  # Max speed right
@@ -1303,7 +1300,7 @@ def test_player_walks_across_adjacent_platforms():
 
     assert mem[labels["PLAYER_X"]] == boundary_x - 4
     assert mem[labels["PLAYER_STATE"]] != 2, "Hero must not fall when stepping onto adjacent platform"
-    assert mem[labels["PLAYER_PLAT_IDX"]] == right_idx, f"Platform index must switch to {right_plat['id']} ({right_idx})"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == right_idx, f"Platform index must switch to scratch platform ({right_idx})"
 
     # 2. Test walking left across boundary: right_plat -> left_plat
     mem[labels["PLAYER_X"]] = boundary_x - 4  # mid_x = boundary_x (on right_plat)
@@ -1318,5 +1315,6 @@ def test_player_walks_across_adjacent_platforms():
 
     assert mem[labels["PLAYER_X"]] == boundary_x - 5
     assert mem[labels["PLAYER_STATE"]] != 2, "Hero must not fall when stepping back onto left platform"
-    assert mem[labels["PLAYER_PLAT_IDX"]] == left_idx, f"Platform index must switch back to {left_plat['id']} ({left_idx})"
+    assert mem[labels["PLAYER_PLAT_IDX"]] == left_idx, f"Platform index must switch back to floor platform ({left_idx})"
+
 
