@@ -8,4 +8,4 @@ trigger: always_on
 - **Verification First:** Never assume a fix works. If you suggest a change, assume the user will immediately run `make all`. Anticipate build breaks and resolve dependencies proactively.
 - **No Hallucinations:** If you do not know the exact hardware address or Python library method, ask for documentation or check the relevant `hardware.asm` / API docs. Do not invent symbols.
 - **Never** run Altirra (emulator) tool without user's permission.
-- **Never** modify files (source of truth) defined in project's manifest (if exists) without user's permission.
+- **Never** modify SOT files (source of truth: .txt, .json, .yaml) defined in project's manifest (if exists) without user's permission (except scripts).
