@@ -132,7 +132,7 @@
       "id": "platform-009",
       "type": "sprite",
       "position": {
-        "x": 127,
+        "x": 128,
         "y": 40
       },
       "width": 32,
@@ -154,7 +154,7 @@
       "id": "platform-011",
       "type": "sprite",
       "position": {
-        "x": 65,
+        "x": 64,
         "y": 24
       },
       "width": 16,
@@ -165,7 +165,7 @@
       "id": "platform-012",
       "type": "sprite",
       "position": {
-        "x": 73,
+        "x": 68,
         "y": 56
       },
       "width": 32,
@@ -187,7 +187,7 @@
       "id": "platform-014",
       "type": "missile",
       "position": {
-        "x": 7,
+        "x": 8,
         "y": 88
       },
       "width": 32,
@@ -198,7 +198,7 @@
       "id": "platform-016",
       "type": "missile",
       "position": {
-        "x": 117,
+        "x": 116,
         "y": 56
       },
       "width": 8,
@@ -209,7 +209,7 @@
       "id": "platform-018",
       "type": "missile",
       "position": {
-        "x": 47,
+        "x": 48,
         "y": 24
       },
       "width": 8,
@@ -222,7 +222,7 @@
     {
       "id": 1,
       "type": "enemy",
-      "definition_id": 1,
+      "definition_id": 2,
       "platform_id": "platform-010",
       "x": 120,
       "speed": "slow",
@@ -256,7 +256,7 @@
       "type": "secret",
       "definition_id": 2,
       "platform_id": "platform-011",
-      "x": 69,
+      "x": 68,
       "dependency": 1
     },
     {
@@ -264,7 +264,7 @@
       "type": "secret",
       "definition_id": 2,
       "platform_id": "platform-012",
-      "x": 88,
+      "x": 83,
       "dependency": 1
     },
     {
@@ -272,7 +272,7 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-009",
-      "x": 148,
+      "x": 149,
       "dependency": 2
     },
     {
@@ -280,7 +280,7 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-014",
-      "x": 7,
+      "x": 18,
       "dependency": 2
     },
     {
@@ -289,7 +289,7 @@
       "definition_id": 1,
       "platform_id": "platform-013",
       "x": 36,
-      "speed": "fast",
+      "speed": "slow",
       "movement_strategy": "right_pause_left"
     },
     {
@@ -297,14 +297,14 @@
       "type": "enemy",
       "definition_id": 1,
       "platform_id": "platform-005",
-      "x": 128,
+      "x": 142,
       "speed": "slow",
       "movement_strategy": "right_pause_left"
     },
     {
       "id": 7,
       "type": "secret",
-      "definition_id": 4,
+      "definition_id": 1,
       "platform_id": "platform-004",
       "x": 51
     }

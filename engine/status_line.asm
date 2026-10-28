@@ -3,16 +3,11 @@
 ; Target: Atari 800XL / 65XE (MOS 6502)
 ; Layout (40 chars):
 ; - Columns 0..2: Player lives (initially 3), displayed as heart glyphs (code 64)
-; - Column 3: spacer
-; - Columns 4..N: Scene name, left-aligned from column 4 - pre-formatted by the
-;   compiler in scene_<scene>_hud_line. The centred scene_<scene>_name_line is
-;   only used by the scene title card (dlist_scene_title).
+; - Middle (columns 3..N): blank space
 ; - Right end (columns N+1..39): one disc glyph (code 61) per collected secret whose
 ;   catalogue definition carries "special": true, filled from column 39 leftwards.
 ;   The counter (player_specials) survives scene changes - only status_line_reset
-;   (a new game) clears it. The compiler reserves exactly as many columns as there
-;   are special secrets in all scenes (SCENE_SPECIAL_TOTAL) and truncates the scene
-;   name before them, so the icons can never reach the name.
+;   (a new game) clears it.
 ; ==============================================================================
 
 STATUS_LINE_WIDTH    = 40
@@ -38,9 +33,8 @@ STATUS_INIT_LIVES    = 3
 ; ==============================================================================
 ; STATUS LINE INIT
 ; Initializes status line for the specified scene.
-; Copies the pre-formatted HUD line (scene name left-aligned from column 4) into
-; status_line_vram, then writes player lives (hearts) at columns 0..2 and the
-; collected-special icons at the right end.
+; Clears status_line_vram with spaces, then writes player lives (hearts) at
+; columns 0..2 and collected-special icons at the right end.
 ; Input: A = scene_id (0..SCENE_COUNT-1)
 ; Preserves: X
 ; ==============================================================================
@@ -54,25 +48,18 @@ STATUS_INIT_LIVES    = 3
     txa
     pha
 
-    ; 1. Point zp_ptr_src to the pre-formatted HUD line for this scene
-    ldx active_scene_id
-    lda scene_hud_line_lo,x
-    sta zp_ptr_src
-    lda scene_hud_line_hi,x
-    sta zp_ptr_src+1
-
-    ; 2. Copy the 40 bytes of the HUD line (name already at column 4) to status_line_vram
+    ; 1. Clear status_line_vram with spaces
+    lda #STATUS_GLYPH_SPACE
     ldy #STATUS_LINE_WIDTH - 1
-@copy_name
-    lda (zp_ptr_src),y
+@clear_line
     sta status_line_vram,y
     dey
-    bpl @copy_name
+    bpl @clear_line
 
-    ; 3. Render lives (hearts) at left (columns 0..2)
+    ; 2. Render lives (hearts) at left (columns 0..2)
     jsr status_line_refresh_lives
 
-    ; 4. Render collected-special icons at the right end (columns 39, 38, ...)
+    ; 3. Render collected-special icons at the right end (columns 39, 38, ...)
     jsr status_line_refresh_specials
 
     pla

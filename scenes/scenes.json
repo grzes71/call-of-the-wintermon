@@ -3,9 +3,9 @@
     "01-forest.json",
     "02-forest-castle.json",
     "03-castle.json",
-    "05-hell.json",
-    "07-depths.json",
     "04-castle-hell.json",
-    "06-hell-depths.json"
+    "05-hell.json",
+    "06-hell-depths.json",
+    "07-depths.json"
   ]
 }

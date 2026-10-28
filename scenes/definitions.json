@@ -43,10 +43,10 @@
       "blink": false,
       "rgb_color": [
         255,
-        170,
-        127
+        104,
+        206
       ],
-      "atari_color": 60,
+      "atari_color": 93,
       "sprite_id": 4
     },
     {

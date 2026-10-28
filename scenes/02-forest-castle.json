@@ -318,7 +318,7 @@
       "definition_id": 2,
       "platform_id": "platform-002",
       "x": 34,
-      "speed": "medium",
+      "speed": "slow",
       "movement_strategy": "left_right"
     },
     {

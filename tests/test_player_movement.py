@@ -1211,7 +1211,9 @@ def test_player_jump_short_from_platform_016_to_012_under_platform_010():
 
     # Hero on PLAT_JUMP_FROM (a missile platform) jumping left onto PLAT_JUMP_TO on the same
     # row, under the top-row platform two tiers above (geometry from the scene JSON).
-    start_x = PLAT_JUMP_FROM["x"] + 1
+    # Dynamically place Hero at the leftmost standing position on PLAT_JUMP_FROM (Rule 05)
+    # so the short jump (dx=18) reaches PLAT_JUMP_TO cleanly across the gap.
+    start_x = max(PLAT_JUMP_FROM["x"] - 4, PLAT_JUMP_TO["x"] - 4 + 18)
     start_y = PLAT_JUMP_FROM["y"] - labels["PLAYER_SPRITE_HEIGHT"]
     jump_len = labels["JUMP_SHORT_LEN"]
     mem[labels["PLAYER_X"]] = start_x

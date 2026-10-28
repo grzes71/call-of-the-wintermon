@@ -279,14 +279,6 @@
   ],
   "objects": [
     {
-      "id": 1,
-      "type": "secret",
-      "definition_id": 3,
-      "platform_id": "platform-002",
-      "x": 118,
-      "dependency": 2
-    },
-    {
       "id": 2,
       "type": "secret",
       "definition_id": 1,
@@ -365,6 +357,22 @@
       "sprite_id": 2,
       "speed": "medium",
       "movement_strategy": "right_left"
+    },
+    {
+      "id": 1,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-007",
+      "x": 118,
+      "dependency": 2
+    },
+    {
+      "id": 12,
+      "type": "secret",
+      "definition_id": 7,
+      "platform_id": "platform-001",
+      "x": 36,
+      "dependency": 2
     }
   ],
   "player_spawn": {

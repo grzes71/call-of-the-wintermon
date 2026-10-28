@@ -3,7 +3,7 @@
 Validates:
 1. Status line display buffer (status_line_vram) is 40 bytes in ANTIC Mode 2.
 2. Initial player lives: 3 characters of decimal code 64 (heart glyphs) at columns 0..2.
-3. Scene name left-aligned from column 4 (the centred variant is reserved for the
+3. Middle area (columns 3..N) is blank space (scene name is only displayed on the
    scene title card, dlist_scene_title).
 4. Collected *special* secrets as disc glyphs (code 61) at the right end, filled from
    column 39 leftwards; the icons survive scene changes and only a new game clears them.
@@ -20,10 +20,7 @@ from py65.devices.mpu6502 import MPU
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
 from scripts.compile_scenes import (
     STATUS_LINE_WIDTH,
-    STATUS_NAME_COL,
-    status_name_max,
     text_to_screencodes_line,
-    text_to_screencodes_line_at,
 )
 from tests.scene_expectations import (
     load_scene,
@@ -45,7 +42,7 @@ STATUS_GLYPH_SPECIAL = 61
 
 
 def test_status_line_reset_and_init_scene0():
-    """Verify status_line_init sets up hearts, the left-aligned scene name and no icons."""
+    """Verify status_line_init sets up hearts, blank middle and no icons."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -72,19 +69,11 @@ def test_status_line_reset_and_init_scene0():
     assert status_bytes[2] == 64, f"Column 2 must be heart glyph (64), got {status_bytes[2]}"
     assert status_bytes[3] == 0, "Column 3 must be space"
 
-    # 2. Scene name: left-aligned from column 4 (columns 0..2 lives, column 3 spacer).
-    #    Expected bytes come from the scene JSON through the compiler helper (Rule 05).
+    # 2. Middle: columns 3..name_end must be blank spaces (scene name is not displayed in HUD)
     scene_name = load_scene(scene_files()[SCENE])["scene"]["name"]
     capacity = special_secret_total()
     name_end = STATUS_LINE_WIDTH - capacity
-    exp_hud = text_to_screencodes_line_at(
-        scene_name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH,
-        max_len=status_name_max(capacity),
-    )
-    assert status_bytes[STATUS_NAME_COL:name_end] == exp_hud[STATUS_NAME_COL:name_end]
-    assert status_bytes[STATUS_NAME_COL] == exp_hud[STATUS_NAME_COL] != 0, (
-        "the scene name must start exactly at column 4 (no leading blank)"
-    )
+    assert status_bytes[3:name_end] == [0] * (name_end - 3), "Middle of HUD must be empty spaces"
 
     # The centred variant is still compiled for the scene title card.
     exp_title = text_to_screencodes_line(scene_name, width=40)
@@ -119,16 +108,8 @@ def test_status_line_init_scene1():
     # Left: 3 hearts
     assert status_bytes[0:3] == [64, 64, 64]
 
-    # Scene name: left-aligned from column 4 (no leading blank there)
-    scene_name = load_scene(scene_files()[SCENE_NEXT])["scene"]["name"]
-    capacity = special_secret_total()
-    name_end = STATUS_LINE_WIDTH - capacity
-    exp_hud = text_to_screencodes_line_at(
-        scene_name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH,
-        max_len=status_name_max(capacity),
-    )
-    assert status_bytes[STATUS_NAME_COL:name_end] == exp_hud[STATUS_NAME_COL:name_end]
-    assert status_bytes[STATUS_NAME_COL] == exp_hud[STATUS_NAME_COL] != 0
+    # Middle: columns 3..39-collected are spaces (no scene name displayed)
+    assert status_bytes[3:STATUS_LINE_WIDTH - collected] == [0] * (STATUS_LINE_WIDTH - collected - 3)
 
     # Right end: one disc glyph (61) per collected special secret, filled right to left.
     icon_area = status_bytes[STATUS_LINE_WIDTH - collected:]
@@ -141,8 +122,7 @@ def test_status_line_special_icons_fill_right_to_left():
     """status_line_add_special draws one disc glyph (code 61) per special secret.
 
     Contract (engine/status_line.asm): the icons fill the right end of the status line
-    from column 39 leftwards - the first one collected ends up rightmost - and they can
-    never reach the scene name area reserved by the compiler.
+    from column 39 leftwards - the first one collected ends up rightmost.
     """
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
@@ -161,8 +141,7 @@ def test_status_line_special_icons_fill_right_to_left():
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
     vram = labels["STATUS_LINE_VRAM"]
-    name_bytes = list(mem[vram + STATUS_NAME_COL:vram + name_end])
-    assert name_bytes[0] != 0, "the scene name must be present before collecting"
+    assert list(mem[vram + 3:vram + name_end]) == [0] * (name_end - 3), "Middle must be blank"
 
     # 1. Collect icons one by one: they appear from column 39 leftwards.
     for count in range(1, capacity + 1):
@@ -173,8 +152,8 @@ def test_status_line_special_icons_fill_right_to_left():
         # The icon row is exactly `count` wide - while slots remain, the slot left of it stays blank.
         if count < capacity:
             assert mem[vram + STATUS_LINE_WIDTH - count - 1] == 0
-        # The icons must never touch the scene name.
-        assert list(mem[vram + STATUS_NAME_COL:vram + name_end]) == name_bytes
+        # The middle area remains blank
+        assert list(mem[vram + 3:vram + name_end]) == [0] * (name_end - 3)
 
     # 2. A new game clears the icons again (a scene change must not).
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])

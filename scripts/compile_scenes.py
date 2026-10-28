@@ -1763,12 +1763,9 @@ def parse_scene_json(
 def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
     """Generate MADS 6502 assembly defining Structure-of-Arrays (SoA) scene structures."""
     special_total = status_special_total(scenes)
-    name_max = status_name_max(special_total)
-    if name_max < 1:
+    if special_total > STATUS_LINE_WIDTH - 3:
         raise ValueError(
-            f"Status line: {special_total} special secrets need that many HUD columns, which "
-            f"leaves no room for the scene name (columns {STATUS_NAME_COL}..{STATUS_LINE_WIDTH - 1}). "
-            f"Remove a special secret or shorten the icon row."
+            f"Status line: {special_total} special secrets exceed available columns (max {STATUS_LINE_WIDTH - 3})."
         )
 
     lines: list[str] = [
@@ -1804,9 +1801,8 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "PLATFORM_TYPE_MISSILE   = 1",
         "",
         "; Status Line Layout (bottom HUD): one glyph per collected special secret is",
-        "; drawn at the right end, so the scene name stops STATUS_NAME_MAX columns in.",
+        "; drawn at the right end.",
         f"SCENE_SPECIAL_TOTAL = {special_total}",
-        f"STATUS_NAME_MAX = {name_max}",
         "",
     ]
 
@@ -1831,20 +1827,12 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         sym = sc.symbol_name
         screencodes = text_to_screencodes_line(sc.name, width=40)
         sc_bytes = ", ".join(f"${b:02X}" for b in screencodes)
-        # Status line (bottom HUD): same name, but left-aligned at STATUS_NAME_COL and
-        # truncated before the special-secret icon area on the right.
-        hud_screencodes = text_to_screencodes_line_at(
-            sc.name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH, max_len=name_max
-        )
-        hud_bytes = ", ".join(f"${b:02X}" for b in hud_screencodes)
         lines.extend([
             "; " + "=" * 78,
             f"; SCENE {idx}: {sc.name} ({sc.file_stem}.json)",
             "; " + "=" * 78,
             f"scene_{sym}_name_line",
             f"    .byte {sc_bytes}",
-            f"scene_{sym}_hud_line",
-            f"    .byte {hud_bytes}",
             "",
         ])
 
@@ -2032,10 +2020,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_name_line" for sc in scenes),
         "scene_name_line_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_name_line" for sc in scenes),
-        "scene_hud_line_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_hud_line" for sc in scenes),
-        "scene_hud_line_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_hud_line" for sc in scenes),
         "",
         "scene_width_px",
         "    .byte " + ", ".join(str(sc.width) for sc in scenes),

@@ -86,12 +86,7 @@ def test_text_to_screencodes_line_at_status_line_layout():
 
 
 def test_status_line_reserves_columns_for_special_icons():
-    """The HUD scene name must stop before the special-secret icon row (Rule 05).
-
-    The icon row is as wide as the number of special secrets placed in all scenes, and
-    the compiled HUD line must leave those columns blank - otherwise a collected icon
-    would overwrite the scene name.
-    """
+    """The status line special icons must fit within the 40-column line width (Rule 05)."""
     manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
     scenes = [
@@ -100,19 +95,7 @@ def test_status_line_reserves_columns_for_special_icons():
 
     total = status_special_total(scenes)
     assert total == special_secret_total(), "compiler total must match the raw scene JSON"
-    name_max = status_name_max(total)
-    assert name_max == STATUS_LINE_WIDTH - STATUS_NAME_COL - total
-    assert name_max >= 1, "the status line must still have room for the scene name"
-
-    icon_start = STATUS_LINE_WIDTH - total
-    for scene in scenes:
-        hud = text_to_screencodes_line_at(
-            scene.name, start_col=STATUS_NAME_COL, width=STATUS_LINE_WIDTH, max_len=name_max
-        )
-        assert hud[icon_start:] == [0] * total, (
-            f"{scene.file_stem}: the HUD line must leave the icon row blank"
-        )
-        assert hud[STATUS_NAME_COL] != 0, f"{scene.file_stem}: the scene name must be present"
+    assert total <= STATUS_LINE_WIDTH - 3, "special icons must fit on the status line"
 
 
 def test_sanitize_symbol():
@@ -232,10 +215,8 @@ def test_compile_scenes_full_pipeline(tmp_path):
         assert f"scene_{symbol.lower()}_name_line" in content
     assert "scene_name_line_lo" in content
     assert "scene_name_line_hi" in content
-    assert "scene_sc_01_forest_hud_line" in content
-    assert "scene_sc_02_forest_castle_hud_line" in content
-    assert "scene_hud_line_lo" in content
-    assert "scene_hud_line_hi" in content
+    assert "scene_hud_line_lo" not in content
+    assert "scene_hud_line_hi" not in content
     assert "scene_elem_count" in content
     assert "scene_plat_count" in content
     assert "scene_obj_count" in content
@@ -274,10 +255,6 @@ def test_mads_symbols_present_in_built_xex():
         "scene_sc_02_forest_castle_name_line",
         "scene_name_line_lo",
         "scene_name_line_hi",
-        "scene_sc_01_forest_hud_line",
-        "scene_sc_02_forest_castle_hud_line",
-        "scene_hud_line_lo",
-        "scene_hud_line_hi",
         "dlist_scene_title",
         "scene_elem_count",
         "scene_plat_count",
@@ -702,20 +679,17 @@ def test_generated_asm_contains_secret_special_tables():
 
     assert "scene_secret_special_lo" in asm_text
     assert "scene_secret_special_hi" in asm_text
-    assert "scene_hud_line_lo" in asm_text
-    assert "scene_hud_line_hi" in asm_text
+    assert "scene_hud_line_lo" not in asm_text
+    assert "scene_hud_line_hi" not in asm_text
     assert f"SCENE_SPECIAL_TOTAL = {special_secret_total()}" in asm_text, (
         "the compiled status-line layout must match the scene data"
     )
-    assert f"STATUS_NAME_MAX = {status_name_max(special_secret_total())}" in asm_text
     for scene_file_name in manifest["scenes"]:
         scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
         assert f"scene_{scene_data.symbol_name}_secret_special" in asm_text, (
             f"{scene_file_name}: compiled secret_special table missing from the generated ASM"
         )
-        assert f"scene_{scene_data.symbol_name}_hud_line" in asm_text, (
-            f"{scene_file_name}: compiled status-line (HUD) table missing from the generated ASM"
-        )
+        assert f"scene_{scene_data.symbol_name}_hud_line" not in asm_text
 
 
 def test_secret_capacity_matches_engine_arrays():

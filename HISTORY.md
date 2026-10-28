@@ -2,7 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
-## [2026-10-27] - Enforce Row Placement Constraints for Extra Life and Killer Secrets
+## [2026-10-27] - Remove Scene Name from HUD Status Line
+
+- **Engine & Display**:
+  - In [engine/status_line.asm](engine/status_line.asm), refactored `status_line_init` to clear all 40 characters of `status_line_vram` with `STATUS_GLYPH_SPACE` (0) before rendering player lives (columns 0..2) and special icons (columns 39 leftwards). Removed copying of `scene_hud_line`, leaving the center area empty.
+  - Centered scene title cards during screen transitions (`scene_<scene>_name_line`, `dlist_scene_title`) remain active and unaffected.
+- **Data Compiler**:
+  - In [scripts/compile_scenes.py](scripts/compile_scenes.py), removed generation of `scene_<scene>_hud_line` tables and master index tables `scene_hud_line_lo` / `scene_hud_line_hi`, reclaiming RAM/ROM in segment `$A400-$BFFF`.
+- **Testing & Verification**:
+  - Updated [tests/test_status_line.py](tests/test_status_line.py) to assert that middle columns remain blank spaces across initialisation and special secret collection.
+  - Updated [tests/test_compile_scenes.py](tests/test_compile_scenes.py) to ensure `scene_hud_line` tables are omitted from generated ASM and symbol tables.
+  - In [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), updated `test_secret_collection_and_stage_progression_scene0` to account for extra lives collected when verifying surviving lives across scene transitions.
+  - In [tests/test_player_movement.py](tests/test_player_movement.py), adjusted jumping fixture start position to cleanly land on platform-012 after geometry adjustments.
+  - Full suite passed: 744 tests in 119s; memory validation passed.
+
 
 - **Architecture & Hardware Invariants**:
   - Because Extra Life and Killer secrets can remain uncollected until the level completes, they cannot share their platform row/DLI zone with secrets that could appear concurrently or subsequently, preventing PMG channel and hardware register conflicts.

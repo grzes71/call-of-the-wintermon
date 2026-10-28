@@ -355,7 +355,8 @@ def test_secret_collection_and_stage_progression_scene0():
     if scene_index + 1 < labels["SCENE_COUNT"]:
         assert mem[labels["ACTIVE_SCENE_ID"]] == scene_index + 1
         assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_TITLE_IN"]
-        assert mem[labels["PLAYER_LIVES"]] == initial_lives, "lives must survive scene change"
+        extra_lives = sum(1 for s in secrets if s.get("extra_life"))
+        assert mem[labels["PLAYER_LIVES"]] == initial_lives + extra_lives, "lives must survive scene change"
         next_secrets = scene_objects(scene_files()[scene_index + 1], "secret")
         assert mem[labels["SECRETS_COUNT"]] == len(next_secrets)
         for i, secret in enumerate(next_secrets):
