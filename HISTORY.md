@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-28] - Expand HUD Lives Display Limit to 20
+
+- **HUD & Status Line Engine**:
+  - In [engine/status_line.asm](engine/status_line.asm), added `STATUS_MAX_LIVES = 20` and expanded the heart glyph rendering loop in `status_line_refresh_lives` from 3 to 20 columns (`0..19`).
+  - Corrected display truncation where extra lives collected beyond 3 remained invisible on the status line.
+  - In [scenes/game.asm](scenes/game.asm), capped `player_lives` increment upon collecting an Extra Life secret at `STATUS_MAX_LIVES` (20), keeping internal state synchronized with HUD rendering capacity.
+- **Testing & Verification**:
+  - In [tests/test_status_line.py](tests/test_status_line.py), added `test_status_line_lives_up_to_max_limit_20` verifying 4, 10, and 20 lives display, clearing unused columns, and strict capping at 20 hearts.
+  - In [tests/test_killer_mode.py](tests/test_killer_mode.py), added `test_secret_collect_extra_life_caps_at_max_lives` verifying that collecting an Extra Life secret at 20 lives maintains the cap.
+
 ## [2026-10-28] - Fix Hero Fall Sound Playing During Scene Title Card
 
 - **Sound Engine & Gameplay Loop**:

@@ -242,3 +242,31 @@ def test_scene_secret_extra_life_rom_tables_compiled_and_loaded():
     for i in range(sec_count):
         assert mem[xlf_addr + i] in (0, 1)
 
+
+
+def test_secret_collect_extra_life_caps_at_max_lives():
+    """Verify collecting extra life when at STATUS_MAX_LIVES (20) caps player_lives at 20."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+
+    mpu.sp = 0xFD
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    mpu.a = 0
+    run_subroutine(mpu, labels["GAME_INIT"])
+
+    mem[labels["PLAYER_LIVES"]] = 20
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
+
+    # Arm secret 0 as extra_life secret
+    sec_xlf_addr = labels["SECRETS_EXTRA_LIFE"]
+    sec_active_addr = labels["SECRETS_ACTIVE"]
+    mem[sec_xlf_addr] = 1
+    mem[sec_active_addr] = 1
+
+    mpu.x = 0
+    run_subroutine(mpu, labels["SECRET_COLLECT"])
+
+    assert mem[labels["PLAYER_LIVES"]] == 20
+    vram = labels["STATUS_LINE_VRAM"]
+    assert list(mem[vram : vram + 20]) == [64] * 20
+    assert mem[vram + 20] == 0

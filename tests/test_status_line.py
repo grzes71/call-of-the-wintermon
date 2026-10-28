@@ -213,3 +213,51 @@ def test_status_line_player_lives_and_loss():
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
     assert mem[labels["PLAYER_LIVES"]] == 0
     assert list(mem[vram : vram + 3]) == [0, 0, 0]
+
+
+def test_status_line_lives_up_to_max_limit_20():
+    """Verify player lives display supports up to STATUS_MAX_LIVES (20 hearts) and caps display."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    vram = labels["STATUS_LINE_VRAM"]
+    max_lives = labels["STATUS_MAX_LIVES"]
+    assert max_lives == 20
+
+    mem[labels["ACTIVE_SCENE_ID"]] = 0
+    run_subroutine(mpu, labels["STATUS_LINE_RESET"])
+    run_subroutine(mpu, labels["STATUS_LINE_INIT"])
+
+    # 1. Test 4 lives: columns 0..3 are hearts (64), columns 4..19 are spaces (0)
+    mem[labels["PLAYER_LIVES"]] = 4
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
+    assert list(mem[vram : vram + 4]) == [64, 64, 64, 64]
+    assert list(mem[vram + 4 : vram + 20]) == [0] * 16
+
+    # 2. Test 10 lives: columns 0..9 are hearts, columns 10..19 are spaces
+    mem[labels["PLAYER_LIVES"]] = 10
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
+    assert list(mem[vram : vram + 10]) == [64] * 10
+    assert list(mem[vram + 10 : vram + 20]) == [0] * 10
+
+    # 3. Test 20 lives (max capacity): all 20 columns are hearts, column 20 is space
+    mem[labels["PLAYER_LIVES"]] = 20
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
+    assert list(mem[vram : vram + 20]) == [64] * 20
+    assert mem[vram + 20] == 0
+
+    # 4. Test life loss from 20 to 19: column 19 cleared to space
+    run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
+    assert mem[labels["PLAYER_LIVES"]] == 19
+    assert list(mem[vram : vram + 19]) == [64] * 19
+    assert mem[vram + 19] == 0
+    assert mem[vram + 20] == 0
+
+    # 5. Test lives exceeding 20 (e.g. 25): display strictly caps at 20 hearts, column 20 is untouched
+    mem[labels["PLAYER_LIVES"]] = 25
+    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
+    assert list(mem[vram : vram + 20]) == [64] * 20
+    assert mem[vram + 20] == 0

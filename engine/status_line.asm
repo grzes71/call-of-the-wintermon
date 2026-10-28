@@ -2,8 +2,8 @@
 ; ENGINE/STATUS_LINE.ASM — In-Game Status Line (ANTIC Mode 2, 40 Columns)
 ; Target: Atari 800XL / 65XE (MOS 6502)
 ; Layout (40 chars):
-; - Columns 0..2: Player lives (initially 3), displayed as heart glyphs (code 64)
-; - Middle (columns 3..N): blank space
+; - Columns 0..19: Player lives (initially 3, max 20), displayed as heart glyphs (code 64)
+; - Middle (columns 20..N): blank space
 ; - Right end (columns N+1..39): one disc glyph (code 61) per collected secret whose
 ;   catalogue definition carries "special": true, filled from column 39 leftwards.
 ;   The counter (player_specials) survives scene changes - only status_line_reset
@@ -15,6 +15,7 @@ STATUS_GLYPH_HEART   = 64    ; Decimal 64 (heart icon in intro_font)
 STATUS_GLYPH_SPECIAL = 61    ; Decimal 61 (disc icon in intro_font)
 STATUS_GLYPH_SPACE   = 0     ; Blank space in Atari screen codes
 STATUS_INIT_LIVES    = 3
+STATUS_MAX_LIVES     = 20    ; Maximum lives displayed on HUD (columns 0..19)
 
 ; ==============================================================================
 ; STATUS LINE RESET
@@ -69,12 +70,13 @@ STATUS_INIT_LIVES    = 3
 
 ; ==============================================================================
 ; STATUS LINE REFRESH LIVES
-; Updates columns 0..2 with heart glyphs (code 64) based on player_lives.
+; Updates columns 0..STATUS_MAX_LIVES-1 with heart glyphs (code 64) based on
+; player_lives (up to STATUS_MAX_LIVES hearts).
 ; ==============================================================================
 .proc status_line_refresh_lives
     ldy #0
 @loop
-    cpy #3
+    cpy #STATUS_MAX_LIVES
     bcs @done
     cpy player_lives
     bcc @set_heart

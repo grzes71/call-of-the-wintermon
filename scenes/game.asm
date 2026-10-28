@@ -463,10 +463,14 @@ scene_victory_timer .byte 0     ; Frames left in the level-complete victory hold
     sta player_killer_timer
 
 @no_killer
-    ; 3d. Secrets with "extra_life": true increment player lives by 1
+    ; 3d. Secrets with "extra_life": true increment player lives by 1 (max STATUS_MAX_LIVES)
     lda secrets_extra_life,x
     beq @no_extra_life
+    lda player_lives
+    cmp #STATUS_MAX_LIVES
+    bcs @max_lives_reached
     inc player_lives
+@max_lives_reached
     jsr status_line_refresh_lives
 
 @no_extra_life
