@@ -275,3 +275,39 @@ def test_subroutines_reject_out_of_bounds_scene_id(emu_env):
     mpu.a = labels["SCENE_COUNT"]
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
     assert mpu.memory[labels["STATUS_LINE_VRAM"]] == 0xAA
+
+
+def test_scene_title_card_suppresses_gameplay_sfx(emu_env):
+    """Verify that during scene title card phases, gameplay SFX are suppressed.
+
+    Regression test: when a scene spawns the hero in mid-air or above a platform,
+    player_init marks player_state = PLAYER_STATE_FALL. The title card must remain
+    completely silent until gameplay actually starts.
+    """
+    mpu, labels = emu_env
+
+    mpu.memory[labels["ACTIVE_SCENE_ID"]] = 0
+    run_subroutine(mpu, labels["GAME_INIT"])
+
+    # Simulate player in fall state while title card is displayed
+    mpu.memory[labels["PLAYER_STATE"]] = labels["PLAYER_STATE_FALL"]
+    mpu.memory[labels["SFX_FALL_ACTIVE"]] = 0
+    mpu.memory[labels["AUDC2"]] = 0
+
+    # Patch VBLANK loop in game_run so it does not wait on real hardware VBLANK
+    for offset in range(25):
+        if mpu.memory[labels["GAME_RUN"] + offset] == 0xF0:
+            mpu.memory[labels["GAME_RUN"] + offset] = 0xEA
+            mpu.memory[labels["GAME_RUN"] + offset + 1] = 0xEA
+            break
+
+    # Prevent STRIG0 / CH from skipping
+    mpu.memory[labels["STRIG0"]] = 1
+    mpu.memory[labels["CH"]] = 0xFF
+
+    # Run several frames in Phase 0 (Title card fade-in)
+    for _ in range(5):
+        run_subroutine(mpu, labels["GAME_RUN"])
+        assert mpu.memory[labels["GAME_PHASE"]] == 0
+        assert mpu.memory[labels["SFX_FALL_ACTIVE"]] == 0, "fall sound must not activate during title card"
+        assert mpu.memory[labels["AUDC2"]] == 0, "POKEY Ch 2 must remain silent during title card"

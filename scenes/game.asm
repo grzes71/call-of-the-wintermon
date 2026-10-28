@@ -144,11 +144,6 @@ SCENE_TITLE_FADE_STEPS = 8
     jsr secrets_update
 @skip_dli_vblank
 
-    ; Advance sound effects once per frame in every phase (gameplay, victory hold and
-    ; the scene title cards) so the victory fanfare plays out fully before the scene
-    ; changes and no effect is dropped between phases.
-    jsr sfx_update
-
     ; Dispatch based on game_phase
     lda game_phase
     cmp #GAME_PHASE_TITLE_IN
@@ -312,6 +307,7 @@ SCENE_TITLE_FADE_STEPS = 8
 ; scene is loaded only after the whole fanfare has been played.
 ; ------------------------------------------------------------------------------
 @do_victory
+    jsr sfx_update
     jsr game_victory_update
     rts
 
@@ -340,6 +336,7 @@ SCENE_TITLE_FADE_STEPS = 8
     bne @playing_done
 
     jsr enemies_check_player_collision
+    jsr sfx_update
 @playing_done
     rts
 .endp

@@ -2,6 +2,17 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-28] - Fix Hero Fall Sound Playing During Scene Title Card
+
+- **Sound Engine & Gameplay Loop**:
+  - In [scenes/07-depths.json](scenes/07-depths.json), aligned `player_spawn.y` from 67 to 68 so the hero spawns standing directly on the platform ($Y=88$).
+  - In [scenes/game.asm](scenes/game.asm), removed unconditional `jsr sfx_update` call from `game_run` which was advancing sound effects across every sub-phase, including scene title card transitions (`GAME_PHASE_TITLE_IN`, `GAME_PHASE_TITLE_HOLD`, `GAME_PHASE_TITLE_OUT`).
+  - Moved `jsr sfx_update` to run strictly in `@do_playing` (after player physics and landing resolution) and `@do_victory` (to advance the level-complete victory fanfare), ensuring that scene title cards remain completely silent.
+  - Resolved issue where airborne player spawns (such as scene 7 "The Call of Ktulu", where spawn $Y=67$ initially sets `PLAYER_STATE_FALL` before landing at $Y=68$ on frame 1) erroneously triggered continuous free-fall wind noise (`sfx_fall_active` on POKEY Channel 2) throughout the title card display.
+- **Testing & Verification**:
+  - In [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py), added `test_scene_title_card_suppresses_gameplay_sfx` verifying that `sfx_fall_active` and `AUDC2` remain strictly 0 during title card fade and hold phases even when `player_state == PLAYER_STATE_FALL`.
+  - Ran `make all`: 745 unit/integration tests passing (100%), binary assembled, memory map validated with 3,063 bytes headroom.
+
 ## [2026-10-27] - Remove Scene Name from HUD Status Line
 
 - **Engine & Display**:
