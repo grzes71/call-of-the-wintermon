@@ -35,41 +35,26 @@ plat_scroll_scene  .byte $FF          ; scene the codes were copied from ($FF = 
 ; ==============================================================================
 .proc scroll_rotate_row
     clc
-    adc zp_temp_x               ; A = pas + buffer offset
-    clc
-    adc #<dli_pas_color_sl0
-    sta zp_ptr_src
-    lda #>dli_pas_color_sl0
-    adc #0
-    sta zp_ptr_src+1
-
-    ldy #0
-    lda (zp_ptr_src),y          ; value[0] - it moves to the last slot
-    sta zp_temp_a
-
-    ; dst = src - 16, so (dst),y reads slot y/16 and writes slot y/16 - 1
-    lda zp_ptr_src
-    sec
-    sbc #16
-    sta zp_ptr_dst
-    lda zp_ptr_src+1
-    sbc #0
-    sta zp_ptr_dst+1
-
-    ldy #16
-@shift
-    lda (zp_ptr_src),y          ; value[s]
-    sta (zp_ptr_dst),y          ; value[s-1] = value[s]
-    tya
-    clc
-    adc #16
+    adc zp_temp_x               ; A = pas + buffer offset (0..5 or 8..13)
     tay
-    cpy #128
-    bcc @shift
-
-    ldy #112
-    lda zp_temp_a
-    sta (zp_ptr_src),y          ; value[7] = old value[0]
+    lda dli_pas_color_sl0,y     ; value[0] - moves to the last slot
+    pha
+    lda dli_pas_color_sl1,y
+    sta dli_pas_color_sl0,y
+    lda dli_pas_color_sl2,y
+    sta dli_pas_color_sl1,y
+    lda dli_pas_color_sl3,y
+    sta dli_pas_color_sl2,y
+    lda dli_pas_color_sl4,y
+    sta dli_pas_color_sl3,y
+    lda dli_pas_color_sl5,y
+    sta dli_pas_color_sl4,y
+    lda dli_pas_color_sl6,y
+    sta dli_pas_color_sl5,y
+    lda dli_pas_color_sl7,y
+    sta dli_pas_color_sl6,y
+    pla
+    sta dli_pas_color_sl7,y     ; value[7] = old value[0]
     rts
 .endp
 
@@ -82,8 +67,6 @@ plat_scroll_scene  .byte $FF          ; scene the codes were copied from ($FF = 
 .proc scroll_reapply
     ldx #0
 @row
-    cpx #MAX_PAS
-    bcs @done
     lda plat_scroll_speed,x
     beq @next                   ; static row
     lda plat_scroll_step,x
@@ -102,8 +85,8 @@ plat_scroll_scene  .byte $FF          ; scene the codes were copied from ($FF = 
     bne @rotate
 @next
     inx
-    jmp @row
-@done
+    cpx #MAX_PAS
+    bcc @row
     rts
 .endp
 
@@ -160,8 +143,6 @@ plat_scroll_scene  .byte $FF          ; scene the codes were copied from ($FF = 
     inc zp_frame_cnt
     ldx #0
 @row
-    cpx #MAX_PAS
-    bcs @done
     lda plat_scroll_speed,x
     beq @next                   ; static row
     dec plat_scroll_timer,x
@@ -189,7 +170,7 @@ plat_scroll_scene  .byte $FF          ; scene the codes were copied from ($FF = 
 
 @next
     inx
-    jmp @row
-@done
+    cpx #MAX_PAS
+    bcc @row
     rts
 .endp

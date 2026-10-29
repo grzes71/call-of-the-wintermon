@@ -2,6 +2,17 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Eliminate Irregular Gameplay Screen Flickering and Frame Overruns
+
+- **Root Cause**:
+  - On scenes with many platforms, moving platforms, and scrolling platform profiles (such as `scenes/07-depths.json` with 28 platforms, 9 moving platforms, and 6 scrolling rows), frames where multiple moving platforms stepped simultaneously alongside colour-scroll ticks exceeded the single-frame CPU cycle budget (`~16,126` cycles in `platforms_update` + `~3,149` cycles in `scroll_update`).
+  - When `game_run` missed the VBLANK tick (`RTCLOK+2`), `dli_vblank_update` did not run before DLI 1 of the next frame, leaving `dli_pas_idx` at `6` (or `14`) from the previous frame. DLI 1..6 then indexed into buffer padding/inactive zeros (`6..11` or `14..19`) and failed to hook `dli_status_line` (`(dli_pas_idx & 7) != 6`), blanking out the playfield, platforms, sprites, and status bar for an entire frame.
+- **CPU Cycle Optimizations & DLI Hardening ([engine/platforms.asm](engine/platforms.asm), [engine/scroll.asm](engine/scroll.asm), [engine/dli.asm](engine/dli.asm))**:
+  - Optimized the inner inter-platform collision loop (`@inter_loop` in `platforms_update`, [engine/platforms.asm](engine/platforms.asm)) to preload `plat_cur_w` once and iterate in `Y` (`lda plat_pas,y / cmp plat_pas,x / beq @check_this_j / dey / bpl @inter_loop`), reducing non-matching platform checks from 40 CPU cycles to 15 CPU cycles per iteration and trimming `platforms_carry_objects` loops.
+  - Replaced the indirect `(zp_ptr_src),y` loop in `scroll_rotate_row` ([engine/scroll.asm](engine/scroll.asm)) with direct `abs,Y` unrolled shifts across `dli_pas_color_sl0..sl7,y`, cutting per-call rotation cost from 267 cycles to 78 cycles.
+  - Fixed a missing `txa / tay` before `lda (zp_plat_ptr_w),y` in `platforms_update_dli_hpos` (`@do_seg1`, [engine/platforms.asm](engine/platforms.asm)) so moving `48 px` platforms read their own width instead of indexing by channel `0..2`.
+  - Hardened `dli_status_line` and `dli_vblank_update` ([engine/dli.asm](engine/dli.asm)): reset `dli_pas_idx` to `dli_active_offset` inside `dli_status_line` (DLI 7), synced Zone 0 shadow registers (`PCOLR1..3`, `COLOR3`), and moved `jsr scroll_update` to the end of `dli_vblank_update` after all hardware registers are committed.
+
 ## [2026-10-29] - Expand Runtime Platform Capacity to 42 and Refine Physics Test Scene Selection
 
 - **Runtime Platform Capacity ([engine/platforms.asm](engine/platforms.asm), [main.asm](main.asm))**:

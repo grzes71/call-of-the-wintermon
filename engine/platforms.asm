@@ -300,14 +300,16 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 
 @do_seg1
     ; Segment 1 (width 48..64: offset +16 or +32)
+    txa
+    tay
     lda (zp_plat_ptr_w),y
     cmp #48
-    bne @seg1_w24
+    bne @seg1_w32
     lda zp_temp_a
     clc
     adc #16
     jmp @write_seg1
-@seg1_w24
+@seg1_w32
     lda zp_temp_a
     clc
     adc #32
@@ -464,12 +466,12 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 ; updates GTIA/DLI double buffers, and moves Hero if standing on a moving platform.
 ; ==============================================================================
 .proc platforms_update
-    ldx #0
-@plat_loop
-    cpx plat_count
-    bcc @continue_plat
+    ldx plat_count
+    bne @has_plats
     rts
 
+@has_plats
+    ldx #0
 @continue_plat
     ; 1. Check if platform has movement
     lda plat_movement,x
@@ -561,25 +563,27 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 
 @check_inter_plat
     ; 5. Inter-platform collision check in the same pas
-    lda #0
-    sta plat_check_j
+    txa
+    tay
+    lda (zp_plat_ptr_w),y
+    sta plat_cur_w
+
+    ldy plat_count
+    dey
 @inter_loop
-    ldy plat_check_j
-    cpy plat_count
-    bcc @check_this_j
+    ; Fast filter: only check platforms in the same pas (row)
+    lda plat_pas,y
+    cmp plat_pas,x
+    beq @check_this_j
+@next_inter_j
+    dey
+    bpl @inter_loop
     jmp @carry_hero_check
 
 @check_this_j
+    sty plat_check_j
     cpx plat_check_j        ; Skip comparison against self
-    bne @check_pas_match
-    jmp @next_inter_j
-
-@check_pas_match
-    ; Only check platforms in the same pas (row)
-    lda plat_pas,y
-    cmp plat_pas,x
-    beq @do_inter_chk
-    jmp @next_inter_j
+    beq @next_inter_j
 
 @do_inter_chk
     ; Fetch platform j's current X and W
@@ -587,13 +591,6 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     sta plat_other_x
     lda (zp_plat_ptr_w),y
     sta plat_other_w
-
-    ; Fetch platform X's width
-    txa
-    tay
-    lda (zp_plat_ptr_w),y
-    sta plat_cur_w
-    ldy plat_check_j
 
     ; Case 1: Platform X is initially to the left of platform j
     lda zp_temp_x
@@ -605,8 +602,7 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     clc
     adc plat_cur_w
     cmp plat_other_x
-    bcs @do_collide_right
-    jmp @next_inter_j       ; No overlap
+    bcc @next_inter_j       ; No overlap
 
 @do_collide_right
     ; Collision detected on right!
@@ -630,12 +626,12 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 @bounce_j_right
     ; Reverse other platform to right if active
     lda plat_movement,y
-    beq @jmp_next_j
+    beq @next_inter_j
     lda #0
     sta plat_dir,y
     lda plat_movement,y
     cmp #3
-    bcc @jmp_next_j
+    bcc @next_inter_j
 
     ; Set pause timer for other platform y
     ; If x < y, platform y hasn't executed yet this frame and will decrement, so set 51
@@ -650,7 +646,6 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     sta plat_pause_timer,y
     lda #0
     sta plat_speed_timer,y
-@jmp_next_j
     jmp @next_inter_j
 
 @chk_case_2
@@ -685,12 +680,12 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 @bounce_j_left
     ; Reverse other platform to left if active
     lda plat_movement,y
-    beq @next_inter_j
+    beq @jmp_next_j_l
     lda #1
     sta plat_dir,y
     lda plat_movement,y
     cmp #3
-    bcc @next_inter_j
+    bcc @jmp_next_j_l
 
     ; Set pause timer for other platform y
     txa
@@ -704,10 +699,8 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     sta plat_pause_timer,y
     lda #0
     sta plat_speed_timer,y
-
-@next_inter_j
-    inc plat_check_j
-    jmp @inter_loop
+@jmp_next_j_l
+    jmp @next_inter_j
 
 @carry_hero_check
     ; 6. Evaluate platform step direction (0 = none, 1 = right +1, 2 = left -1)
@@ -780,7 +773,9 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 
 @next_plat
     inx
-    jmp @plat_loop
+    cpx plat_count
+    bcs @done
+    jmp @continue_plat
 
 @done
     rts
@@ -806,11 +801,10 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     sta plat_cur_x
 
     ; --- 1. Tie Secrets on platform plat_cur_idx to plat_cur_x ---
-    ldx #0
+    ldx secrets_count
+    beq @sec_done
+    dex
 @sec_loop
-    cpx secrets_count
-    bcs @sec_done
-
     lda secrets_plat_idx,x
     cmp plat_cur_idx
     bne @sec_next
@@ -832,16 +826,15 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     jsr update_secret_hpos
 
 @sec_next
-    inx
-    jmp @sec_loop
+    dex
+    bpl @sec_loop
 
 @sec_done
     ; --- 2. Tie Enemies on platform plat_cur_idx to plat_cur_x ---
-    ldx #0
+    ldx enemies_count
+    beq @enm_done
+    dex
 @enm_loop
-    cpx enemies_count
-    bcs @enm_done
-
     lda enemies_plat_idx,x
     cmp plat_cur_idx
     bne @enm_next
@@ -871,8 +864,8 @@ PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
     jsr update_enemy_hpos
 
 @enm_next
-    inx
-    jmp @enm_loop
+    dex
+    bpl @enm_loop
 
 @enm_done
     ldx plat_cur_idx

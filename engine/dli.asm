@@ -339,9 +339,6 @@ dli_table_ptrs_hi
 ; - Sets up Zone 0 initial PMG positions, colors, sizes, PRIOR, and upper palette
 ; ==============================================================================
 .proc dli_vblank_update
-    ; Platform row colour scroll (no-op for rows without "scroll" in their profile)
-    jsr scroll_update
-
     ; Check mailbox flag for pending buffer swap
     lda dli_swap_requested
     beq @no_swap
@@ -389,16 +386,19 @@ dli_table_ptrs_hi
     sta HPOSP1
     lda dli_z0_col_p1,x
     sta COLPM1
+    sta PCOLR1
 
     lda dli_z0_hpos_p2,x
     sta HPOSP2
     lda dli_z0_col_p2,x
     sta COLPM2
+    sta PCOLR2
 
     lda dli_z0_hpos_p3,x
     sta HPOSP3
     lda dli_z0_col_p3,x
     sta COLPM3
+    sta PCOLR3
 
     ; 3. Apply Zone 0 secret (M0..M3 as 5th player)
     lda dli_z0_hpos_m0,x
@@ -412,6 +412,7 @@ dli_table_ptrs_hi
 
     lda dli_z0_secret_col,x
     sta COLPF3
+    sta COLOR3
 
     lda #$11
     sta PRIOR
@@ -434,6 +435,9 @@ dli_table_ptrs_hi
     lda #0
     sta COLBK
     sta COLOR4
+
+    ; 6. Platform row colour scroll (no-op for rows without "scroll" in their profile)
+    jsr scroll_update
 
     rts
 .endp
@@ -681,7 +685,9 @@ dli_table_ptrs_hi
     sta SIZEP3             ; [4]
     sta SIZEM              ; [4]
 
-    ; Point VDSLST back to dli_handler for next frame
+    ; Point VDSLST back to dli_handler and reset pas index for next frame
+    lda dli_active_offset  ; [3]
+    sta dli_pas_idx        ; [3]
     lda <dli_handler       ; [2]
     sta VDSLST             ; [4]
     lda >dli_handler       ; [2]
