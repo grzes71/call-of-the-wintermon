@@ -287,8 +287,11 @@ class TestMainWindowIntegration:
 
         # Switch to platforms tab
         window.prop_tabs.setCurrentIndex(1)
+        assert [window.new_plat_width_combo.itemData(i) for i in range(window.new_plat_width_combo.count())] == [
+            8, 16, 24, 32, 48, 64, 96, 128
+        ]
 
-        # 1. Add sprite platform width 64 at (0, 8) -> 2 sprites
+        # 1. Add platform width 64 at (0, 8)
         window.new_plat_x_spin.setValue(0)
         idx_64 = window.new_plat_width_combo.findData(64)
         assert idx_64 >= 0
@@ -296,7 +299,7 @@ class TestMainWindowIntegration:
         window.btn_add_plat.click()
         assert len(window.scene_model.platforms) == 1
 
-        # 2. Add sprite platform width 32 at (70, 8) -> 1 sprite -> total 3 sprites (row 8 full)
+        # 2. Add platform width 32 at (70, 8)
         window.new_plat_x_spin.setValue(70)
         idx_32 = window.new_plat_width_combo.findData(32)
         assert idx_32 >= 0
@@ -306,19 +309,18 @@ class TestMainWindowIntegration:
 
         # 3. Check property panel status label for row 8
         window._on_platform_selected(window.scene_model.platforms[1].id)
-        assert "Sprite: 3/3" in window.plat_prop_row_status_lbl.text()
-        assert "Missile: 0/4" in window.plat_prop_row_status_lbl.text()
+        assert "96/128 px" in window.plat_prop_row_status_lbl.text()
 
-        # 4. Try adding a 3rd sprite platform at (110, 8) width 16 -> exceeds limit (3+1=4)
+        # 4. Try adding a 3rd platform at (110, 8) width 24 -> 64 (2S) + 24 (2S) = 4S -> exceeds limit
         window.new_plat_x_spin.setValue(110)
-        idx_16 = window.new_plat_width_combo.findData(16)
-        window.new_plat_width_combo.setCurrentIndex(idx_16)
+        idx_24 = window.new_plat_width_combo.findData(24)
+        window.new_plat_width_combo.setCurrentIndex(idx_24)
         window.btn_add_plat.click()
         assert len(window.scene_model.platforms) == 2  # rejected
         assert len(warnings) == 1
         assert "Invalid Platform Position" in warnings[-1][0]
 
-        # 5. Try resizing platform 2 from 32 to 48 -> needs 2 sprites (total would be 4)
+        # 5. Try resizing platform 2 from 32 to 48 -> needs 2 sprites (64 + 48 = 4 sprites -> rejected)
         p2_id = window.scene_model.platforms[1].id
         window._on_platform_selected(p2_id)
         idx_prop_48 = window.plat_prop_width_combo.findData(48)
@@ -362,7 +364,7 @@ class TestMainWindowIntegration:
         assert window.prop_tabs.count() == 5
         expected_titles = [
             "Tiles & Elements",
-            "Hardware Platforms",
+            "Platforms",
             "Objects",
             "Player Start",
             "Background Colors",

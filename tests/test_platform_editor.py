@@ -1198,3 +1198,33 @@ class TestPlatformMovementSpeed:
 
         cmd.undo()
         assert plat.movement_speed == "medium"
+
+
+class TestHardwareAgnosticPlatforms:
+    """Tests for hardware-agnostic platform widths (8..128 px) and row PMG budget solver."""
+
+    def test_128px_platform_consumes_entire_row(self):
+        from scene_editor.scene_model import PLATFORM_WIDTHS, get_available_platform_widths_for_row
+
+        assert PLATFORM_WIDTHS == (8, 16, 24, 32, 48, 64, 96, 128)
+        scene = Scene(width=160, height=192)
+        p128 = PlatformElement("p-128", None, Position(0, 8), 128)
+        scene.add_platform(p128)
+
+        assert scene.get_platform_row_usage(8) == (3, 4)
+        assert get_available_platform_widths_for_row(scene.platforms, 8) == []
+
+        with pytest.raises(HardwareResourceLimitError):
+            scene.add_platform(PlatformElement("p-extra", None, Position(130, 8), 8))
+
+    def test_auto_row_solver_allocates_96_and_32(self):
+        from scene_editor.scene_model import get_available_platform_widths_for_row
+
+        scene = Scene(width=160, height=192)
+        scene.add_platform(PlatformElement("p-96", None, Position(0, 24), 96))
+        # Only 8 px and 32 px can fit via missiles alongside a 96 px (3-player) platform
+        assert get_available_platform_widths_for_row(scene.platforms, 24) == [8, 32]
+
+        scene.add_platform(PlatformElement("p-32", None, Position(100, 24), 32))
+        assert scene.get_platform_row_usage(24) == (3, 4)
+        assert get_available_platform_widths_for_row(scene.platforms, 24) == []

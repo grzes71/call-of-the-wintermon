@@ -2,6 +2,18 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Hardware-Agnostic Platform Widths (8..128 px) and Automatic Build-Time PMG Allocation
+
+- **Atari Scene Editor Model & UI ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), [atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py))**:
+  - Removed hardware-specific `Resource Type: Sprite / Missile` selectors and labels from the Scene Editor UI, replacing them with a unified `Width` combobox offering `8 px`, `16 px`, `24 px`, `32 px`, `48 px`, `64 px`, `96 px`, and `128 px` (`PLATFORM_WIDTHS`).
+  - Added `solve_row_platform_allocation` and `get_available_platform_widths_for_row` to validate per-row PMG capacity (`max 3 Players + 4 Missiles`, `max 128 px` per row) and dynamically enable/filter widths that fit in the target row.
+  - Updated `PlatformElement` and `Scene` validation (`add_platform`, `move_platform`, `resize_platform`, `validate`) to support hardware-agnostic platform definitions while maintaining backward compatibility with existing scene JSON files.
+- **Build Pipeline & 6502 Engine ([scripts/compile_scenes.py](scripts/compile_scenes.py), [engine/platforms.asm](engine/platforms.asm))**:
+  - Added `_solve_pas_platform_kinds` in [scripts/compile_scenes.py](scripts/compile_scenes.py) to automatically assign platforms in each row (`pas`) to Player channels (`P1..P3`), Missile channels (`M0..M3`), or hybrid `128 px` allocation (`3 Players + 4 Missiles` at `+0, +32, +64, +96, +104, +112, +120`, `SIZEP = 3`, `SIZEM = $FF`, `ch_count = 4`).
+  - Extended `platforms_update_dli_hpos` (`@do_seg3`) in [engine/platforms.asm](engine/platforms.asm) to update `dli_hpos_m0..m3` (at `+96, +104, +112, +120` in both double buffers) alongside `dli_hpos_p1..p3` when a `128 px` platform moves.
+- **Testing & Verification ([tests/test_platform_editor.py](tests/test_platform_editor.py), [tests/test_gui_integration.py](tests/test_gui_integration.py), [tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_platforms_runtime.py](tests/test_platforms_runtime.py))**:
+  - Added `TestHardwareAgnosticPlatforms`, `test_compile_128px_hybrid_platform_and_auto_allocation`, and `test_platform_128px_dli_hardware_hpos_sync`, and updated GUI integration assertions for the hardware-agnostic `Platforms` tab.
+
 ## [2026-10-29] - Carry Secrets and Enemies on Moving Platforms
 
 - **Scene Compiler & SoA Tables ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:

@@ -266,14 +266,17 @@ class SceneElement:
 # Hardware Platform Constants
 PLATFORM_TYPE_SPRITE = "sprite"
 PLATFORM_TYPE_MISSILE = "missile"
-PLATFORM_TYPES = (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE)
+PLATFORM_TYPE_AUTO = "auto"
+PLATFORM_TYPES = (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE, PLATFORM_TYPE_AUTO)
 
+PLATFORM_WIDTHS = (8, 16, 24, 32, 48, 64, 96, 128)
 SPRITE_WIDTHS = (8, 16, 24, 32, 48, 64, 96)
 MISSILE_WIDTHS = (8, 32)
 PLATFORM_HEIGHT = 4
 
 MAX_SPRITES_PER_ROW = 3
 MAX_MISSILES_PER_ROW = 4
+MAX_ROW_PLATFORM_WIDTH = 128
 
 
 def is_valid_platform_y(y: int, scene_height: Optional[int] = None) -> bool:
@@ -302,8 +305,10 @@ def get_allowed_platform_rows(scene_height: int) -> list[int]:
     return [y for y in range(8, scene_height - PLATFORM_HEIGHT + 1, 16)]
 
 
-def get_allowed_widths(platform_type: str) -> tuple[int, ...]:
-    """Return tuple of allowed pixel widths for the given platform type."""
+def get_allowed_widths(platform_type: Optional[str] = None) -> tuple[int, ...]:
+    """Return tuple of allowed pixel widths for the given platform type (or all widths if None/'auto')."""
+    if platform_type is None or platform_type == PLATFORM_TYPE_AUTO:
+        return PLATFORM_WIDTHS
     if platform_type == PLATFORM_TYPE_SPRITE:
         return SPRITE_WIDTHS
     elif platform_type == PLATFORM_TYPE_MISSILE:
@@ -311,32 +316,130 @@ def get_allowed_widths(platform_type: str) -> tuple[int, ...]:
     return ()
 
 
-def get_required_platform_resources(platform_type: str, width: int) -> int:
+def _platform_resource_options(
+    width: int,
+    explicit_type: Optional[str] = None,
+) -> list[tuple[int, int, str]]:
+    """Return candidate (sprites_used, missiles_used, resolved_kind) options for a platform width."""
+    if explicit_type == PLATFORM_TYPE_SPRITE:
+        if width not in SPRITE_WIDTHS:
+            return []
+        s_need = 2 if width == 24 else math.ceil(width / 32)
+        return [(s_need, 0, PLATFORM_TYPE_SPRITE)]
+    if explicit_type == PLATFORM_TYPE_MISSILE:
+        if width not in MISSILE_WIDTHS:
+            return []
+        m_need = 4 if width == 32 else 1
+        return [(0, m_need, PLATFORM_TYPE_MISSILE)]
+
+    # Hardware-agnostic width allocation options:
+    if width == 128:
+        return [(3, 4, "hybrid")]
+    if width == 96:
+        return [(3, 0, PLATFORM_TYPE_SPRITE)]
+    if width in (48, 64, 24):
+        return [(2, 0, PLATFORM_TYPE_SPRITE)]
+    if width == 32:
+        return [
+            (1, 0, PLATFORM_TYPE_SPRITE),
+            (0, 4, PLATFORM_TYPE_MISSILE),
+        ]
+    if width == 16:
+        return [(1, 0, PLATFORM_TYPE_SPRITE)]
+    if width == 8:
+        return [
+            (1, 0, PLATFORM_TYPE_SPRITE),
+            (0, 1, PLATFORM_TYPE_MISSILE),
+        ]
+    return []
+
+
+def solve_row_platform_allocation(
+    items: list[tuple[int, Optional[str]]],
+) -> Optional[list[tuple[int, int, str]]]:
+    """Solve PMG hardware channel allocation (max 3 players + 4 missiles) for a row's platforms.
+
+    Each item is (width, optional_explicit_type) where optional_explicit_type is 'sprite',
+    'missile', or None/'auto'. Returns a list of (sprites_used, missiles_used, resolved_kind)
+    in the same order as `items`, or None if the combination exceeds row hardware limits.
+    """
+    if sum(w for w, _ in items) > MAX_ROW_PLATFORM_WIDTH:
+        return None
+
+    n = len(items)
+    options_per_item = [_platform_resource_options(w, t) for w, t in items]
+    if any(not opts for opts in options_per_item):
+        return None
+
+    chosen: list[tuple[int, int, str]] = []
+
+    def _backtrack(idx: int, s_used: int, m_used: int) -> bool:
+        if idx == n:
+            return True
+        for s_cost, m_cost, kind in options_per_item[idx]:
+            if s_used + s_cost <= MAX_SPRITES_PER_ROW and m_used + m_cost <= MAX_MISSILES_PER_ROW:
+                chosen.append((s_cost, m_cost, kind))
+                if _backtrack(idx + 1, s_used + s_cost, m_used + m_cost):
+                    return True
+                chosen.pop()
+        return False
+
+    if _backtrack(0, 0, 0):
+        return chosen
+    return None
+
+
+def get_available_platform_widths_for_row(
+    platforms: list[PlatformElement],
+    y: int,
+    exclude_id: Optional[str] = None,
+) -> list[int]:
+    """Return list of widths from PLATFORM_WIDTHS that can be added/resized into row y."""
+    existing_items: list[tuple[int, Optional[str]]] = []
+    for p in platforms:
+        if exclude_id and p.id == exclude_id:
+            continue
+        if p.position.y == y:
+            existing_items.append((p.width, None))
+
+    available: list[int] = []
+    for w in PLATFORM_WIDTHS:
+        if solve_row_platform_allocation(existing_items + [(w, None)]) is not None:
+            available.append(w)
+    return available
+
+
+def get_required_platform_resources(platform_type: Optional[str], width: int) -> int:
     """Calculate the number of hardware resources (sprites or missiles) required for a platform.
 
     - Sprite: 24 px requires 2 sprites (16px double + 8px normal).
       Otherwise ceil(width / 32) (1 resource up to 32px, 2 up to 64px, 3 up to 96px).
     - Missile: 32 px requires 4 missiles (quad width across all 4).
       8 px requires 1 missile (quad width on 1 missile).
+    - Auto / None: returns total PMG channels (e.g. 7 for 128px = 3 sprites + 4 missiles).
 
     Raises ModelValidationError if platform_type is invalid.
     Raises InvalidPlatformDimensionError if width is not in allowed widths for the given type.
     """
-    if platform_type not in PLATFORM_TYPES:
+    if platform_type is not None and platform_type not in PLATFORM_TYPES:
         raise ModelValidationError(
             f"Invalid platform type '{platform_type}'. Must be one of {PLATFORM_TYPES}."
         )
     allowed = get_allowed_widths(platform_type)
-    if not isinstance(width, int) or width not in allowed:
+    if not isinstance(width, int) or isinstance(width, bool) or width not in allowed:
         raise InvalidPlatformDimensionError(
-            f"Invalid width {width} for {platform_type}. Allowed widths: {list(allowed)} px."
+            f"Invalid width {width} for {platform_type or 'platform'}. Allowed widths: {list(allowed)} px."
         )
-    if platform_type == PLATFORM_TYPE_SPRITE:
+    if platform_type == PLATFORM_TYPE_SPRITE or (
+        platform_type in (None, PLATFORM_TYPE_AUTO) and width in SPRITE_WIDTHS
+    ):
         if width == 24:
             return 2
         return math.ceil(width / 32)
     elif platform_type == PLATFORM_TYPE_MISSILE:
         return 4 if width == 32 else 1
+    elif width == 128:
+        return 7  # 3 sprites + 4 missiles
     raise ModelValidationError(f"Unsupported platform type: '{platform_type}'.")
 
 
@@ -346,28 +449,43 @@ def get_row_resource_usage(
     exclude_id: Optional[str] = None,
 ) -> tuple[int, int]:
     """Return (sprite_count, missile_count) resources used for row y in the given platform list."""
+    row_plats = [
+        p for p in platforms
+        if p.position.y == y and (not exclude_id or p.id != exclude_id)
+    ]
+    if not row_plats:
+        return 0, 0
+
+    items = [(p.width, getattr(p, "_explicit_type", None)) for p in row_plats]
+    solved = solve_row_platform_allocation(items)
+    if solved is not None:
+        sprites = sum(s for s, _, _ in solved)
+        missiles = sum(m for _, m, _ in solved)
+        return sprites, missiles
+
+    # Fallback sum if row is invalid
     sprites = 0
     missiles = 0
-    for p in platforms:
-        if exclude_id and p.id == exclude_id:
-            continue
-        if p.position.y == y:
-            if p.type == PLATFORM_TYPE_SPRITE:
-                sprites += get_required_platform_resources(p.type, p.width)
-            elif p.type == PLATFORM_TYPE_MISSILE:
-                missiles += get_required_platform_resources(p.type, p.width)
+    for p in row_plats:
+        if p.width == 128:
+            sprites += 3
+            missiles += 4
+        elif p.type == PLATFORM_TYPE_MISSILE and p.width in MISSILE_WIDTHS:
+            missiles += get_required_platform_resources(PLATFORM_TYPE_MISSILE, p.width)
+        elif p.width in SPRITE_WIDTHS:
+            sprites += get_required_platform_resources(PLATFORM_TYPE_SPRITE, p.width)
     return sprites, missiles
 
 
 def can_add_platform_to_row(
     platforms: list[PlatformElement],
-    platform_type: str,
-    y: int,
+    platform_type: Optional[str] = None,
+    y: int = 8,
     exclude_id: Optional[str] = None,
     scene_height: Optional[int] = None,
     width: Optional[int] = None,
 ) -> tuple[bool, str]:
-    """Check if adding/moving/resizing a platform of platform_type to row y is within hardware limits and bounds."""
+    """Check if adding/moving/resizing a platform to row y is within hardware limits and bounds."""
     if not is_valid_platform_y(y, scene_height=scene_height):
         if scene_height is not None and (y + PLATFORM_HEIGHT) > scene_height:
             return (
@@ -379,35 +497,59 @@ def can_add_platform_to_row(
             f"Invalid platform row y={y}. Platforms must start at y % 16 == 8 (e.g. y=8, 24, 40...).",
         )
 
-    if platform_type not in PLATFORM_TYPES:
+    if platform_type is not None and platform_type not in PLATFORM_TYPES:
         return (
             False,
             f"Unknown platform type: '{platform_type}'. Must be 'sprite' or 'missile'.",
         )
 
-    needed = 1
-    if width is not None:
-        try:
-            needed = get_required_platform_resources(platform_type, width)
-        except (InvalidPlatformDimensionError, ModelValidationError) as exc:
-            return False, str(exc)
+    eff_type = platform_type if platform_type in (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE) else None
+    cand_w = width if width is not None else 8
 
+    allowed = get_allowed_widths(eff_type)
+    if not isinstance(cand_w, int) or isinstance(cand_w, bool) or cand_w not in allowed:
+        return (
+            False,
+            f"Invalid width {cand_w} for {eff_type or 'platform'}. Allowed widths: {list(allowed)} px.",
+        )
+
+    row_plats = [
+        p for p in platforms
+        if p.position.y == y and (not exclude_id or p.id != exclude_id)
+    ]
+    if eff_type is None:
+        existing_items = [(p.width, None) for p in row_plats]
+    else:
+        existing_items = [(p.width, getattr(p, "_explicit_type", None)) for p in row_plats]
+    candidate_items = existing_items + [(cand_w, eff_type)]
+
+    if solve_row_platform_allocation(candidate_items) is not None:
+        return True, ""
+
+    # Construct descriptive error message
     sprites, missiles = get_row_resource_usage(platforms, y, exclude_id=exclude_id)
-    if platform_type == PLATFORM_TYPE_SPRITE:
-        if sprites + needed > MAX_SPRITES_PER_ROW:
-            return (
-                False,
-                f"Row y={y} would exceed sprite limit: {sprites + needed}/{MAX_SPRITES_PER_ROW} "
-                f"(requires {needed}, row currently has {sprites}/{MAX_SPRITES_PER_ROW}).",
-            )
-    elif platform_type == PLATFORM_TYPE_MISSILE:
-        if missiles + needed > MAX_MISSILES_PER_ROW:
-            return (
-                False,
-                f"Row y={y} would exceed missile limit: {missiles + needed}/{MAX_MISSILES_PER_ROW} "
-                f"(requires {needed}, row currently has {missiles}/{MAX_MISSILES_PER_ROW}).",
-            )
-    return True, ""
+    if eff_type == PLATFORM_TYPE_SPRITE:
+        needed = get_required_platform_resources(PLATFORM_TYPE_SPRITE, cand_w)
+        return (
+            False,
+            f"Row y={y} would exceed sprite limit: {sprites + needed}/{MAX_SPRITES_PER_ROW} "
+            f"(requires {needed}, row currently has {sprites}/{MAX_SPRITES_PER_ROW}).",
+        )
+    if eff_type == PLATFORM_TYPE_MISSILE:
+        needed = get_required_platform_resources(PLATFORM_TYPE_MISSILE, cand_w)
+        return (
+            False,
+            f"Row y={y} would exceed missile limit: {missiles + needed}/{MAX_MISSILES_PER_ROW} "
+            f"(requires {needed}, row currently has {missiles}/{MAX_MISSILES_PER_ROW}).",
+        )
+
+    avail = get_available_platform_widths_for_row(platforms, y, exclude_id=exclude_id)
+    avail_str = ", ".join(f"{w} px" for w in avail) if avail else "none (row is full)"
+    return (
+        False,
+        f"Row y={y} cannot fit a {cand_w} px platform within the PMG hardware budget "
+        f"(max 3 sprites + 4 missiles, max 128 px/row). Available widths in this row: {avail_str}.",
+    )
 
 
 def platforms_overlap(
@@ -441,25 +583,45 @@ def check_platform_collision(
     return None
 
 
-@dataclass
 class PlatformElement:
-    """An Atari 8-bit hardware platform (Sprite or Missile) with fixed 4-line height."""
-    id: str
-    type: str  # "sprite" or "missile"
-    position: Position
-    width: int
-    height: int = PLATFORM_HEIGHT
-    color_profile_id: Optional[int] = None
-    # Colour scroll of this platform's row colours: SCROLL_NONE (default, static), "slow"
-    # (1 step / 20 frames), "medium" (10) or "fast" (5). Like `color_profile_id` it is a
-    # row-wide property: every platform in the same row must use the same value (the DLI paints
-    # the row's colours once, so the game can only scroll them together).
-    scroll: str = SCROLL_NONE
-    # Horizontal movement pattern: "none" (default, static), "left-right", "right-left",
-    # "left-pause-right", "right-pause-left".
-    movement: str = PLATFORM_MOVEMENT_NONE
-    # Horizontal movement speed: "slow", "medium" (default, current), "fast".
-    movement_speed: str = PLATFORM_SPEED_DEFAULT
+    """An Atari 8-bit hardware platform with fixed 4-line height."""
+
+    def __init__(
+        self,
+        id: str,
+        type: Optional[str | Position] = None,
+        position: Optional[Position | int] = None,
+        width: Optional[int] = None,
+        height: int = PLATFORM_HEIGHT,
+        color_profile_id: Optional[int] = None,
+        scroll: str = SCROLL_NONE,
+        movement: str = PLATFORM_MOVEMENT_NONE,
+        movement_speed: str = PLATFORM_SPEED_DEFAULT,
+    ) -> None:
+        # Support hardware-agnostic signature: PlatformElement(id, position, width, ...)
+        if isinstance(type, Position):
+            if width is not None and height == PLATFORM_HEIGHT:
+                height = width
+            width = int(position) if position is not None else 16
+            position = type
+            type = None
+
+        self.id = id
+        self._explicit_type: Optional[str] = (
+            type if type in (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE) else None
+        )
+        self.type: str = (
+            type
+            if type in PLATFORM_TYPES
+            else PLATFORM_TYPE_SPRITE
+        )
+        self.position: Position = position if isinstance(position, Position) else Position(0, 8)
+        self.width: int = width if width is not None else 16
+        self.height: int = height
+        self.color_profile_id: Optional[int] = color_profile_id
+        self.scroll: str = scroll
+        self.movement: str = movement
+        self.movement_speed: str = movement_speed
 
     @property
     def row_index(self) -> int:
@@ -468,7 +630,8 @@ class PlatformElement:
     @property
     def required_resources(self) -> int:
         """Return the number of hardware resources (sprites or missiles) consumed by this platform."""
-        return get_required_platform_resources(self.type, self.width)
+        eff_type = self._explicit_type if (self._explicit_type and self.width != 128) else None
+        return get_required_platform_resources(eff_type, self.width)
 
     def validate(self, scene_height: Optional[int] = None) -> None:
         if not isinstance(self.id, str) or not self.id.strip():
@@ -481,10 +644,11 @@ class PlatformElement:
             raise InvalidPlatformDimensionError(
                 f"Platform height must be exactly {PLATFORM_HEIGHT} lines, got {self.height}."
             )
-        allowed_w = get_allowed_widths(self.type)
-        if not isinstance(self.width, int) or self.width not in allowed_w:
+        eff_type = self._explicit_type if (self._explicit_type and self.width != 128) else None
+        allowed_w = get_allowed_widths(eff_type)
+        if not isinstance(self.width, int) or isinstance(self.width, bool) or self.width not in allowed_w:
             raise InvalidPlatformDimensionError(
-                f"Invalid width {self.width} for {self.type}. Allowed widths: {list(allowed_w)} px."
+                f"Invalid width {self.width} for {eff_type or 'platform'}. Allowed widths: {list(allowed_w)} px."
             )
         self.position.validate()
         if not is_valid_platform_y(self.position.y, scene_height=scene_height):
@@ -538,7 +702,7 @@ class PlatformElement:
         return copy.deepcopy(self)
 
     def to_dict(self) -> dict[str, Any]:
-        d = {
+        d: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
             "position": self.position.to_dict(),
@@ -559,7 +723,7 @@ class PlatformElement:
     def from_dict(cls, data: dict[str, Any]) -> PlatformElement:
         if not isinstance(data, dict):
             raise ModelValidationError("PlatformElement data must be a dictionary.")
-        for key in ("id", "type", "position", "width"):
+        for key in ("id", "position", "width"):
             if key not in data:
                 raise ModelValidationError(f"Missing required PlatformElement field '{key}'.")
 
@@ -580,9 +744,12 @@ class PlatformElement:
                     f"Platform color_profile_id must be an integer between 1 and 255 or None, got {raw_cprof!r}."
                 )
 
+        raw_type = data.get("type")
+        type_arg = str(raw_type) if raw_type is not None else None
+
         p = cls(
             id=str(data["id"]),
-            type=str(data["type"]),
+            type=type_arg,
             position=Position.from_dict(data["position"]),
             width=int(data["width"]),
             height=raw_h,
@@ -1550,25 +1717,42 @@ class Scene:
 
         # Validate platforms and row hardware limits
         seen_platform_ids: set[str] = set()
-        row_counts: dict[int, dict[str, int]] = {}
+        plats_by_row: dict[int, list[PlatformElement]] = {}
         for p in self.platforms:
             p.validate(scene_height=self.height)
             if p.id in seen_platform_ids:
                 raise DuplicateElementIdError(f"Duplicate platform ID detected: '{p.id}'.")
             seen_platform_ids.add(p.id)
+            plats_by_row.setdefault(p.position.y, []).append(p)
 
-            counts = row_counts.setdefault(
-                p.position.y,
-                {PLATFORM_TYPE_SPRITE: 0, PLATFORM_TYPE_MISSILE: 0},
-            )
-            counts[p.type] += p.required_resources
-            if counts[PLATFORM_TYPE_SPRITE] > MAX_SPRITES_PER_ROW:
+        for row_y, row_plats in plats_by_row.items():
+            has_auto = any(getattr(p, "_explicit_type", None) is None or p.width == 128 for p in row_plats)
+            if has_auto:
+                items = [(p.width, None) for p in row_plats]
+            else:
+                items = [(p.width, getattr(p, "_explicit_type", None)) for p in row_plats]
+            solved = solve_row_platform_allocation(items)
+            if solved is None:
+                s_sum = sum(
+                    get_required_platform_resources(PLATFORM_TYPE_SPRITE, p.width)
+                    for p in row_plats
+                    if p.type == PLATFORM_TYPE_SPRITE and p.width in SPRITE_WIDTHS
+                ) + sum(3 for p in row_plats if p.width == 128)
+                m_sum = sum(
+                    get_required_platform_resources(PLATFORM_TYPE_MISSILE, p.width)
+                    for p in row_plats
+                    if p.type == PLATFORM_TYPE_MISSILE and p.width in MISSILE_WIDTHS
+                ) + sum(4 for p in row_plats if p.width == 128)
+                if s_sum > MAX_SPRITES_PER_ROW:
+                    raise HardwareResourceLimitError(
+                        f"Row y={row_y} exceeds sprite limit ({s_sum}/{MAX_SPRITES_PER_ROW})."
+                    )
+                if m_sum > MAX_MISSILES_PER_ROW:
+                    raise HardwareResourceLimitError(
+                        f"Row y={row_y} exceeds missile limit ({m_sum}/{MAX_MISSILES_PER_ROW})."
+                    )
                 raise HardwareResourceLimitError(
-                    f"Row y={p.position.y} exceeds sprite limit ({counts[PLATFORM_TYPE_SPRITE]}/{MAX_SPRITES_PER_ROW})."
-                )
-            if counts[PLATFORM_TYPE_MISSILE] > MAX_MISSILES_PER_ROW:
-                raise HardwareResourceLimitError(
-                    f"Row y={p.position.y} exceeds missile limit ({counts[PLATFORM_TYPE_MISSILE]}/{MAX_MISSILES_PER_ROW})."
+                    f"Row y={row_y} exceeds PMG hardware budget (max 3 sprites + 4 missiles, max 128 px)."
                 )
 
         # Validate that all platforms in the same row share the exact same color profile
@@ -1865,6 +2049,20 @@ class Scene:
     # -------------------------------------------------------------------------
     # Hardware Platforms Management
     # -------------------------------------------------------------------------
+    def _sync_row_platform_types(self, row_y: int) -> None:
+        """Update resolved platform.type for hardware-agnostic platforms in row_y."""
+        row_plats = [p for p in self.platforms if p.position.y == row_y]
+        if not row_plats:
+            return
+        has_auto = any(getattr(p, "_explicit_type", None) is None or p.width == 128 for p in row_plats)
+        if not has_auto:
+            return
+        solved = solve_row_platform_allocation([(p.width, None) for p in row_plats])
+        if solved is not None:
+            for p, (_, _, kind) in zip(row_plats, solved):
+                p._explicit_type = None
+                p.type = PLATFORM_TYPE_MISSILE if kind == PLATFORM_TYPE_MISSILE else PLATFORM_TYPE_SPRITE
+
     def add_platform(self, platform: PlatformElement) -> None:
         """Add a hardware platform to the scene after validating limits and collisions."""
         platform.validate(scene_height=self.height)
@@ -1873,7 +2071,7 @@ class Scene:
 
         ok, msg = can_add_platform_to_row(
             self.platforms,
-            platform.type,
+            getattr(platform, "_explicit_type", None),
             platform.position.y,
             scene_height=self.height,
             width=platform.width,
@@ -1898,6 +2096,7 @@ class Scene:
             platform.color_profile_id = self.get_row_color_profile_id(r)
 
         self.platforms.append(platform)
+        self._sync_row_platform_types(platform.position.y)
 
     def remove_platform(self, platform_id: str) -> Optional[PlatformElement]:
         """Remove a platform by ID, also removing any attached objects to prevent orphaned objects."""
@@ -1931,7 +2130,7 @@ class Scene:
                 )
             ok, msg = can_add_platform_to_row(
                 self.platforms,
-                p.type,
+                getattr(p, "_explicit_type", None),
                 target_y,
                 exclude_id=platform_id,
                 scene_height=self.height,
@@ -2004,28 +2203,35 @@ class Scene:
                 f"platform '{colliding.id}' at ({colliding.position.x}, {colliding.position.y})."
             )
 
+        old_y = p.position.y
         dx = target_x - p.position.x
         p.position.x = target_x
         p.position.y = target_y
         p.color_profile_id = self.get_row_color_profile_id(p.row_index)
         for obj in attached_objs:
             obj.x += dx
+        if target_y != old_y:
+            self._sync_row_platform_types(old_y)
+            self._sync_row_platform_types(target_y)
 
     def resize_platform(self, platform_id: str, new_width: int) -> None:
         """Change platform width to another allowed hardware width without collisions or exceeding limits."""
         p = self.get_platform(platform_id)
         if p is None:
             raise KeyError(f"Platform '{platform_id}' not found.")
-        allowed = get_allowed_widths(p.type)
-        if new_width not in allowed:
+        if new_width not in PLATFORM_WIDTHS:
             raise InvalidPlatformDimensionError(
-                f"Invalid width {new_width} for {p.type}. Allowed widths: {list(allowed)} px."
+                f"Invalid width {new_width}. Allowed widths: {list(PLATFORM_WIDTHS)} px."
             )
+
+        explicit_type = getattr(p, "_explicit_type", None)
+        if explicit_type is not None and new_width not in get_allowed_widths(explicit_type):
+            explicit_type = None
 
         # Validate hardware limits with new width
         ok, msg = can_add_platform_to_row(
             self.platforms,
-            p.type,
+            explicit_type,
             p.position.y,
             exclude_id=platform_id,
             scene_height=self.height,
@@ -2046,6 +2252,9 @@ class Scene:
             )
 
         p.width = int(new_width)
+        if explicit_type is None:
+            p._explicit_type = None
+            self._sync_row_platform_types(p.position.y)
 
     def set_platform_type(
         self, platform_id: str, new_type: str, new_width: Optional[int] = None
@@ -2088,7 +2297,8 @@ class Scene:
                 f"platform '{colliding.id}' at ({colliding.position.x}, {colliding.position.y})."
             )
 
-        p.type = new_type
+        p._explicit_type = new_type if new_type in (PLATFORM_TYPE_SPRITE, PLATFORM_TYPE_MISSILE) else None
+        p.type = PLATFORM_TYPE_MISSILE if new_type == PLATFORM_TYPE_MISSILE else PLATFORM_TYPE_SPRITE
         p.width = target_w
 
     def get_platform_row_usage(

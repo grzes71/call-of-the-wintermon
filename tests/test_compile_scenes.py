@@ -302,7 +302,7 @@ def test_scene_dli_data_matches_json():
             # 3. For platforms with width > 32, verify they occupy consecutive channels
             for p in pas_plats:
                 if p.type_code == 0 and p.width > 32:
-                    segs_32 = p.width // 32
+                    segs_32 = min(3, p.width // 32)
                     exp_hpos_list = [48 + p.x + s * 32 for s in range(segs_32)]
                     hpos_p_vals = [dli.hpos_p1[pas_idx], dli.hpos_p2[pas_idx], dli.hpos_p3[pas_idx]]
                     assert exp_hpos_list[0] in hpos_p_vals
@@ -328,7 +328,8 @@ def test_scene_dli_data_matches_json():
             ch = 0
             for p in sprite_plats:
                 seg_offset = 0
-                for seg_w, _ in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                segs = [(32, 3), (32, 3), (32, 3)] if p.width == 128 else SUPPORTED_SPRITE_WIDTHS[p.width]
+                for seg_w, _ in segs:
                     if ch < 3:
                         expected_player_hpos[ch] = min(255, max(0, 48 + p.x + seg_offset))
                         ch += 1
@@ -344,6 +345,12 @@ def test_scene_dli_data_matches_json():
 
             expected_missile_hpos = [0xFF, 0xFF, 0xFF, 0xFF]
             ch = 0
+            for p in pas_plats:
+                if p.width == 128:
+                    for off in (0, 8, 16, 24):
+                        if ch < 4:
+                            expected_missile_hpos[ch] = min(255, max(0, 48 + p.x + 96 + off))
+                            ch += 1
             for p in missile_plats:
                 offsets = (0, 8, 16, 24) if p.width == 32 else (0,)
                 for off in offsets:
@@ -460,6 +467,8 @@ def test_sizep_matches_platform_width():
                     expected_segs = [(32, 3), (32, 3)]
                 elif p.width == 96:
                     expected_segs = [(32, 3), (32, 3), (32, 3)]
+                elif p.width == 128:
+                    expected_segs = [(32, 3), (32, 3), (32, 3)]
                 elif p.width == 24:
                     expected_segs = [(16, 1), (8, 0)]
                 else:
@@ -487,10 +496,9 @@ def test_sizem_for_missile_platforms():
 
         for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
             pas_plats = [p for p in scene_data.platforms if p.y == pas_y]
-            missile_plats = [p for p in pas_plats if p.type_code == 1]
+            missile_plats = [p for p in pas_plats if p.type_code == 1 or p.width == 128]
             if missile_plats:
-                # In 01-forest, pas 5 has platform-014 (32 px missile)
-                has_32 = any(p.width == 32 for p in missile_plats)
+                has_32 = any(p.width in (32, 128) for p in missile_plats)
                 if has_32:
                     assert dli.sizem[pas_idx] == 0xFF, (
                         f"Scene {scene_file_name} pas {pas_idx} has 32px missile platform, "
@@ -527,7 +535,8 @@ def test_pmg_patterns_match_platform_widths():
             )
             ch = 0
             for platform in sprite_plats:
-                for seg_w, _sizep in SUPPORTED_SPRITE_WIDTHS[platform.width]:
+                segs = [(32, 3), (32, 3), (32, 3)] if platform.width == 128 else SUPPORTED_SPRITE_WIDTHS[platform.width]
+                for seg_w, _sizep in segs:
                     assert ch < 3, (
                         f"{scene_file_name}: more than 3 platform segments in pas y={pas_y}"
                     )
@@ -884,7 +893,6 @@ def test_generated_asm_contains_secret_channel_tables():
     asm_text = asm_path.read_text(encoding="utf-8")
     assert "scene_secret_channel_lo" in asm_text
     assert "scene_secret_channel_hi" in asm_text
-
     asm_lines = asm_text.splitlines()
     manifest = json.loads(Path("scenes/scenes.json").read_text(encoding="utf-8"))
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
@@ -898,4 +906,31 @@ def test_generated_asm_contains_secret_channel_tables():
             f"{scene_file_name}: emitted channels {emitted} != compiled "
             f"{[s.channel for s in scene_data.secrets]}"
         )
+
+
+def test_compile_128px_hybrid_platform_and_auto_allocation():
+    from scripts.compile_scenes import compile_scene_dli_data
+
+    # Pas 0 (y=8): 128 px platform -> P1..P3 at +0, +32, +64 and M0..M3 at +96, +104, +112, +120
+    # Pas 1 (y=24): 96 px + 32 px both with type_code=0 -> compiler auto-assigns 32 px to missiles!
+    plats = [
+        PlatformData(id="p128", type_code=0, x=16, y=8, width=128, height=4),
+        PlatformData(id="p96", type_code=0, x=0, y=24, width=96, height=4),
+        PlatformData(id="p32", type_code=0, x=104, y=24, width=32, height=4),
+    ]
+    dli = compile_scene_dli_data([], plats, [], 0, scene_name="test_128")
+
+    # Verify Pas 0 (128 px at x=16, base_hpos = 64)
+    assert plats[0].ch_count == 4
+    assert (dli.hpos_p1[0], dli.hpos_p2[0], dli.hpos_p3[0]) == (64, 96, 128)
+    assert (dli.sizep1[0], dli.sizep2[0], dli.sizep3[0]) == (3, 3, 3)
+    assert (dli.hpos_m0[0], dli.hpos_m1[0], dli.hpos_m2[0], dli.hpos_m3[0]) == (160, 168, 176, 184)
+    assert dli.sizem[0] == 0xFF
+
+    # Verify Pas 1 (96 px on P1..P3 + 32 px auto-assigned to M0..M3)
+    assert plats[1].type_code == 0 and plats[1].ch_count == 3
+    assert plats[2].type_code == 1 and plats[2].ch_count == 4
+    assert (dli.hpos_p1[1], dli.hpos_p2[1], dli.hpos_p3[1]) == (48, 80, 112)
+    assert (dli.hpos_m0[1], dli.hpos_m1[1], dli.hpos_m2[1], dli.hpos_m3[1]) == (152, 160, 168, 176)
+    assert dli.sizem[1] == 0xFF
 

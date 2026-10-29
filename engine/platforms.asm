@@ -356,7 +356,7 @@ enemies_plat_idx  :MAX_ENEMIES .byte 0      ; Platform index (0..plat_count-1) c
     jmp @dli_done
 
 @do_seg2
-    ; Segment 2 (width 96: offset +64)
+    ; Segment 2 (width 96..128: offset +64)
     lda zp_temp_a
     clc
     adc #64
@@ -374,7 +374,24 @@ enemies_plat_idx  :MAX_ENEMIES .byte 0      ; Platform index (0..plat_count-1) c
     tax                         ; pas
     lda zp_temp_y
     jsr @write_sprite_ch
+
+    pla
+    pha
+    tax
+
+    lda plat_hw_info,x
+    and #7
+    cmp #4
+    bcs @do_seg3
     jmp @dli_done
+
+@do_seg3
+    ; Segment 3 (width 128: 4 missiles M0..M3 at offset +96, +104, +112, +120)
+    lda zp_temp_a
+    clc
+    adc #96
+    sta zp_temp_a
+    jmp @m_quad
 
 @write_sprite_ch
     ; A = HPOS, X = pas (0..5), Y = channel (0=P1, 1=P2, 2=P3)

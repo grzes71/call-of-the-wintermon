@@ -263,23 +263,12 @@ class PlatformGraphicsItem(QGraphicsItem):
         w = self.platform.width
         h = self.platform.height  # always 4
 
-        is_sprite = self.platform.type == PLATFORM_TYPE_SPRITE
-
-        # Color theme fallback: Cyan/Blue for Sprite, Amber/Orange for Missile
-        if is_sprite:
-            base_col = QColor(41, 128, 185, 230)       # Atari player cyan-blue
-            highlight_col = QColor(85, 239, 196, 255)  # Top edge highlight
-            shadow_col = QColor(24, 44, 97, 255)       # Bottom edge shadow
-            tick_col = QColor(100, 200, 255, 120)      # 4px bit ticks
-            text_col = QColor(255, 255, 255, 230)
-            tag = f"S:{w}"
-        else:
-            base_col = QColor(230, 126, 34, 230)       # Atari missile gold-orange
-            highlight_col = QColor(254, 202, 87, 255)  # Top edge highlight
-            shadow_col = QColor(186, 74, 0, 255)       # Bottom edge shadow
-            tick_col = QColor(255, 220, 120, 140)      # 4px bit ticks
-            text_col = QColor(255, 255, 255, 230)
-            tag = f"M:{w}"
+        base_col = QColor(41, 128, 185, 230)       # Platform fallback cyan-blue
+        highlight_col = QColor(85, 239, 196, 255)  # Top edge highlight
+        shadow_col = QColor(24, 44, 97, 255)       # Bottom edge shadow
+        tick_col = QColor(100, 200, 255, 120)      # 4px bit ticks
+        text_col = QColor(255, 255, 255, 230)
+        tag = f"{w}px"
 
         # Draw main platform body
         # In ANTIC Mode D, 4 pixel lines correspond to 8 scanlines (2 scanlines per mode line).

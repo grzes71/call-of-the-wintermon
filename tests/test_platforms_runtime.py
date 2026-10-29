@@ -446,6 +446,39 @@ def test_platform_dli_hardware_hpos_sync():
     assert mem[buf1_addr] == expected_hpos, f"Buffer 1 HPOS mismatch: {mem[buf1_addr]} != {expected_hpos}"
 
 
+def test_platform_128px_dli_hardware_hpos_sync():
+    """Verify moving 128px hybrid platform (3 Players + 4 Missiles) updates all 7 DLI HPOS registers."""
+    mpu, mem, labels = _setup_mpu_and_scene(0)
+    ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+    mem[labels["PLAT_COUNT"]] = 1
+
+    pas = 1
+    mem[labels["PLAT_PAS"]] = pas
+    # 128 px platform: type=0, ch_start=0, ch_count=4 -> hw_info = 4
+    mem[labels["PLAT_HW_INFO"]] = 4
+    mem[ptr_x] = 10
+    mem[ptr_w] = 128
+    mem[labels["PLAT_MOVEMENT"]] = 2  # right-left
+    mem[labels["PLAT_DIR"]] = 0       # moving right
+    mem[labels["PLAT_SPEED_TIMER"]] = 0
+    mem[labels["PLAT_PAUSE_TIMER"]] = 0
+
+    run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+    assert mem[ptr_x] == 11
+
+    base_hpos = 48 + 11
+    for buf_off in (0, 8):
+        assert mem[labels["DLI_HPOS_P1"] + buf_off + pas] == base_hpos
+        assert mem[labels["DLI_HPOS_P2"] + buf_off + pas] == base_hpos + 32
+        assert mem[labels["DLI_HPOS_P3"] + buf_off + pas] == base_hpos + 64
+        assert mem[labels["DLI_HPOS_M0"] + buf_off + pas] == base_hpos + 96
+        assert mem[labels["DLI_HPOS_M1"] + buf_off + pas] == base_hpos + 104
+        assert mem[labels["DLI_HPOS_M2"] + buf_off + pas] == base_hpos + 112
+        assert mem[labels["DLI_HPOS_M3"] + buf_off + pas] == base_hpos + 120
+
+
 # ==============================================================================
 # 7. Hero Carrier Mechanics Tests
 # ==============================================================================

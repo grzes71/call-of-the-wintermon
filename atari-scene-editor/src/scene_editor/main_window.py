@@ -113,6 +113,7 @@ from .scene_model import (
     InvalidPlatformAssignmentError,
     MAX_MISSILES_PER_ROW,
     MAX_OBJECTS_PER_ROW,
+    MAX_ROW_PLATFORM_WIDTH,
     MAX_SCENE_HEIGHT,
     MAX_SCENE_WIDTH,
     MAX_SPRITES_PER_ROW,
@@ -143,6 +144,7 @@ from .scene_model import (
     PLATFORM_TYPE_MISSILE,
     PLATFORM_TYPE_SPRITE,
     PLATFORM_TYPES,
+    PLATFORM_WIDTHS,
     PlatformCollisionError,
     PlatformElement,
     PlayerSpawn,
@@ -160,6 +162,7 @@ from .scene_model import (
     check_platform_collision,
     get_allowed_platform_rows,
     get_allowed_widths,
+    get_available_platform_widths_for_row,
     get_required_platform_resources,
     get_row_index,
     get_row_resource_usage,
@@ -554,16 +557,11 @@ class MainWindow(QMainWindow):
         self.plat_creator_group = QGroupBox("New Platform Creator")
         pc_layout = QFormLayout(self.plat_creator_group)
 
-        self.new_plat_type_combo = QComboBox()
-        self.new_plat_type_combo.addItem(f"Sprite (max {MAX_SPRITES_PER_ROW}/row)", PLATFORM_TYPE_SPRITE)
-        self.new_plat_type_combo.addItem(f"Missile (max {MAX_MISSILES_PER_ROW}/row)", PLATFORM_TYPE_MISSILE)
-        self.new_plat_type_combo.currentIndexChanged.connect(self._on_new_plat_type_changed)
-        pc_layout.addRow("Resource Type:", self.new_plat_type_combo)
-
         self.new_plat_width_combo = QComboBox()
-        pc_layout.addRow("Width (×4 expanded):", self.new_plat_width_combo)
+        pc_layout.addRow("Width:", self.new_plat_width_combo)
 
         self.new_plat_row_combo = QComboBox()
+        self.new_plat_row_combo.currentIndexChanged.connect(self._on_new_plat_row_changed)
         pc_layout.addRow("Target Row:", self.new_plat_row_combo)
 
         self.new_plat_color_profile_combo = QComboBox()
@@ -598,12 +596,6 @@ class MainWindow(QMainWindow):
 
         self.plat_prop_id_lbl = QLabel("-")
         pe_layout.addRow("ID:", self.plat_prop_id_lbl)
-
-        self.plat_prop_type_combo = QComboBox()
-        self.plat_prop_type_combo.addItem("sprite", PLATFORM_TYPE_SPRITE)
-        self.plat_prop_type_combo.addItem("missile", PLATFORM_TYPE_MISSILE)
-        self.plat_prop_type_combo.currentIndexChanged.connect(self._on_plat_prop_type_changed)
-        pe_layout.addRow("Resource Type:", self.plat_prop_type_combo)
 
         self.plat_prop_width_combo = QComboBox()
         self.plat_prop_width_combo.currentIndexChanged.connect(self._on_plat_prop_width_changed)
@@ -660,7 +652,7 @@ class MainWindow(QMainWindow):
         pl_layout.addWidget(self.platforms_list)
         p_layout.addWidget(self.plat_list_group, stretch=1)
 
-        self.prop_tabs.addTab(self._create_scrollable_tab(plat_widget), "Hardware Platforms")
+        self.prop_tabs.addTab(self._create_scrollable_tab(plat_widget), "Platforms")
 
         # -------------------------------------------------------------
         # Tab 3: Objects (Enemies & Secrets)
@@ -993,7 +985,7 @@ class MainWindow(QMainWindow):
 
         self.right_dock.setWidget(self.prop_tabs)
         self._refresh_platform_creator_profiles()
-        self._on_new_plat_type_changed()
+        self._refresh_new_plat_width_combo()
         self._on_new_obj_type_changed()
         self._update_property_panel(None)
         self._update_platform_property_panel(None)
@@ -1747,7 +1739,7 @@ class MainWindow(QMainWindow):
         if new_y != old_y:
             ok, msg = can_add_platform_to_row(
                 self.scene_model.platforms,
-                plat.type,
+                None,
                 new_y,
                 exclude_id=platform_id,
                 scene_height=self.scene_model.height,
@@ -1769,7 +1761,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Platform Collision",
                 f"Cannot move platform '{platform_id}': position ({new_x}, {new_y}) collides with "
-                f"platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
+                f"platform '{colliding.id}' (x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
             )
             self.scene_view.update_platform_item(plat)
             return
@@ -1878,25 +1870,36 @@ class MainWindow(QMainWindow):
         )
         self.undo_stack.push(cmd)
 
-    def _on_new_plat_type_changed(self) -> None:
-        """Update allowed widths in creator combo when type changes."""
-        p_type = self.new_plat_type_combo.currentData()
+    def _refresh_new_plat_width_combo(self) -> None:
+        """Populate width combo (8..128 px) and mark widths available in the target row."""
+        cur_w = self.new_plat_width_combo.currentData()
+        target_y = self.new_plat_row_combo.currentData()
+        avail = (
+            set(get_available_platform_widths_for_row(self.scene_model.platforms, int(target_y)))
+            if target_y is not None
+            else set(PLATFORM_WIDTHS)
+        )
         self.new_plat_width_combo.blockSignals(True)
         self.new_plat_width_combo.clear()
-        for w in get_allowed_widths(p_type):
-            res = get_required_platform_resources(p_type, w)
-            unit = "sprite" if p_type == PLATFORM_TYPE_SPRITE else "missile"
-            plural = "s" if res > 1 else ""
-            self.new_plat_width_combo.addItem(f"{w} px ({res} {unit}{plural})", w)
-        default_w = 16 if p_type == PLATFORM_TYPE_SPRITE else 8
-        idx = self.new_plat_width_combo.findData(default_w)
-        if idx >= 0:
-            self.new_plat_width_combo.setCurrentIndex(idx)
+        model = self.new_plat_width_combo.model()
+        for idx, w in enumerate(PLATFORM_WIDTHS):
+            self.new_plat_width_combo.addItem(f"{w} px", w)
+            item = model.item(idx) if hasattr(model, "item") else None
+            if item is not None:
+                item.setEnabled(w in avail)
+
+        target_w = cur_w if cur_w in PLATFORM_WIDTHS else 16
+        w_idx = self.new_plat_width_combo.findData(target_w)
+        if w_idx >= 0:
+            self.new_plat_width_combo.setCurrentIndex(w_idx)
         self.new_plat_width_combo.blockSignals(False)
 
+    def _on_new_plat_row_changed(self, _index: int = 0) -> None:
+        """Refresh available platform widths when target row changes."""
+        self._refresh_new_plat_width_combo()
+
     def _on_add_platform_clicked(self) -> None:
-        """Add a new hardware platform from creator controls."""
-        p_type = self.new_plat_type_combo.currentData()
+        """Add a new platform from creator controls."""
         width = self.new_plat_width_combo.currentData()
         y = self.new_plat_row_combo.currentData()
         x = self.new_plat_x_spin.value()
@@ -1906,7 +1909,7 @@ class MainWindow(QMainWindow):
             return
 
         ok, msg = can_add_platform_to_row(
-            self.scene_model.platforms, p_type, y, width=width, scene_height=self.scene_model.height
+            self.scene_model.platforms, None, y, width=width, scene_height=self.scene_model.height
         )
         if not ok:
             QMessageBox.warning(self, "Invalid Platform Position", msg)
@@ -1921,7 +1924,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Platform Collision",
                 f"Cannot add platform: position ({x}, {y}) with width {width} collides with "
-                f"existing platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
+                f"existing platform '{colliding.id}' (x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
             )
             return
 
@@ -1931,7 +1934,7 @@ class MainWindow(QMainWindow):
         prof_id = self.new_plat_color_profile_combo.currentData()
         plat = PlatformElement(
             id=plat_id,
-            type=p_type,
+            type=None,
             position=Position(x, y),
             width=width,
             height=PLATFORM_HEIGHT,
@@ -1976,7 +1979,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Platform Collision",
                 f"Cannot move platform '{selected_id}': position ({new_x}, {plat.position.y}) collides with "
-                f"existing platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
+                f"existing platform '{colliding.id}' (x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
             )
             self._update_platform_property_panel(plat)
             return
@@ -2004,7 +2007,7 @@ class MainWindow(QMainWindow):
 
         ok, msg = can_add_platform_to_row(
             self.scene_model.platforms,
-            plat.type,
+            None,
             new_y,
             exclude_id=selected_id,
             scene_height=self.scene_model.height,
@@ -2025,7 +2028,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Platform Collision",
                 f"Cannot move platform '{selected_id}' to row y={new_y}: collides with "
-                f"existing platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
+                f"existing platform '{colliding.id}' (x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
             )
             self._update_platform_property_panel(plat)
             return
@@ -2053,7 +2056,7 @@ class MainWindow(QMainWindow):
 
         ok, msg = can_add_platform_to_row(
             self.scene_model.platforms,
-            plat.type,
+            None,
             plat.position.y,
             exclude_id=selected_id,
             scene_height=self.scene_model.height,
@@ -2074,7 +2077,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Platform Collision",
                 f"Cannot resize platform '{selected_id}' to width {new_w}: collides with "
-                f"existing platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
+                f"existing platform '{colliding.id}' (x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
             )
             self._update_platform_property_panel(plat)
             return
@@ -2083,60 +2086,6 @@ class MainWindow(QMainWindow):
             self.scene_model,
             selected_id,
             plat.width,
-            new_w,
-            callback=lambda: self._on_platform_command_executed(selected_id),
-        )
-        self.undo_stack.push(cmd)
-
-    def _on_plat_prop_type_changed(self) -> None:
-        selected_id = self.scene_view.get_selected_platform_id()
-        if not selected_id:
-            return
-        plat = self.scene_model.get_platform(selected_id)
-        if not plat:
-            return
-
-        new_type = self.plat_prop_type_combo.currentData()
-        if new_type is None or plat.type == new_type:
-            return
-
-        allowed = get_allowed_widths(new_type)
-        new_w = plat.width if plat.width in allowed else (16 if new_type == PLATFORM_TYPE_SPRITE else 8)
-
-        ok, msg = can_add_platform_to_row(
-            self.scene_model.platforms,
-            new_type,
-            plat.position.y,
-            exclude_id=selected_id,
-            scene_height=self.scene_model.height,
-            width=new_w,
-        )
-        if not ok:
-            QMessageBox.warning(self, "Hardware Resource Limit", msg)
-            self._update_platform_property_panel(plat)
-            return
-
-        colliding = check_platform_collision(
-            self.scene_model.platforms,
-            (plat.position.x, plat.position.y, new_w, plat.height),
-            exclude_id=selected_id,
-        )
-        if colliding:
-            QMessageBox.warning(
-                self,
-                "Platform Collision",
-                f"Cannot change platform '{selected_id}' to {new_type}: new configuration with width {new_w} "
-                f"collides with existing platform '{colliding.id}' ({colliding.type}, x={colliding.position.x}..{colliding.position.x+colliding.width}, y={colliding.position.y}).",
-            )
-            self._update_platform_property_panel(plat)
-            return
-
-        cmd = ChangePlatformTypeCommand(
-            self.scene_model,
-            selected_id,
-            plat.type,
-            plat.width,
-            new_type,
             new_w,
             callback=lambda: self._on_platform_command_executed(selected_id),
         )
@@ -2154,8 +2103,7 @@ class MainWindow(QMainWindow):
 
         selected_row = -1
         for idx, plat in enumerate(self.scene_model.platforms):
-            type_tag = "SPRITE" if plat.type == PLATFORM_TYPE_SPRITE else "MISSILE"
-            text = f"[{type_tag}] {plat.id} ({plat.width}×{plat.height}) @ ({plat.position.x}, {plat.position.y}) [Row {plat.row_index}]"
+            text = f"{plat.id} ({plat.width}×{plat.height}) @ ({plat.position.x}, {plat.position.y}) [Row {plat.row_index}]"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, plat.id)
             self.platforms_list.addItem(item)
@@ -2172,23 +2120,21 @@ class MainWindow(QMainWindow):
         self.new_plat_row_combo.clear()
         allowed_rows = get_allowed_platform_rows(self.scene_model.height)
         for y in allowed_rows:
-            s_count, m_count = self.scene_model.get_platform_row_usage(y)
+            used_px = sum(p.width for p in self.scene_model.platforms if p.position.y == y)
             row_idx = get_row_index(y)
-            label = f"Row {row_idx} (y={y}) — Sprite: {s_count}/{MAX_SPRITES_PER_ROW}, Missile: {m_count}/{MAX_MISSILES_PER_ROW}"
+            label = f"Row {row_idx} (y={y}) — {used_px}/{MAX_ROW_PLATFORM_WIDTH} px"
             self.new_plat_row_combo.addItem(label, y)
         if cur_creator_y in allowed_rows:
             idx = self.new_plat_row_combo.findData(cur_creator_y)
             if idx >= 0:
                 self.new_plat_row_combo.setCurrentIndex(idx)
         self.new_plat_row_combo.blockSignals(False)
+        self._refresh_new_plat_width_combo()
 
     def _update_platform_property_panel(self, plat: Optional[PlatformElement]) -> None:
         if plat is None:
             self.plat_elem_group.setEnabled(False)
             self.plat_prop_id_lbl.setText("-")
-            self.plat_prop_type_combo.blockSignals(True)
-            self.plat_prop_type_combo.setCurrentIndex(0)
-            self.plat_prop_type_combo.blockSignals(False)
             self.plat_prop_width_combo.blockSignals(True)
             self.plat_prop_width_combo.clear()
             self.plat_prop_width_combo.blockSignals(False)
@@ -2216,21 +2162,20 @@ class MainWindow(QMainWindow):
         self.plat_elem_group.setEnabled(True)
         self.plat_prop_id_lbl.setText(f"<b>{plat.id}</b>")
 
-        # Type combo
-        self.plat_prop_type_combo.blockSignals(True)
-        idx = self.plat_prop_type_combo.findData(plat.type)
-        if idx >= 0:
-            self.plat_prop_type_combo.setCurrentIndex(idx)
-        self.plat_prop_type_combo.blockSignals(False)
-
         # Width combo
+        avail_widths = set(
+            get_available_platform_widths_for_row(
+                self.scene_model.platforms, plat.position.y, exclude_id=plat.id
+            )
+        )
         self.plat_prop_width_combo.blockSignals(True)
         self.plat_prop_width_combo.clear()
-        for w in get_allowed_widths(plat.type):
-            res = get_required_platform_resources(plat.type, w)
-            unit = "sprite" if plat.type == PLATFORM_TYPE_SPRITE else "missile"
-            plural = "s" if res > 1 else ""
-            self.plat_prop_width_combo.addItem(f"{w} px ({res} {unit}{plural})", w)
+        model = self.plat_prop_width_combo.model()
+        for idx, w in enumerate(PLATFORM_WIDTHS):
+            self.plat_prop_width_combo.addItem(f"{w} px", w)
+            item = model.item(idx) if hasattr(model, "item") else None
+            if item is not None:
+                item.setEnabled(w in avail_widths or w == plat.width)
         w_idx = self.plat_prop_width_combo.findData(plat.width)
         if w_idx >= 0:
             self.plat_prop_width_combo.setCurrentIndex(w_idx)
@@ -2241,14 +2186,9 @@ class MainWindow(QMainWindow):
         self.plat_prop_row_combo.clear()
         allowed_rows = get_allowed_platform_rows(self.scene_model.height)
         for y in allowed_rows:
-            s_count, m_count = self.scene_model.get_platform_row_usage(y, exclude_id=plat.id)
-            if y == plat.position.y:
-                if plat.type == PLATFORM_TYPE_SPRITE:
-                    s_count += get_required_platform_resources(plat.type, plat.width)
-                else:
-                    m_count += get_required_platform_resources(plat.type, plat.width)
+            used_px = sum(p.width for p in self.scene_model.platforms if p.position.y == y)
             row_idx = get_row_index(y)
-            label = f"Row {row_idx} (y={y}) [Sprite: {s_count}/{MAX_SPRITES_PER_ROW}, Missile: {m_count}/{MAX_MISSILES_PER_ROW}]"
+            label = f"Row {row_idx} (y={y}) [{used_px}/{MAX_ROW_PLATFORM_WIDTH} px]"
             self.plat_prop_row_combo.addItem(label, y)
         r_idx = self.plat_prop_row_combo.findData(plat.position.y)
         if r_idx >= 0:
@@ -2293,10 +2233,9 @@ class MainWindow(QMainWindow):
         self.plat_prop_x_spin.blockSignals(False)
 
         # Row status label
-        s_used, m_used = self.scene_model.get_platform_row_usage(plat.position.y)
+        used_px = sum(p.width for p in self.scene_model.platforms if p.position.y == plat.position.y)
         self.plat_prop_row_status_lbl.setText(
-            f"Row {plat.row_index} (y={plat.position.y}): <b>Sprite: {s_used}/{MAX_SPRITES_PER_ROW}</b>, "
-            f"<b>Missile: {m_used}/{MAX_MISSILES_PER_ROW}</b>"
+            f"Row {plat.row_index} (y={plat.position.y}): <b>{used_px}/{MAX_ROW_PLATFORM_WIDTH} px</b>"
         )
 
     def _on_plat_prop_color_profile_changed(self) -> None:

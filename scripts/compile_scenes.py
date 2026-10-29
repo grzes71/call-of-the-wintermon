@@ -464,6 +464,67 @@ SUPPORTED_SPRITE_WIDTHS: dict[int, list[tuple[int, int]]] = {
 }
 
 
+SUPPORTED_PLATFORM_WIDTHS: tuple[int, ...] = (8, 16, 24, 32, 48, 64, 96, 128)
+
+
+def _solve_pas_platform_kinds(platforms_in_pas: list[PlatformData]) -> list[str]:
+    """Resolve each platform in a row (pas) to 'sprite', 'missile', or 'hybrid' (128 px)."""
+    if sum(p.width for p in platforms_in_pas) > 128:
+        raise ValueError(
+            f"Total platform width ({sum(p.width for p in platforms_in_pas)} px) exceeds maximum limit of 128 px."
+        )
+
+    def _options(p: PlatformData, honor_explicit: bool) -> list[tuple[int, int, str]]:
+        w = p.width
+        if w == 128:
+            return [(3, 4, "hybrid")]
+        if honor_explicit:
+            if p.type_code == 1:
+                if w not in (8, 32):
+                    return []
+                return [(0, 4 if w == 32 else 1, "missile")]
+            if w not in SUPPORTED_SPRITE_WIDTHS:
+                return []
+            return [(len(SUPPORTED_SPRITE_WIDTHS[w]), 0, "sprite")]
+
+        if w == 96:
+            return [(3, 0, "sprite")]
+        if w in (64, 48, 24):
+            return [(2, 0, "sprite")]
+        if w == 32:
+            return [(1, 0, "sprite"), (0, 4, "missile")]
+        if w == 16:
+            return [(1, 0, "sprite")]
+        if w == 8:
+            return [(1, 0, "sprite"), (0, 1, "missile")]
+        return []
+
+    for honor in (True, False):
+        opts = [_options(p, honor) for p in platforms_in_pas]
+        if any(not o for o in opts):
+            continue
+        chosen: list[str] = []
+
+        def _bt(idx: int, s_used: int, m_used: int) -> bool:
+            if idx == len(platforms_in_pas):
+                return True
+            for s_cost, m_cost, kind in opts[idx]:
+                if s_used + s_cost <= 3 and m_used + m_cost <= 4:
+                    chosen.append(kind)
+                    if _bt(idx + 1, s_used + s_cost, m_used + m_cost):
+                        return True
+                    chosen.pop()
+            return False
+
+        if _bt(0, 0, 0):
+            return chosen
+
+    raise ValueError(
+        f"Cannot allocate PMG channels (max 3 players + 4 missiles) for platform widths "
+        f"{[p.width for p in platforms_in_pas]}."
+    )
+
+
 WIDTH_TO_PMG_PATTERN: dict[int, int] = {
     32: 0xFF,
     16: 0xF0,
@@ -567,7 +628,7 @@ def validate_scene_dli_platforms(
         # 3. Platform width validation
         for p in pas_plats:
             if p.type_code == 0:
-                if p.width not in SUPPORTED_SPRITE_WIDTHS:
+                if p.width not in SUPPORTED_PLATFORM_WIDTHS:
                     raise ValueError(
                         f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
                         f"platform '{p.id}' has unsupported width {p.width} px (supported: 8, 16, 24, 32, 48, 64, 96)."
@@ -586,10 +647,11 @@ def validate_scene_dli_platforms(
         missile_plats = sorted([p for p in pas_plats if p.type_code == 1], key=lambda p: p.x)
 
         for p in sprite_plats:
-            if len(SUPPORTED_SPRITE_WIDTHS[p.width]) > 1:
+            segs_for_p = [(32, 3), (32, 3), (32, 3)] if p.width == 128 else SUPPORTED_SPRITE_WIDTHS[p.width]
+            if len(segs_for_p) > 1:
                 seg_offset = 0
                 exp_hpos_list = []
-                for seg_w, exp_sz in SUPPORTED_SPRITE_WIDTHS[p.width]:
+                for seg_w, exp_sz in segs_for_p:
                     exp_hpos_list.append((48 + p.x + seg_offset, exp_sz))
                     seg_offset += seg_w
 
@@ -612,7 +674,8 @@ def validate_scene_dli_platforms(
         # 5. SIZEP matches platform widths
         ch_p_check = 0
         for p in sprite_plats:
-            for seg_w, exp_sz in SUPPORTED_SPRITE_WIDTHS[p.width]:
+            segs_for_p = [(32, 3), (32, 3), (32, 3)] if p.width == 128 else SUPPORTED_SPRITE_WIDTHS[p.width]
+            for seg_w, exp_sz in segs_for_p:
                 if ch_p_check < 3:
                     if sizep_vals[ch_p_check] != exp_sz:
                         raise ValueError(
@@ -622,8 +685,9 @@ def validate_scene_dli_platforms(
                     ch_p_check += 1
 
         # 6. SIZEM matches missile platforms
-        if missile_plats:
-            has_32 = any(p.width == 32 for p in missile_plats)
+        has_hybrid_128 = any(p.width == 128 for p in pas_plats)
+        if missile_plats or has_hybrid_128:
+            has_32 = any(p.width == 32 for p in missile_plats) or has_hybrid_128
             if has_32 and dli_data.sizem[pas_idx] != 0xFF:
                 raise ValueError(
                     f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
@@ -736,9 +800,28 @@ def compile_scene_dli_data(
 
     for pas_idx, pas_y in enumerate(PAS_Y_COORDS):
         pas_platforms = [p for p in platforms if p.y == pas_y]
-
-        sprite_plats = sorted([p for p in pas_platforms if p.type_code == 0], key=lambda p: p.x)
-        missile_plats = sorted([p for p in pas_platforms if p.type_code == 1], key=lambda p: p.x)
+        ordered_plats = sorted(pas_platforms, key=lambda p: p.x)
+        sprite_plats: list[PlatformData] = []
+        missile_plats: list[PlatformData] = []
+        hybrid_plats: list[PlatformData] = []
+        if ordered_plats:
+            for p in ordered_plats:
+                if p.width not in SUPPORTED_PLATFORM_WIDTHS:
+                    raise ValueError(
+                        f"Scene '{scene_name}' pas {pas_idx} (y={pas_y}): "
+                        f"platform '{p.id}' has unsupported width {p.width} px (supported: {list(SUPPORTED_PLATFORM_WIDTHS)})."
+                    )
+            kinds = _solve_pas_platform_kinds(ordered_plats)
+            for p, kind in zip(ordered_plats, kinds):
+                if kind == "missile":
+                    p.type_code = 1
+                    missile_plats.append(p)
+                elif kind == "hybrid":
+                    p.type_code = 0
+                    hybrid_plats.append(p)
+                else:
+                    p.type_code = 0
+                    sprite_plats.append(p)
 
         if pas_platforms:
             row_colors = pas_platforms[0].colors
@@ -750,6 +833,21 @@ def compile_scene_dli_data(
 
         ch_p = 0
         ch_m = 0
+
+        # Assign 128 px hybrid platforms (3 players + 4 missiles)
+        for p in hybrid_plats:
+            p.pas_idx = pas_idx
+            p.ch_start = 0
+            p.ch_count = 4
+            for seg in range(3):
+                hpos_p_all[seg][pas_idx] = min(255, max(0, 48 + p.x + seg * 32))
+                sizep_all[seg][pas_idx] = 3
+                pmg_patterns_list[pas_idx * 3 + seg] = 0xFF
+            ch_p = 3
+            for ms in range(4):
+                hpos_m_all[ms][pas_idx] = min(255, max(0, 48 + p.x + 96 + ms * 8))
+            ch_m = 4
+            sizem[pas_idx] = 0xFF
 
         # Assign sprite platforms
         for p in sprite_plats:
