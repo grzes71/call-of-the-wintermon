@@ -107,14 +107,15 @@
     },
     {
       "id": "platform-005",
-      "type": "missile",
+      "type": "sprite",
       "position": {
-        "x": 8,
+        "x": 65,
         "y": 8
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 12
+      "color_profile_id": 12,
+      "scroll": "slow"
     },
     {
       "id": "platform-006",
@@ -166,25 +167,27 @@
     },
     {
       "id": "platform-010",
-      "type": "missile",
+      "type": "sprite",
       "position": {
         "x": 76,
         "y": 72
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 14
+      "color_profile_id": 14,
+      "scroll": "slow"
     },
     {
       "id": "platform-011",
-      "type": "missile",
+      "type": "sprite",
       "position": {
         "x": 86,
         "y": 56
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 14
+      "color_profile_id": 14,
+      "scroll": "slow"
     },
     {
       "id": "platform-012",
@@ -195,7 +198,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 14
+      "color_profile_id": 14,
+      "scroll": "slow"
     },
     {
       "id": "platform-013",
@@ -214,10 +218,10 @@
       "id": "platform-014",
       "type": "sprite",
       "position": {
-        "x": 142,
+        "x": 152,
         "y": 40
       },
-      "width": 16,
+      "width": 8,
       "height": 4,
       "color_profile_id": 11,
       "scroll": "fast"
@@ -226,7 +230,7 @@
       "id": "platform-015",
       "type": "missile",
       "position": {
-        "x": 13,
+        "x": 0,
         "y": 40
       },
       "width": 8,
@@ -238,12 +242,161 @@
       "id": "platform-016",
       "type": "missile",
       "position": {
-        "x": 0,
+        "x": 8,
         "y": 24
       },
       "width": 8,
       "height": 4,
+      "color_profile_id": 9,
       "movement": "right-left"
+    },
+    {
+      "id": "platform-017",
+      "type": "missile",
+      "position": {
+        "x": 135,
+        "y": 40
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 11,
+      "scroll": "fast"
+    },
+    {
+      "id": "platform-018",
+      "type": "missile",
+      "position": {
+        "x": 16,
+        "y": 40
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 11,
+      "scroll": "fast"
+    },
+    {
+      "id": "platform-019",
+      "type": "missile",
+      "position": {
+        "x": 144,
+        "y": 24
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 9
+    },
+    {
+      "id": "platform-020",
+      "type": "sprite",
+      "position": {
+        "x": 32,
+        "y": 24
+      },
+      "width": 96,
+      "height": 4,
+      "color_profile_id": 9
+    },
+    {
+      "id": "platform-021",
+      "type": "sprite",
+      "position": {
+        "x": 1,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 14,
+      "scroll": "slow"
+    },
+    {
+      "id": "platform-022",
+      "type": "sprite",
+      "position": {
+        "x": 128,
+        "y": 72
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 14,
+      "scroll": "slow"
+    },
+    {
+      "id": "platform-023",
+      "type": "sprite",
+      "position": {
+        "x": 8,
+        "y": 56
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 14,
+      "scroll": "slow",
+      "movement": "left-right"
+    },
+    {
+      "id": "platform-024",
+      "type": "sprite",
+      "position": {
+        "x": 141,
+        "y": 56
+      },
+      "width": 16,
+      "height": 4,
+      "color_profile_id": 14,
+      "scroll": "slow",
+      "movement": "right-left"
+    },
+    {
+      "id": "platform-026",
+      "type": "sprite",
+      "position": {
+        "x": 135,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12,
+      "scroll": "slow",
+      "movement": "right-left"
+    },
+    {
+      "id": "platform-027",
+      "type": "sprite",
+      "position": {
+        "x": 111,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12,
+      "scroll": "slow",
+      "movement": "left-right"
+    },
+    {
+      "id": "platform-028",
+      "type": "missile",
+      "position": {
+        "x": 32,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12,
+      "scroll": "slow",
+      "movement": "right-left"
+    },
+    {
+      "id": "platform-029",
+      "type": "missile",
+      "position": {
+        "x": 8,
+        "y": 8
+      },
+      "width": 8,
+      "height": 4,
+      "color_profile_id": 12,
+      "scroll": "slow",
+      "movement": "left-right"
     }
   ],
   "objects": [
@@ -262,7 +415,7 @@
   },
   "row_color_profiles": [
     12,
-    null,
+    9,
     11,
     14,
     14,

@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Expand Runtime Platform Capacity to 42 and Refine Physics Test Scene Selection
+
+- **Runtime Platform Capacity ([engine/platforms.asm](engine/platforms.asm), [main.asm](main.asm))**:
+  - Increased `MAX_PLATFORMS` from `24` to the hardware maximum of `42` (`6 rows * 7 PMG objects/row`), preventing `platforms_init` from overflowing `plat_movement`, `plat_dir`, `plat_speed`, `plat_speed_timer`, and `plat_pause_timer` into `plat_pas` when a scene contains more than 24 platforms (e.g., `07-depths.json` with 28 platforms).
+  - Placed `plat_pas..enemies_plat_idx` (`122 B`) in the unused tail of the `$5C00` `GAMEOVER_CODE` segment (`$5F0A-$5F83 < $6000`) while keeping `plat_count..plat_cur_x` (`218 B`) in the tail of the `$6100` `DLI_BUFFERS` segment (`$6706-$67DF < $6800`).
+- **Physics Fixture Selection & Auto-Allocated Platform Types ([tests/scene_expectations.py](tests/scene_expectations.py))**:
+  - Updated `scene_platforms` to derive `type_code` via `_solve_pas_platform_kinds` so hardware-agnostic and auto-allocated platforms match the compiler's output.
+  - Refined `scene_platform_roles` (`upper`, `missile_left`, `top`) to verify the geometric preconditions required by `tests/test_player_movement.py` (`upper` width >= 20 overlapping `floor`, unobstructed gap for `missile_left`, and `top` at `y >= 20`) regardless of scene ordering in `scenes/scenes.json`.
+
 ## [2026-10-29] - Expand Scene Tables Memory Headroom and Consolidate Game Over Text Segment
 
 - **Memory Map & Segment Consolidation ([main.asm](main.asm), [engine/platforms.asm](engine/platforms.asm), [scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:

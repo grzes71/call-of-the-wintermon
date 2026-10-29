@@ -15,7 +15,7 @@
 ;   - Player carrier: Hero standing on a moving platform is carried by dx.
 ; ==============================================================================
 
-MAX_PLATFORMS = 24
+MAX_PLATFORMS = 42
 PLAT_SPEED_SLOW   = 3   ; 1 pixel every 4 frames (12.5 px/s PAL)
 PLAT_SPEED_MEDIUM = 1   ; 1 pixel every 2 frames (25 px/s PAL)
 PLAT_SPEED_FAST   = 0   ; 1 pixel every 1 frame  (50 px/s PAL)

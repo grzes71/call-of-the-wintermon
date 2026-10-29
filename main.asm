@@ -467,15 +467,13 @@ title_dl_vs_addr
     org DLI_BUFFERS
     icl 'engine/dli.asm'
 
-; --- Active Scene Platforms State (Structure-of-Arrays, 215 B in $6706-$67DC) ---
+; --- Active Scene Platforms State Part 1 (218 B in $6706-$67DF < $6800) ---
 plat_count        .byte 0
-plat_movement     :24 .byte 0
-plat_dir          :24 .byte 0
-plat_speed        :24 .byte 0
-plat_speed_timer  :24 .byte 0
-plat_pause_timer  :24 .byte 0
-plat_pas          :24 .byte 0
-plat_hw_info      :24 .byte 0
+plat_movement     :42 .byte 0
+plat_dir          :42 .byte 0
+plat_speed        :42 .byte 0
+plat_speed_timer  :42 .byte 0
+plat_pause_timer  :42 .byte 0
 plat_check_j      .byte 0
 plat_other_x      .byte 0
 plat_other_w      .byte 0
@@ -483,9 +481,6 @@ plat_cur_w        .byte 0
 plat_step_dir     .byte 0
 plat_cur_idx      .byte 0
 plat_cur_x        .byte 0
-secrets_plat_idx  :MAX_SECRETS .byte 0
-secrets_rel_x     :MAX_SECRETS .byte 0
-enemies_plat_idx  :MAX_ENEMIES .byte 0
 
 ; ==============================================================================
 ; GAMEOVER SCENE MODULE ($5C00) — two display lists + DLI chain + screen builder
@@ -495,6 +490,13 @@ enemies_plat_idx  :MAX_ENEMIES .byte 0
 ; ==============================================================================
     org GAMEOVER_CODE
     icl 'scenes/gameover.asm'
+
+; --- Active Scene Platforms State Part 2 (122 B in $5F0A-$5F83 < $6000) ---
+plat_pas          :42 .byte 0
+plat_hw_info      :42 .byte 0
+secrets_plat_idx  :MAX_SECRETS .byte 0
+secrets_rel_x     :MAX_SECRETS .byte 0
+enemies_plat_idx  :MAX_ENEMIES .byte 0
 
 ; ==============================================================================
 ; RENDER LOOKUP TABLES SEGMENT ($6800)

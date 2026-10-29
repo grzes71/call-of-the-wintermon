@@ -229,7 +229,18 @@ def scene_platform_roles(scene_index: int) -> tuple[dict[str, dict[str, Any]], l
     add("floor", floor)
 
     if floor is not None:
-        add("upper", next((p for p in platforms if p["y"] == floor["y"] - 16), None))
+        upper = next(
+            (
+                p
+                for p in platforms
+                if p["y"] == floor["y"] - 16
+                and p["width"] >= 20
+                and floor["x"] <= (p["x"] + p["width"] - 4) + 4 < floor["x"] + floor["width"]
+                and floor["x"] <= (p["x"] + p["width"] // 2 - 4) + 4 < floor["x"] + floor["width"]
+            ),
+            None,
+        )
+        add("upper", upper)
         # A ceiling row for the head-bump scenarios: prefer the row three tiers above the floor
         # (the forest layout), then two tiers, then anything above the floor.
         ceiling = next((p for p in platforms if p["y"] == floor["y"] - 48), None)
@@ -247,6 +258,19 @@ def scene_platform_roles(scene_index: int) -> tuple[dict[str, dict[str, Any]], l
                     if p["type_code"] == 1
                     and p["y"] == floor["y"]
                     and p["x"] + p["width"] <= floor["x"]
+                    and any(
+                        t["y"] == floor["y"]
+                        and t["x"] > (p["x"] + p["width"] - 6) + 4
+                        and t["x"] <= (p["x"] + p["width"] - 6 + 18) + 4 < t["x"] + t["width"]
+                        for t in platforms
+                    )
+                    and not any(
+                        q["y"] == floor["y"] - 16
+                        and (upper is None or q["id"] != upper["id"])
+                        and q["x"] < (p["x"] + p["width"] - 6 + 18 + 8)
+                        and q["x"] + q["width"] > (p["x"] + p["width"] - 6)
+                        for q in platforms
+                    )
                 ),
                 None,
             ),
@@ -255,7 +279,17 @@ def scene_platform_roles(scene_index: int) -> tuple[dict[str, dict[str, Any]], l
     add("left_edge", next((p for p in platforms if p["x"] == 0), None))
     add("right_edge", next((p for p in platforms if p["x"] + p["width"] == scene_width), None))
     top_row_y = min((p["y"] for p in platforms), default=None)
-    add("top", next((p for p in platforms if p["y"] == top_row_y), None))
+    add(
+        "top",
+        next(
+            (
+                p
+                for p in platforms
+                if p["y"] == top_row_y and p["y"] >= 20
+            ),
+            None,
+        ),
+    )
 
     # The sprite platform directly to the left of a missile platform on the same row, closest
     # first (the jump scenarios must actually reach it with JUMP_SHORT_LEN).
@@ -320,17 +354,40 @@ def scene_platforms(scene_index: int) -> list[dict[str, Any]]:
     Each entry carries the JSON fields plus the geometry the engine sees (`x`, `y`, `width`,
     `height`) and the compiler's `type_code` (0 = sprite/player, 1 = missile).
     """
+    from scripts.compile_scenes import PlatformData, _solve_pas_platform_kinds
+
     scene = load_scene(scene_files()[scene_index])
+    raw_plats = scene["platforms"]
+    plat_objs = [
+        PlatformData(
+            id=p["id"],
+            type_code=1 if str(p.get("type", "")).lower() == "missile" else 0,
+            x=p["position"]["x"],
+            y=p["position"]["y"],
+            width=p["width"],
+            height=p["height"],
+        )
+        for p in raw_plats
+    ]
+    by_y: dict[int, list[PlatformData]] = {}
+    for po in plat_objs:
+        by_y.setdefault(po.y, []).append(po)
+    for y_val, row_plats in by_y.items():
+        ordered = sorted(row_plats, key=lambda item: item.x)
+        kinds = _solve_pas_platform_kinds(ordered)
+        for po, kind in zip(ordered, kinds):
+            po.type_code = 1 if kind == "missile" else 0
+
     return [
         {
             **platform,
-            "type_code": 0 if platform["type"] == "sprite" else 1,
-            "x": platform["position"]["x"],
-            "y": platform["position"]["y"],
-            "width": platform["width"],
-            "height": platform["height"],
+            "type_code": po.type_code,
+            "x": po.x,
+            "y": po.y,
+            "width": po.width,
+            "height": po.height,
         }
-        for platform in scene["platforms"]
+        for platform, po in zip(raw_plats, plat_objs)
     ]
 
 
