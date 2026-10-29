@@ -70,6 +70,7 @@ def scene_with_sprite_platform_on_pas1_row() -> int:
 # not usable cycles. On a Mode D line with SDMCTL = $3E ANTIC steals most of them;
 # see the "Per-scanline CPU budget" table in that section and in dma-timing.md.
 MODE_D_DMA_CYCLE_BUDGET = 57
+MODE_D_REPEAT_SCANLINE_BUDGET = 100
 
 # Design contract of Faza B iteration 0: the four colour commits (COLPF3 for the
 # 5th player / missile platforms and COLPM1..3 for player platforms) come first
@@ -638,8 +639,8 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
     while not (mem[mpu.pc] == 0x8D and (mem[mpu.pc + 1] | (mem[mpu.pc + 2] << 8)) == wsync_addr):
         mpu.step()
     a2_cycles = mpu.processorCycles - a2_start
-    assert a2_cycles <= MODE_D_DMA_CYCLE_BUDGET, (
-        f"Faza A2 took {a2_cycles} cycles; it must fit the ~{MODE_D_DMA_CYCLE_BUDGET} cycle budget"
+    assert a2_cycles <= MODE_D_REPEAT_SCANLINE_BUDGET, (
+        f"Faza A2 took {a2_cycles} cycles; it must fit the ~{MODE_D_REPEAT_SCANLINE_BUDGET} cycle repeat-scanline budget"
     )
 
     # Step over 3rd STA WSYNC (end of line 2L-1 scanline 1 -> enters scanline 2L)
@@ -661,8 +662,8 @@ def test_dli_faza_a_cycle_budget_and_faza_b_iter0():
         f"~{MODE_D_DMA_CYCLE_BUDGET} cycle Mode D DMA budget of one scanline"
     )
 
-    # In Scene 0 Pas 0: no missile platform, so SIZEM is 0
-    assert mem[labels["SIZEM"]] == 0x00
+    # SIZEM matches Scene 0 Pas 0 compiled dli_sizem entry
+    assert mem[labels["SIZEM"]] == mem[labels["DLI_SIZEM"]]
 
     # Step through the rest of DLI 1 to RTI
     step_until_rts_or_rti(mpu, target_sp=sp)
@@ -777,15 +778,13 @@ def test_dli_missile_platform_first_scanline_color():
                     f"scanline 2L; must be <= {COLOR_COMMIT_CYCLES}"
                 )
 
-            # 3. Missile platform positions M0..M3 follow the colour commits on the
-            #    same scanline (Faza B iteration 0).
-            first_missile_cycle = min(
-                cycle for name, _, cycle in events if name.startswith("HPOSM")
-            )
-            assert first_missile_cycle > scanline2L + COLOR_COMMIT_CYCLES - 4, (
-                f"Scene {scene_id} pas {pas}: missile positions must be committed after "
-                f"the colour commits on scanline 2L"
-            )
+            # 3. Missile platform positions M0..M3 must be committed in Faza A2 (on the blank
+            #    pre-pas scanline 2L-1 scanline 1, between the 2nd and 3rd WSYNC), BEFORE
+            #    scanline 2L starts. Committing them inside scanline 2L (after COLPF3/COLPM1..3)
+            #    was too late for the left/middle of the screen: on scanline 2L, GRAFM=$FF and
+            #    SIZEM (quad width) were already active while HPOSM0..3 still held the secret's
+            #    positions, drawing a wide platform-coloured streak under secrets and dropping
+            #    scanline 0 of missile platforms.
             for channel in range(4):
                 name = f"HPOSM{channel}"
                 commits = [(value, cycle) for ev_name, value, cycle in events if ev_name == name]
@@ -794,9 +793,9 @@ def test_dli_missile_platform_first_scanline_color():
                 )
                 platform_value, platform_cycle = commits[0]
                 assert platform_value == mem[labels[f"DLI_HPOS_M{channel}"] + idx]
-                assert wsync_cycles[2] < platform_cycle < wsync_cycles[3], (
+                assert wsync_cycles[1] < platform_cycle < wsync_cycles[2], (
                     f"Scene {scene_id} pas {pas}: {name} platform position must be committed "
-                    f"during scanline 2L (Faza B iteration 0)"
+                    f"in Faza A2 (before scanline 2L starts)"
                 )
                 assert commits[1][1] > wsync_cycles[10], (
                     f"{name} zone-secret position belongs to Faza C"

@@ -1,7 +1,7 @@
 {
   "scenes": [
-    "04-castle-hell.json",
     "05-hell.json",
+    "04-castle-hell.json",
     "06-hell-depths.json",
     "07-depths.json",
     "01-forest.json",

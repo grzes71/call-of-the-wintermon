@@ -80,11 +80,11 @@
       "name": "Skull",
       "blink": false,
       "rgb_color": [
-        24,
-        133,
-        144
+        245,
+        166,
+        49
       ],
-      "atari_color": 185,
+      "atari_color": 29,
       "sprite_id": 7
     },
     {

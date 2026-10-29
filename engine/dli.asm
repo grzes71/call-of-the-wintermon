@@ -477,9 +477,13 @@ dli_table_ptrs_hi
     sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 0)
 
     ; --------------------------------------------------------------------------
-    ; FAZA A2: platform PMG state - widths, missile width and player positions. Committed in the
-    ; second half of the pre-pas line -> active from scanline 2L (the platform's first row).
-    ; 46 cycles + WSYNC = 50, inside the ~57 cycle Mode D DMA budget.
+    ; FAZA A2: platform PMG state - widths, missile width, player positions, and missile
+    ; positions. Executed on scanline 1 (the second scanline) of Mode D line 2L-1 (PMG row
+    ; p_base - 1, where PMG_PLAYER1..3 and PMG_MISSILES are $00). Because Mode D buffers the 40
+    ; playfield bytes on scanline 0, scanline 1 has NO playfield or Display List DMA (only 5 PMG
+    ; + 9 refresh = 14 DMA cycles stolen, leaving 100 CPU cycles).
+    ; 78 cycles + WSYNC = 82 cycles, well within the 100-cycle scanline 1 budget, so all platform
+    ; sizes and positions (both players and missiles) are active before scanline 2L begins.
     ; --------------------------------------------------------------------------
     lda #3                ; [2] Quad width (32px) for platform players
     sta SIZEP1            ; [4]
@@ -495,38 +499,30 @@ dli_table_ptrs_hi
     lda dli_hpos_p3,y      ; [4]
     sta HPOSP3            ; [4]
 
+    lda dli_hpos_m0,y      ; [4] Platform missile positions
+    sta HPOSM0            ; [4]
+    lda dli_hpos_m1,y      ; [4]
+    sta HPOSM1            ; [4]
+    lda dli_hpos_m2,y      ; [4]
+    sta HPOSM2            ; [4]
+    lda dli_hpos_m3,y      ; [4]
+    sta HPOSM3            ; [4]
+
     sta WSYNC             ; [4] Wait for end of pre-pas line (2L-1, scanline 1 -> aligns to scanline 2L)
 
     ; --------------------------------------------------------------------------
     ; FAZA B: 8 scanlines of platform color profiles
     ; Scanline 0 starts exactly on scanline 2L!
-    ; Iteration 0 commits the row scanline 0 colour to COLPM1..3 + COLPF3 and the
-    ; platform missile positions HPOSM0..3; iterations 1..7 commit COLPM1..3 +
-    ; COLPF3 for each following scanline.
+    ; Iterations 0..7 commit COLPF3 + COLPM1..3 for each scanline of the pas.
     ; --------------------------------------------------------------------------
     ; --- Iteracja 0 (scanline 2L) ---
     ; The row's first-scanline colour must reach BOTH colour channels:
     ; COLPM1..3 (player platforms) AND COLPF3 (5th player / missile platforms).
-    ; Omitting COLPF3 left the first scanline of a missile platform with the stale
-    ; zone-secret colour written by the previous Faza C - which pulses whenever that
-    ; secret blinks (row colour profiles were honoured only from scanline 1 on).
-    ; This iteration must also fit the ~57 cycle Mode D DMA budget, so the commit
-    ; order is: colours first (all four by cycle 20), missile positions after.
     lda dli_pas_color_sl0,y ; [4]
     sta COLPF3             ; [4] 5th player (missile platform) colour
     sta COLPM1             ; [4]
     sta COLPM2             ; [4]
     sta COLPM3             ; [4]
-
-    lda dli_hpos_m0,y      ; [4] Platform missile positions
-    sta HPOSM0             ; [4]
-    lda dli_hpos_m1,y      ; [4]
-    sta HPOSM1             ; [4]
-    lda dli_hpos_m2,y      ; [4]
-    sta HPOSM2             ; [4]
-    lda dli_hpos_m3,y      ; [4]
-    sta HPOSM3             ; [4]
-
     sta WSYNC              ; [4] End scanline 0 (2L)
 
     ; Scanline 1:

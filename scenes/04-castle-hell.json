@@ -222,10 +222,10 @@
       "id": "platform-019",
       "type": "sprite",
       "position": {
-        "x": 112,
+        "x": 104,
         "y": 56
       },
-      "width": 16,
+      "width": 32,
       "height": 4,
       "color_profile_id": 6
     },
@@ -303,7 +303,7 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-003",
-      "x": 126,
+      "x": 116,
       "dependency": 6
     },
     {
@@ -311,24 +311,21 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-025",
-      "x": 100,
-      "sprite_id": 11
+      "x": 100
     },
     {
       "id": 4,
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-007",
-      "x": 8,
-      "sprite_id": 11
+      "x": 8
     },
     {
       "id": 5,
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-002",
-      "x": 74,
-      "sprite_id": 11
+      "x": 79
     },
     {
       "id": 6,
@@ -343,8 +340,7 @@
       "type": "secret",
       "definition_id": 1,
       "platform_id": "platform-020",
-      "x": 0,
-      "sprite_id": 11
+      "x": 0
     },
     {
       "id": 7,
@@ -359,7 +355,7 @@
       "type": "secret",
       "definition_id": 2,
       "platform_id": "platform-019",
-      "x": 116,
+      "x": 115,
       "dependency": 1
     },
     {
@@ -391,7 +387,7 @@
       "type": "secret",
       "definition_id": 6,
       "platform_id": "platform-004",
-      "x": 136,
+      "x": 140,
       "dependency": 2
     },
     {
@@ -401,6 +397,42 @@
       "platform_id": "platform-008",
       "x": 20,
       "dependency": 6
+    },
+    {
+      "id": 14,
+      "type": "enemy",
+      "definition_id": 3,
+      "platform_id": "platform-015",
+      "x": 101,
+      "speed": "fast",
+      "movement_strategy": "right_left"
+    },
+    {
+      "id": 15,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-009",
+      "x": 46,
+      "speed": "medium",
+      "movement_strategy": "right_left"
+    },
+    {
+      "id": 16,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-018",
+      "x": 140,
+      "speed": "fast",
+      "movement_strategy": "left_pause_right"
+    },
+    {
+      "id": 17,
+      "type": "enemy",
+      "definition_id": 3,
+      "platform_id": "platform-002",
+      "x": 64,
+      "speed": "fast",
+      "movement_strategy": "right_pause_left"
     }
   ],
   "player_spawn": {

@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Eliminate Missile-Platform Top-Scanline Streak Under Secrets (DLI Faza A2 HPOSM Commit)
+
+- **Root Cause ([engine/dli.asm](engine/dli.asm))**:
+  - In `dli_handler`, `SIZEM` was committed in Faza A2 (on scanline 1 of pre-pas Mode D line `2L-1`, PMG row `p_base - 1`), whereas platform missile positions `HPOSM0..HPOSM3` were deferred to Faza B Iteration 0 (scanline 0 of the platform pas `2L`, PMG row `p_base`), after the four colour register writes (`COLPF3`, `COLPM1..3`) and Mode D scanline-0 playfield DMA steals.
+  - Because `PMG_MISSILES[p_base]` is `$FF` and `SIZEM` was already set to quad width (`$3F`/`$FF`) at cycle 0 of scanline `2L`, the raster beam crossed the left/middle of the playfield before `HPOSM0..HPOSM3` were updated. Missiles `M0..M3` therefore rendered on scanline `p_base` at the stale zone-secret positions (`x, x+2, x+4, x+6`) with 8 px quad width in the platform's `sl0` colour — producing a 12 px wide coloured bar directly underneath secrets such as `Gold Key 2 @ platform-020` in [scenes/04-castle-hell.json](scenes/04-castle-hell.json) and dropping scanline 0 of missile platforms to their right.
+- **Fix ([engine/dli.asm](engine/dli.asm), [tests/test_dli_system.py](tests/test_dli_system.py))**:
+  - Moved the `HPOSM0..HPOSM3` platform commits from Faza B Iteration 0 into Faza A2 (`2L-1` scanline 1, where `PMG_MISSILES` and `PMG_PLAYER1..3` are `$00` and Mode D repeat-scanline DMA leaves ~100 CPU cycles; Faza A2 uses 78 cycles + 4 for `WSYNC` = 82 cycles).
+  - Reduced Faza B Iteration 0 on badline `2L` from 56 cycles to 24 cycles (`COLPF3` + `COLPM1..3` + `WSYNC`), matching iterations 1..7.
+  - Updated [tests/test_dli_system.py](tests/test_dli_system.py) (`test_dli_faza_a_cycle_budget_and_faza_b_iter0`, `test_dli_missile_platform_first_scanline_color`) and verified pixel-exact rendering in AltirraSDL via AltirraBridge.
+
 ## [2026-10-28] - Fix Secret Progression Blip Assertion for Optional Secrets
 
 - **Testing & Asset Agnosticism**:
