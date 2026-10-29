@@ -171,5 +171,6 @@ secret_z0_off   .byte 0, 4, 8       ; dli_z0_* offset per player channel
     sta secrets_channel,y
     dey
     bpl @copy
+    jsr secrets_copy_plat_idx
     rts
 .endp

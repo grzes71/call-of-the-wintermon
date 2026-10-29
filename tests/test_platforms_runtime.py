@@ -39,7 +39,11 @@ from py65.devices.mpu6502 import MPU
 
 from scripts.compile_scenes import PLAT_MOVEMENT_MAP, PLAT_SPEED_RELOAD_MAP
 from tests.scene_expectations import (
+    dli_enemy_hpos_slots,
+    dli_secret_hpos_slots,
     scene_files,
+    scene_objects,
+    scene_platform_index,
     scene_platforms,
 )
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
@@ -554,3 +558,250 @@ def test_hero_not_carried_when_jumping_or_falling():
     # Platform moved right to 41, but Hero remained at 50
     assert mem[ptr_x] == 41
     assert mem[labels["PLAYER_X"]] == 50
+
+
+# ==============================================================================
+# 8. Secret & Enemy Carrier Mechanics Tests
+# ==============================================================================
+
+
+def test_scene_object_platform_indices_initialized():
+    """Verify secrets_plat_idx, secrets_rel_x, and enemies_plat_idx match JSON across all scenes."""
+    for scene_id, scene_file in enumerate(scene_files()):
+        plats = scene_platforms(scene_id)
+        mpu, mem, labels = _setup_mpu_and_scene(scene_id)
+        mpu.a = scene_id
+        run_subroutine(mpu, labels["SECRETS_INIT"])
+        mpu.a = scene_id
+        run_subroutine(mpu, labels["ENEMIES_INIT"])
+
+        for i, sec in enumerate(scene_objects(scene_file, "secret")):
+            expected_plat_idx = scene_platform_index(scene_id, sec["platform_id"])
+            expected_rel_x = (sec["x"] - plats[expected_plat_idx]["x"]) & 0xFF
+            assert mem[labels["SECRETS_PLAT_IDX"] + i] == expected_plat_idx, (
+                f"Scene {scene_id} ({scene_file}) secret {i} plat_idx mismatch"
+            )
+            assert mem[labels["SECRETS_REL_X"] + i] == expected_rel_x, (
+                f"Scene {scene_id} ({scene_file}) secret {i} rel_x mismatch"
+            )
+
+        for i, enm in enumerate(scene_objects(scene_file, "enemy")):
+            expected_plat_idx = scene_platform_index(scene_id, enm["platform_id"])
+            assert mem[labels["ENEMIES_PLAT_IDX"] + i] == expected_plat_idx, (
+                f"Scene {scene_id} ({scene_file}) enemy {i} plat_idx mismatch"
+            )
+
+
+def test_secret_carrier_on_moving_platform():
+    """Verify active and locked secrets on a moving platform move in lockstep with the platform."""
+    mpu, mem, labels = _setup_mpu_and_scene(0)
+    ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+    mem[labels["ENEMIES_COUNT"]] = 0
+
+    # Setup 2 platforms: platform 0 moving right, platform 1 stationary
+    mem[labels["PLAT_COUNT"]] = 2
+    mem[ptr_x + 0] = 40
+    mem[ptr_w + 0] = 32
+    mem[labels["PLAT_MOVEMENT"] + 0] = 2  # right-left
+    mem[labels["PLAT_DIR"] + 0] = 0       # moving right
+    mem[labels["PLAT_SPEED"] + 0] = 0     # fast (1 px/frame)
+    mem[labels["PLAT_SPEED_TIMER"] + 0] = 0
+    mem[labels["PLAT_PAUSE_TIMER"] + 0] = 0
+
+    mem[ptr_x + 1] = 100
+    mem[ptr_w + 1] = 32
+    mem[labels["PLAT_MOVEMENT"] + 1] = 0  # stationary
+
+    # Setup 3 secrets:
+    # Secret 0: active on moving platform 0 (5th player / missiles channel 3, zone 2, rel_x = 8)
+    # Secret 1: dependency-locked (inactive) on moving platform 0 (zone 3, rel_x = 12)
+    # Secret 2: active on stationary platform 1 (zone 4, rel_x = 8)
+    mem[labels["SECRETS_COUNT"]] = 3
+
+    mem[labels["SECRETS_PLAT_IDX"] + 0] = 0
+    mem[labels["SECRETS_REL_X"] + 0] = 8
+    mem[labels["SECRETS_ACTIVE"] + 0] = 1
+    mem[labels["SECRETS_COLLECTED"] + 0] = 0
+    mem[labels["SECRETS_X"] + 0] = 48
+    mem[labels["SECRETS_ZONE"] + 0] = 2
+    mem[labels["SECRETS_CHANNEL"] + 0] = 3
+
+    mem[labels["SECRETS_PLAT_IDX"] + 1] = 0
+    mem[labels["SECRETS_REL_X"] + 1] = 12
+    mem[labels["SECRETS_ACTIVE"] + 1] = 0
+    mem[labels["SECRETS_COLLECTED"] + 1] = 0
+    mem[labels["SECRETS_X"] + 1] = 52
+    mem[labels["SECRETS_ZONE"] + 1] = 3
+    mem[labels["SECRETS_CHANNEL"] + 1] = 3
+
+    mem[labels["SECRETS_PLAT_IDX"] + 2] = 1
+    mem[labels["SECRETS_REL_X"] + 2] = 8
+    mem[labels["SECRETS_ACTIVE"] + 2] = 1
+    mem[labels["SECRETS_COLLECTED"] + 2] = 0
+    mem[labels["SECRETS_X"] + 2] = 108
+    mem[labels["SECRETS_ZONE"] + 2] = 4
+    mem[labels["SECRETS_CHANNEL"] + 2] = 3
+
+    # Step 1: Platform 0 moves right from 40 to 41 (+1)
+    run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+    assert mem[ptr_x + 0] == 41
+    assert mem[labels["SECRETS_X"] + 0] == 49
+    assert mem[labels["SECRETS_X"] + 1] == 53
+    assert mem[labels["SECRETS_X"] + 2] == 108
+
+    # Active Secret 0 DLI HPOSM0..M3 in zone 2 updated to 48 + 49 + 2*m
+    for m in range(4):
+        for slot in dli_secret_hpos_slots(labels, 2, m):
+            assert mem[slot] == 48 + 49 + 2 * m
+
+    # Step 2: Reverse platform 0 to move left (-1) from 41 to 40
+    mem[labels["PLAT_DIR"] + 0] = 1
+    run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+    assert mem[ptr_x + 0] == 40
+    assert mem[labels["SECRETS_X"] + 0] == 48
+    assert mem[labels["SECRETS_X"] + 1] == 52
+    assert mem[labels["SECRETS_X"] + 2] == 108
+
+    for m in range(4):
+        for slot in dli_secret_hpos_slots(labels, 2, m):
+            assert mem[slot] == 48 + 48 + 2 * m
+
+
+def test_enemy_carrier_on_moving_platform():
+    """Verify enemies on a moving platform shift x, min_x, max_x, and DLI HPOS with the platform."""
+    mpu, mem, labels = _setup_mpu_and_scene(0)
+    ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+    mem[labels["PLAYER_PLAT_IDX"]] = 0xFF
+    mem[labels["SECRETS_COUNT"]] = 0
+
+    # Setup 2 platforms: platform 0 moving right, platform 1 stationary
+    mem[labels["PLAT_COUNT"]] = 2
+    mem[ptr_x + 0] = 40
+    mem[ptr_w + 0] = 32
+    mem[labels["PLAT_MOVEMENT"] + 0] = 2  # right-left
+    mem[labels["PLAT_DIR"] + 0] = 0       # moving right
+    mem[labels["PLAT_SPEED"] + 0] = 0     # fast (1 px/frame)
+    mem[labels["PLAT_SPEED_TIMER"] + 0] = 0
+    mem[labels["PLAT_PAUSE_TIMER"] + 0] = 0
+
+    mem[ptr_x + 1] = 100
+    mem[ptr_w + 1] = 32
+    mem[labels["PLAT_MOVEMENT"] + 1] = 0  # stationary
+
+    # Setup 2 enemies:
+    # Enemy 0 on moving platform 0 (bounds [40, 64], x=50, zone=2, channel=0)
+    # Enemy 1 on stationary platform 1 (bounds [100, 124], x=110, zone=3, channel=1)
+    mem[labels["ENEMIES_COUNT"]] = 2
+
+    mem[labels["ENEMIES_PLAT_IDX"] + 0] = 0
+    mem[labels["ENEMIES_ACTIVE"] + 0] = 1
+    mem[labels["ENEMIES_X"] + 0] = 50
+    mem[labels["ENEMIES_MIN_X"] + 0] = 40
+    mem[labels["ENEMIES_MAX_X"] + 0] = 64
+    mem[labels["ENEMIES_ZONE"] + 0] = 2
+    mem[labels["ENEMIES_CHANNEL"] + 0] = 0
+
+    mem[labels["ENEMIES_PLAT_IDX"] + 1] = 1
+    mem[labels["ENEMIES_ACTIVE"] + 1] = 1
+    mem[labels["ENEMIES_X"] + 1] = 110
+    mem[labels["ENEMIES_MIN_X"] + 1] = 100
+    mem[labels["ENEMIES_MAX_X"] + 1] = 124
+    mem[labels["ENEMIES_ZONE"] + 1] = 3
+    mem[labels["ENEMIES_CHANNEL"] + 1] = 1
+
+    # Step 1: Platform 0 moves right from 40 to 41 (+1)
+    run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+    assert mem[ptr_x + 0] == 41
+    assert mem[labels["ENEMIES_X"] + 0] == 51
+    assert mem[labels["ENEMIES_MIN_X"] + 0] == 41
+    assert mem[labels["ENEMIES_MAX_X"] + 0] == 65
+    for slot in dli_enemy_hpos_slots(labels, 2, 0):
+        assert mem[slot] == 48 + 51
+
+    # Enemy 1 on platform 1 is unchanged
+    assert mem[labels["ENEMIES_X"] + 1] == 110
+    assert mem[labels["ENEMIES_MIN_X"] + 1] == 100
+    assert mem[labels["ENEMIES_MAX_X"] + 1] == 124
+
+    # Step 2: Reverse platform 0 to move left (-1) from 41 to 40
+    mem[labels["PLAT_DIR"] + 0] = 1
+    run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+    assert mem[ptr_x + 0] == 40
+    assert mem[labels["ENEMIES_X"] + 0] == 50
+    assert mem[labels["ENEMIES_MIN_X"] + 0] == 40
+    assert mem[labels["ENEMIES_MAX_X"] + 0] == 64
+    for slot in dli_enemy_hpos_slots(labels, 2, 0):
+        assert mem[slot] == 48 + 50
+
+
+def test_hero_death_and_respawn_keeps_secrets_and_enemies_bound_to_moving_platforms():
+    """Verify Hero respawn (player_init -> platforms_init) never desynchronizes objects on moving platforms."""
+    # Find a scene with at least one secret on a moving platform
+    target_scene_id = None
+    for scene_id, scene_file in enumerate(scene_files()):
+        plats = scene_platforms(scene_id)
+        for sec in scene_objects(scene_file, "secret"):
+            p_idx = scene_platform_index(scene_id, sec["platform_id"])
+            if plats[p_idx].get("movement", "none") not in (None, "none"):
+                target_scene_id = scene_id
+                break
+        if target_scene_id is not None:
+            break
+    assert target_scene_id is not None, "Expected at least one scene with a secret on a moving platform"
+
+    scene_file = scene_files()[target_scene_id]
+    plats = scene_platforms(target_scene_id)
+    secrets = scene_objects(scene_file, "secret")
+
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    # Initialize scene in the exact order of game_init
+    run_subroutine(mpu, labels["DLI_INIT"])
+    mem[labels["ACTIVE_SCENE_ID"]] = target_scene_id
+    mpu.a = target_scene_id
+    run_subroutine(mpu, labels["DLI_STAGE_SCENE"])
+    mpu.a = target_scene_id
+    run_subroutine(mpu, labels["SECRETS_INIT"])
+    mpu.a = target_scene_id
+    run_subroutine(mpu, labels["ENEMIES_INIT"])
+    mpu.a = target_scene_id
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+
+    # Advance moving platforms for 30 frames so platforms and their secrets move away from init_x
+    for _ in range(30):
+        run_subroutine(mpu, labels["PLATFORMS_UPDATE"])
+
+    # Verify every secret's X is still equal to plat_x[p] + rel_x after 30 frames of movement
+    for i, sec in enumerate(secrets):
+        p_idx = mem[labels["SECRETS_PLAT_IDX"] + i]
+        rel_x = mem[labels["SECRETS_REL_X"] + i]
+        assert mem[labels["SECRETS_X"] + i] == mem[ptr_x + p_idx] + rel_x
+
+    # Now simulate Hero death completion (@respawn -> jsr player_init)
+    mpu.a = target_scene_id
+    run_subroutine(mpu, labels["PLAYER_INIT"])
+
+    # After respawn, platforms reset to init_x AND every secret on a moving platform must match plat_x[p] + rel_x!
+    for i, sec in enumerate(secrets):
+        p_idx = mem[labels["SECRETS_PLAT_IDX"] + i]
+        rel_x = mem[labels["SECRETS_REL_X"] + i]
+        expected_x = plats[p_idx]["x"] + rel_x
+        assert mem[ptr_x + p_idx] == plats[p_idx]["x"]
+        assert mem[labels["SECRETS_X"] + i] == expected_x, (
+            f"Secret {i} desynchronized from moving platform {p_idx} after Hero respawn: "
+            f"got {mem[labels['SECRETS_X'] + i]}, expected {expected_x}"
+        )
+        if mem[labels["SECRETS_ACTIVE"] + i] and mem[labels["SECRETS_CHANNEL"] + i] == 3:
+            zone = mem[labels["SECRETS_ZONE"] + i]
+            for m in range(4):
+                for slot in dli_secret_hpos_slots(labels, zone, m):
+                    assert mem[slot] == 48 + expected_x + 2 * m

@@ -452,6 +452,9 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     dey
     bpl @cp_zone
 
+    ; plat_idx
+    jsr enemies_copy_plat_idx
+
     ; 4. Initialize runtime state for each enemy
     ldx #0
 @init_loop

@@ -2,6 +2,20 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Carry Secrets and Enemies on Moving Platforms
+
+- **Scene Compiler & SoA Tables ([scripts/compile_scenes.py](scripts/compile_scenes.py))**:
+  - Added `platform_idx` to `SceneSecretData` and emitted per-scene `scene_<sym>_secret_plat_idx` and `scene_<sym>_enemy_plat_idx` tables along with master pointer tables `scene_secret_plat_idx_lo/hi` and `scene_enemy_plat_idx_lo/hi` in [gen/scenes_data.asm](gen/scenes_data.asm).
+- **Platform Object Carrier Engine ([engine/platforms.asm](engine/platforms.asm), [engine/secrets_channel.asm](engine/secrets_channel.asm), [engine/enemies.asm](engine/enemies.asm), [main.asm](main.asm))**:
+  - Added runtime SoA arrays `secrets_plat_idx`, `secrets_rel_x` (`scene_secret_x[i] - scene_plat_init_x[p]`), and `enemies_plat_idx` populated by `secrets_copy_plat_idx` and `enemies_copy_plat_idx` during `platforms_init`, `secrets_init`, and `enemies_init`.
+  - Added `platforms_carry_objects` called from `platforms_update` and `platforms_init` (including upon Hero respawn after death via `player_init -> platforms_init`) to tie object coordinates directly to their platform's current X position:
+    - Uncollected secrets assigned to platform `X` set `secrets_x[i] = plat_x[X] + secrets_rel_x[i]` (both active and dependency-locked secrets) and active secrets immediately update their DLI horizontal position buffers via `update_secret_hpos`.
+    - Active enemies assigned to platform `X` shift `enemies_x`, `enemies_min_x`, and `enemies_max_x` directly from `plat_x[X]` (`delta = plat_x[X] - enemies_min_x[i]`) and update their DLI horizontal position buffers via `update_enemy_hpos`.
+    - `platforms_init` also re-synchronizes `platforms_update_dli_hpos` and `platforms_carry_objects` for all moving platforms so Hero death/respawn never desynchronizes platform and object positions.
+  - Adjusted `SCENE_TABLES` base address from `$A400` to `$A300` and `GAMEOVER_TEXT` from `$BC00` to `$BD00` in [main.asm](main.asm), [scripts/check_memory.py](scripts/check_memory.py), and [scripts/generate_memory_map.py](scripts/generate_memory_map.py).
+- **Testing & Verification ([tests/test_platforms_runtime.py](tests/test_platforms_runtime.py))**:
+  - Added `test_scene_object_platform_indices_initialized`, `test_secret_carrier_on_moving_platform`, `test_enemy_carrier_on_moving_platform`, and `test_hero_death_and_respawn_keeps_secrets_and_enemies_bound_to_moving_platforms`, and verified live secret movement on moving platforms in AltirraSDL via AltirraBridge.
+
 ## [2026-10-29] - Eliminate Missile-Platform Top-Scanline Streak Under Secrets (DLI Faza A2 HPOSM Commit)
 
 - **Root Cause ([engine/dli.asm](engine/dli.asm))**:

@@ -81,7 +81,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 13,
+      "color_profile_id": 6,
       "scroll": "medium"
     },
     {
@@ -93,9 +93,10 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 13,
+      "color_profile_id": 6,
       "scroll": "medium",
-      "movement": "left-pause-right"
+      "movement": "left-right",
+      "movement_speed": "fast"
     },
     {
       "id": "platform-003",
@@ -106,7 +107,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 13,
+      "color_profile_id": 6,
       "scroll": "medium"
     },
     {
@@ -118,6 +119,8 @@
       },
       "width": 64,
       "height": 4,
+      "color_profile_id": 8,
+      "scroll": "medium",
       "movement": "left-right"
     },
     {
@@ -128,7 +131,9 @@
         "y": 72
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6,
+      "movement": "left-right"
     },
     {
       "id": "platform-006",
@@ -138,7 +143,8 @@
         "y": 72
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6
     },
     {
       "id": "platform-007",
@@ -148,7 +154,8 @@
         "y": 72
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6
     },
     {
       "id": "platform-008",
@@ -158,7 +165,8 @@
         "y": 72
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6
     },
     {
       "id": "platform-009",
@@ -168,7 +176,8 @@
         "y": 56
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6
     },
     {
       "id": "platform-010",
@@ -178,7 +187,8 @@
         "y": 56
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 6
     },
     {
       "id": "platform-011",
@@ -188,7 +198,9 @@
         "y": 40
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8,
+      "scroll": "medium"
     },
     {
       "id": "platform-012",
@@ -198,7 +210,9 @@
         "y": 40
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8,
+      "scroll": "medium"
     },
     {
       "id": "platform-013",
@@ -208,7 +222,9 @@
         "y": 40
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8,
+      "scroll": "medium"
     },
     {
       "id": "platform-014",
@@ -218,7 +234,9 @@
         "y": 40
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8,
+      "scroll": "medium"
     },
     {
       "id": "platform-015",
@@ -228,7 +246,8 @@
         "y": 24
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8
     },
     {
       "id": "platform-016",
@@ -238,7 +257,8 @@
         "y": 24
       },
       "width": 8,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8
     },
     {
       "id": "platform-018",
@@ -248,7 +268,8 @@
         "y": 8
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8
     },
     {
       "id": "platform-019",
@@ -258,7 +279,8 @@
         "y": 8
       },
       "width": 32,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8
     },
     {
       "id": "platform-020",
@@ -268,7 +290,8 @@
         "y": 8
       },
       "width": 16,
-      "height": 4
+      "height": 4,
+      "color_profile_id": 8
     },
     {
       "id": "platform-021",
@@ -279,7 +302,8 @@
       },
       "width": 8,
       "height": 4,
-      "movement": "left-right"
+      "color_profile_id": 8,
+      "movement": "left-pause-right"
     },
     {
       "id": "platform-022",
@@ -290,7 +314,8 @@
       },
       "width": 8,
       "height": 4,
-      "movement": "right-left"
+      "color_profile_id": 8,
+      "movement": "left-pause-right"
     }
   ],
   "objects": [
@@ -362,20 +387,64 @@
       "platform_id": "platform-011",
       "x": 8,
       "dependency": 2
+    },
+    {
+      "id": 10,
+      "type": "secret",
+      "definition_id": 6,
+      "platform_id": "platform-012",
+      "x": 28,
+      "dependency": 1
+    },
+    {
+      "id": 11,
+      "type": "enemy",
+      "definition_id": 3,
+      "platform_id": "platform-004",
+      "x": 63,
+      "speed": "fast",
+      "movement_strategy": "left_pause_right"
+    },
+    {
+      "id": 12,
+      "type": "enemy",
+      "definition_id": 1,
+      "platform_id": "platform-004",
+      "x": 94,
+      "speed": "medium",
+      "movement_strategy": "left_pause_right"
+    },
+    {
+      "id": 13,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-010",
+      "x": 114,
+      "speed": "medium",
+      "movement_strategy": "right_pause_left"
+    },
+    {
+      "id": 14,
+      "type": "enemy",
+      "definition_id": 2,
+      "platform_id": "platform-009",
+      "x": 36,
+      "speed": "medium",
+      "movement_strategy": "left_pause_right"
     }
   ],
   "player_spawn": {
     "x": 35,
     "y": 68,
-    "color": 152
+    "color": 254
   },
   "row_color_profiles": [
-    null,
-    null,
-    null,
-    null,
-    null,
-    13
+    8,
+    8,
+    8,
+    6,
+    6,
+    6
   ],
   "background_palette": {
     "upper": [

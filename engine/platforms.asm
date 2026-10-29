@@ -31,11 +31,17 @@ plat_pause_timer  :MAX_PLATFORMS .byte 0  ; 50-frame pause countdown
 plat_pas          :MAX_PLATFORMS .byte 0  ; 0..5 (derived from y)
 plat_hw_info      :MAX_PLATFORMS .byte 0  ; bit 7: type (0=sprite, 1=missile), bits 4..5: ch_start (0..3), bits 0..2: ch_count (1..4)
 
-; Temporary variables for inter-platform collision checks
+; Temporary variables for inter-platform collision checks & object carriers
 plat_check_j      .byte 0
 plat_other_x      .byte 0
 plat_other_w      .byte 0
 plat_cur_w        .byte 0
+plat_step_dir     .byte 0                   ; 0 = stationary, 1 = moved right (+1), 2 = moved left (-1)
+plat_cur_idx      .byte 0                   ; Current platform index during object carrier pass
+plat_cur_x        .byte 0                   ; Current X of platform plat_cur_idx
+secrets_plat_idx  :MAX_SECRETS .byte 0      ; Platform index (0..plat_count-1) carrying each secret
+secrets_rel_x     :MAX_SECRETS .byte 0      ; Secret X offset relative to its platform's left edge
+enemies_plat_idx  :MAX_ENEMIES .byte 0      ; Platform index (0..plat_count-1) carrying each enemy
 
 ; ==============================================================================
 ; PLATFORMS INIT
@@ -154,6 +160,111 @@ plat_cur_w        .byte 0
     dey
     bpl @reset_timers
 
+    ; 6. Copy per-object platform indices & relative offsets for secrets and enemies
+    jsr secrets_copy_plat_idx
+    jsr enemies_copy_plat_idx
+
+    ; 7. Synchronize DLI HPOS and carried objects for all moving platforms
+    ;    (ensures Hero respawn via player_init -> platforms_init resets both the
+    ;    moving platforms' DLI HPOS and the X/HPOS of any secrets/enemies on them)
+    ldx #0
+@sync_moving_loop
+    cpx plat_count
+    bcs @done
+    lda plat_movement,x
+    beq @sync_next
+    jsr platforms_update_dli_hpos
+    jsr platforms_carry_objects
+@sync_next
+    inx
+    jmp @sync_moving_loop
+
+@done
+    rts
+.endp
+
+; ==============================================================================
+; SECRETS COPY PLAT IDX
+; Copies the active scene's scene_secret_plat_idx table into secrets_plat_idx
+; and derives secrets_rel_x[i] = scene_secret_x[i] - scene_plat_init_x[plat_idx].
+; Input: X = scene id (0..SCENE_COUNT-1)
+; Preserves: X
+; ==============================================================================
+.proc secrets_copy_plat_idx
+    ldy scene_secret_count,x
+    beq @done
+    cpy #MAX_SECRETS
+    bcc @cnt_ok
+    ldy #MAX_SECRETS
+@cnt_ok
+    lda scene_secret_plat_idx_lo,x
+    sta zp_ptr_src
+    lda scene_secret_plat_idx_hi,x
+    sta zp_ptr_src+1
+    dey
+@loop
+    lda (zp_ptr_src),y
+    sta secrets_plat_idx,y
+    dey
+    bpl @loop
+
+    ; Compute secrets_rel_x[y] = scene_secret_x[y] - scene_plat_init_x[secrets_plat_idx[y]]
+    lda scene_secret_x_lo,x
+    sta zp_ptr_src
+    lda scene_secret_x_hi,x
+    sta zp_ptr_src+1
+
+    lda scene_plat_init_x_lo,x
+    sta zp_ptr_dst
+    lda scene_plat_init_x_hi,x
+    sta zp_ptr_dst+1
+
+    ldy scene_secret_count,x
+    cpy #MAX_SECRETS
+    bcc @rel_ok
+    ldy #MAX_SECRETS
+@rel_ok
+    dey
+@rel_loop
+    sty plat_cur_idx
+    lda secrets_plat_idx,y
+    tay
+    lda (zp_ptr_dst),y          ; A = scene_plat_init_x[p]
+    sta zp_temp_a
+    ldy plat_cur_idx
+    lda (zp_ptr_src),y          ; A = scene_secret_x[y]
+    sec
+    sbc zp_temp_a               ; A = scene_secret_x[y] - scene_plat_init_x[p]
+    sta secrets_rel_x,y
+    dey
+    bpl @rel_loop
+@done
+    rts
+.endp
+
+; ==============================================================================
+; ENEMIES COPY PLAT IDX
+; Copies the active scene's scene_enemy_plat_idx table into enemies_plat_idx.
+; Input: X = scene id (0..SCENE_COUNT-1)
+; Preserves: X
+; ==============================================================================
+.proc enemies_copy_plat_idx
+    ldy scene_enemy_count,x
+    beq @done
+    cpy #MAX_ENEMIES
+    bcc @cnt_ok
+    ldy #MAX_ENEMIES
+@cnt_ok
+    lda scene_enemy_plat_idx_lo,x
+    sta zp_ptr_src
+    lda scene_enemy_plat_idx_hi,x
+    sta zp_ptr_src+1
+    dey
+@loop
+    lda (zp_ptr_src),y
+    sta enemies_plat_idx,y
+    dey
+    bpl @loop
 @done
     rts
 .endp
@@ -600,7 +711,21 @@ plat_cur_w        .byte 0
     jmp @inter_loop
 
 @carry_hero_check
-    ; 6. Hero carrier mechanics (evaluated BEFORE DLI HPOS update clobbers temp ZP)
+    ; 6. Evaluate platform step direction (0 = none, 1 = right +1, 2 = left -1)
+    lda #0
+    sta plat_step_dir
+    lda zp_temp_a           ; candidate_x
+    cmp zp_temp_x           ; old_x
+    beq @commit_x           ; No movement occurred
+    bcc @step_is_left
+    lda #1                  ; Moved right (+1)
+    bne @store_step_dir
+@step_is_left
+    lda #2                  ; Moved left (-1)
+@store_step_dir
+    sta plat_step_dir
+
+    ; Hero carrier mechanics (evaluated BEFORE DLI HPOS update clobbers temp ZP)
     cpx player_plat_idx
     bne @commit_x
 
@@ -612,11 +737,9 @@ plat_cur_w        .byte 0
     bne @commit_x
 
 @carry_hero
-    lda zp_temp_a           ; candidate_x
-    cmp zp_temp_x           ; old_x
-    beq @commit_x           ; No movement occurred
-
-    bcs @carry_hero_right
+    lda plat_step_dir
+    cmp #1
+    beq @carry_hero_right
 
     ; Moving left (candidate_x < old_x)
     lda player_x
@@ -651,10 +774,108 @@ plat_cur_w        .byte 0
     ; 8. Update hardware DLI registers
     jsr platforms_update_dli_hpos
 
+    ; 9. Carry any Secrets or Enemies standing on this moving platform
+    lda plat_step_dir
+    beq @next_plat
+    jsr platforms_carry_objects
+
 @next_plat
     inx
     jmp @plat_loop
 
 @done
+    rts
+.endp
+
+; ==============================================================================
+; PLATFORMS CARRY OBJECTS
+; Ties the X coordinate of any Secrets or Enemies placed on platform X directly
+; to the platform's current X position:
+;   - secrets_x[i]     = plat_x[X] + secrets_rel_x[i]
+;   - enemies_x[i]     = plat_x[X] + (enemies_x[i] - enemies_min_x[i])
+;   - enemies_max_x[i] = plat_x[X] + (enemies_max_x[i] - enemies_min_x[i])
+;   - enemies_min_x[i] = plat_x[X]
+; and updates their DLI horizontal positions in both double buffers.
+; Input: X = platform index (0..plat_count-1)
+; Preserves: X
+; ==============================================================================
+.proc platforms_carry_objects
+    stx plat_cur_idx
+    txa
+    tay
+    lda (zp_plat_ptr_x),y
+    sta plat_cur_x
+
+    ; --- 1. Tie Secrets on platform plat_cur_idx to plat_cur_x ---
+    ldx #0
+@sec_loop
+    cpx secrets_count
+    bcs @sec_done
+
+    lda secrets_plat_idx,x
+    cmp plat_cur_idx
+    bne @sec_next
+
+    lda secrets_collected,x
+    bne @sec_next
+
+    lda plat_cur_x
+    clc
+    adc secrets_rel_x,x
+    cmp #152
+    bcc @sec_store_x
+    lda #152
+@sec_store_x
+    sta secrets_x,x
+
+    lda secrets_active,x
+    beq @sec_next
+    jsr update_secret_hpos
+
+@sec_next
+    inx
+    jmp @sec_loop
+
+@sec_done
+    ; --- 2. Tie Enemies on platform plat_cur_idx to plat_cur_x ---
+    ldx #0
+@enm_loop
+    cpx enemies_count
+    bcs @enm_done
+
+    lda enemies_plat_idx,x
+    cmp plat_cur_idx
+    bne @enm_next
+
+    lda enemies_active,x
+    beq @enm_next
+
+    ; Compute platform displacement relative to enemy's current min_x (= old plat_x)
+    lda plat_cur_x
+    sec
+    sbc enemies_min_x,x
+    sta zp_temp_a               ; delta = plat_cur_x - enemies_min_x,x
+
+    lda enemies_x,x
+    clc
+    adc zp_temp_a
+    sta enemies_x,x
+
+    lda enemies_max_x,x
+    clc
+    adc zp_temp_a
+    sta enemies_max_x,x
+
+    lda plat_cur_x
+    sta enemies_min_x,x
+
+    jsr update_enemy_hpos
+
+@enm_next
+    inx
+    jmp @enm_loop
+
+@enm_done
+    ldx plat_cur_idx
     rts
 .endp

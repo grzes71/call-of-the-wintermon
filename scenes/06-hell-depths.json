@@ -60,7 +60,7 @@
       "id": "platform-001",
       "type": "sprite",
       "position": {
-        "x": 18,
+        "x": 0,
         "y": 88
       },
       "width": 32,
@@ -71,7 +71,7 @@
       "id": "platform-002",
       "type": "sprite",
       "position": {
-        "x": 60,
+        "x": 65,
         "y": 88
       },
       "width": 32,
@@ -82,7 +82,7 @@
       "id": "platform-003",
       "type": "sprite",
       "position": {
-        "x": 104,
+        "x": 128,
         "y": 88
       },
       "width": 32,
@@ -106,13 +106,13 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-003",
-      "x": 126
+      "x": 150
     }
   ],
   "player_spawn": {
-    "x": 74,
+    "x": 78,
     "y": 68,
-    "color": 152
+    "color": 222
   },
   "row_color_profiles": [
     null,

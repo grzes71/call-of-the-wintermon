@@ -18,14 +18,14 @@ GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
-SCENE_TABLES = $A400    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
+SCENE_TABLES = $A300    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
                         ; in the RAM freed by the smaller tilesets (they end at $A20B, keeping 499 B
                         ; of tile headroom before the tables); budget: $A400-$BBFF = 6,144 bytes
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
 DLI_BUFFERS = $6100     ; Unified DLI Engine & Double Buffers ($6100-$6706)
 GAMEOVER_CODE = $5C00    ; Game Over / Victory module: 2 display lists + DLI chain + builder
                         ; (free tail of the $5000 block: runtime ends $5B94, title DL at $6000)
-GAMEOVER_TEXT = $BC00   ; Game Over texts (generated compact data, ~850 B)
+GAMEOVER_TEXT = $BD00   ; Game Over texts (generated compact data, ~634 B)
 RENDER_TABLES = $6800   ; Render Lookup Tables: Flip byte (256 B, page aligned) + Playfield row offsets (192 B) — reclaims $6800-$6AFF (MEM-006)
 INTRO_CODE_ADDR = $69C0 ; Intro screen handler: relocated out of the $2000 CODE block (which was down to 21 B of headroom)
 PMG_ADDR    = $6800     ; Player-Missile Graphics base: 2 KB aligned (PMBASE=$68, active memory $6B00-$6FFF)
