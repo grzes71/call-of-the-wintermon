@@ -2,6 +2,13 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-28] - Fix Secret Progression Blip Assertion for Optional Secrets
+
+- **Testing & Asset Agnosticism**:
+  - In [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), updated `test_secret_collect_blip_variant_and_final_secret_silence` assertion to compare `played` against `sum(model.collected) - 1` instead of `required_count - 1`.
+  - Resolved assertion failure occurring when scenes contain optional secrets (e.g. `killer` or `extra_life`, such as `04-castle-hell.json` with Mjolnir) that are collected along the dependency chain prior to scene advancement.
+  - Aligned `scene_special_secret_count` lookup to use `SCENE_SPECIAL` rather than hardcoded scene 0.
+
 ## [2026-10-28] - Expand HUD Lives Display Limit to 20
 
 - **HUD & Status Line Engine**:

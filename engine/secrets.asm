@@ -17,7 +17,7 @@
 ; platform row and dependency stage, validated by the compiler and the scene
 ; editor), so this is only a memory guard - it must match MAX_SECRETS_TOTAL in
 ; scripts/sprite_roles.py (asserted by the test suite).
-MAX_SECRETS = 12
+MAX_SECRETS = 16
 SECRETS_BLINK_STEP_FRAMES = 2   ; Frames each luminance step is held (2 = 2x slower blink pulse)
 
 ; --- Active Scene Secrets State (Structure-of-Arrays) ---

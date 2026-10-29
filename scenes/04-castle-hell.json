@@ -44,7 +44,7 @@
       "id": "platform-001",
       "type": "sprite",
       "position": {
-        "x": 18,
+        "x": 16,
         "y": 88
       },
       "width": 32,
@@ -110,7 +110,7 @@
       "id": "platform-007",
       "type": "missile",
       "position": {
-        "x": 9,
+        "x": 8,
         "y": 72
       },
       "width": 8,
@@ -137,7 +137,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 12
+      "color_profile_id": 26
     },
     {
       "id": "platform-010",
@@ -148,7 +148,7 @@
       },
       "width": 24,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 24
     },
     {
       "id": "platform-011",
@@ -159,7 +159,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 24
     },
     {
       "id": "platform-012",
@@ -170,7 +170,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 24
     },
     {
       "id": "platform-013",
@@ -181,7 +181,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 24
     },
     {
       "id": "platform-014",
@@ -192,7 +192,9 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 7
+      "color_profile_id": 24,
+      "movement": "right-left",
+      "movement_speed": "slow"
     },
     {
       "id": "platform-015",
@@ -203,7 +205,7 @@
       },
       "width": 48,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 9
     },
     {
       "id": "platform-018",
@@ -214,7 +216,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 12
+      "color_profile_id": 26
     },
     {
       "id": "platform-019",
@@ -236,7 +238,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 9
     },
     {
       "id": "platform-021",
@@ -247,7 +249,8 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 9,
+      "movement": "right-left"
     },
     {
       "id": "platform-022",
@@ -258,29 +261,29 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 9
     },
     {
       "id": "platform-023",
       "type": "sprite",
       "position": {
-        "x": 134,
+        "x": 144,
         "y": 8
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 11
+      "color_profile_id": 9
     },
     {
       "id": "platform-024",
       "type": "missile",
       "position": {
-        "x": 78,
+        "x": 0,
         "y": 40
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 12
+      "color_profile_id": 26
     },
     {
       "id": "platform-025",
@@ -291,7 +294,7 @@
       },
       "width": 8,
       "height": 4,
-      "color_profile_id": 12
+      "color_profile_id": 26
     }
   ],
   "objects": [
@@ -300,18 +303,115 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-003",
-      "x": 126
+      "x": 126,
+      "dependency": 6
+    },
+    {
+      "id": 3,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-025",
+      "x": 100,
+      "sprite_id": 11
+    },
+    {
+      "id": 4,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-007",
+      "x": 8,
+      "sprite_id": 11
+    },
+    {
+      "id": 5,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-002",
+      "x": 74,
+      "sprite_id": 11
+    },
+    {
+      "id": 6,
+      "type": "secret",
+      "definition_id": 4,
+      "platform_id": "platform-023",
+      "x": 149,
+      "dependency": 1
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-020",
+      "x": 0,
+      "sprite_id": 11
+    },
+    {
+      "id": 7,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-010",
+      "x": 18,
+      "dependency": 1
+    },
+    {
+      "id": 8,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-019",
+      "x": 116,
+      "dependency": 1
+    },
+    {
+      "id": 9,
+      "type": "secret",
+      "definition_id": 2,
+      "platform_id": "platform-005",
+      "x": 50,
+      "dependency": 1
+    },
+    {
+      "id": 10,
+      "type": "secret",
+      "definition_id": 6,
+      "platform_id": "platform-011",
+      "x": 68,
+      "dependency": 2
+    },
+    {
+      "id": 11,
+      "type": "secret",
+      "definition_id": 6,
+      "platform_id": "platform-024",
+      "x": 0,
+      "dependency": 2
+    },
+    {
+      "id": 12,
+      "type": "secret",
+      "definition_id": 6,
+      "platform_id": "platform-004",
+      "x": 136,
+      "dependency": 2
+    },
+    {
+      "id": 13,
+      "type": "secret",
+      "definition_id": 3,
+      "platform_id": "platform-008",
+      "x": 20,
+      "dependency": 6
     }
   ],
   "player_spawn": {
-    "x": 74,
+    "x": 33,
     "y": 68,
     "color": 12
   },
   "row_color_profiles": [
-    11,
-    7,
-    12,
+    9,
+    24,
+    26,
     6,
     6,
     13

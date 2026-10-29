@@ -602,9 +602,10 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
             assert mem[labels["GAME_PHASE"]] == labels["GAME_PHASE_VICTORY"]
             silent += 1
 
-    assert played == required_count - 1, f"every required secret but the last must play a blip (required_count={required_count})"
+    collected_count = sum(model.collected)
+    assert played == collected_count - 1, f"every collected secret but the last must play a blip (collected_count={collected_count})"
     assert silent == 1, "exactly one secret finishes the scene"
-    assert specials_collected == scene_special_secret_count(0), (
+    assert specials_collected == scene_special_secret_count(SCENE_SPECIAL), (
         "the HUD must show exactly the special secrets placed in the scene"
     )
 

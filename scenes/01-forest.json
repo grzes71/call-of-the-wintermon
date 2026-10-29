@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scene": {
-    "name": "The Forest Whispers My Name",
+    "name": "Beyond Good and Evil",
     "width": 160,
     "height": 96,
     "tile_source": "tiles/trees.png"

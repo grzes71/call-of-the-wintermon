@@ -22,7 +22,7 @@ MAX_ENEMIES_TOTAL = 6
 # MAX_SECRETS in engine/secrets.asm - keep both values in sync (asserted by tests).
 # The *design* limit is the per-row channel budget (see MAX_CHANNELS_PER_ROW); this constant
 # is only a memory guard.
-MAX_SECRETS_TOTAL = 12
+MAX_SECRETS_TOTAL = 16
 
 # Hardware sprite channels available in one platform row (one zone slot) and per dependency
 # stage: Players 1..3 (COLPM1..3) plus the 5th player (the four missiles combined, COLPF3).

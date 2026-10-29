@@ -454,7 +454,7 @@
     },
     {
       "id": 21,
-      "name": "blue-green (Copy)",
+      "name": "blue-green",
       "colors": [
         "0x92",
         "0x94",
@@ -496,6 +496,51 @@
         "0xE0"
       ],
       "description": "Yellow solid"
+    },
+    {
+      "id": 24,
+      "name": "blue-grey",
+      "colors": [
+        "0x92",
+        "0x94",
+        "0x98",
+        "0x9C",
+        "0x0C",
+        "0x08",
+        "0x06",
+        "0x04"
+      ],
+      "description": "Blue and green"
+    },
+    {
+      "id": 25,
+      "name": "grey-blue",
+      "colors": [
+        "0x02",
+        "0x04",
+        "0x08",
+        "0x0A",
+        "0x0C",
+        "0x9A",
+        "0x96",
+        "0x92"
+      ],
+      "description": "Grey and blue"
+    },
+    {
+      "id": 26,
+      "name": "grey-red",
+      "colors": [
+        "0x04",
+        "0x06",
+        "0x08",
+        "0x0A",
+        "0x4A",
+        "0x48",
+        "0x46",
+        "0x42"
+      ],
+      "description": "Red and grey"
     }
   ]
 }
