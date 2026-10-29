@@ -2,6 +2,13 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-29] - Expand Scene Tables Memory Headroom and Consolidate Game Over Text Segment
+
+- **Memory Map & Segment Consolidation ([main.asm](main.asm), [engine/platforms.asm](engine/platforms.asm), [scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Moved `SCENE_TABLES` base address from `$A300` to `$A220` (reclaiming 224 bytes directly above `tiles_data_end` at `$A20B`).
+  - Relocated the 215-byte platform runtime state SoA arrays (`plat_count`..`enemies_plat_idx`) into the unused tail of the `$6100` `DLI_BUFFERS` segment (`$6706-$67DB`, strictly below `$6800`).
+  - Consolidated `gen/gameover_texts.inc` into the end of the `SCENE_TABLES` segment (after `gen/scenes_dli_data.asm`) instead of a separate fixed `org $BD00` segment, preventing growing scene tables from colliding with or overwriting `gameover_failure_text` and expanding contiguous scene headroom below `$C000` to 478 bytes.
+
 ## [2026-10-29] - Hardware-Agnostic Platform Widths (8..128 px) and Automatic Build-Time PMG Allocation
 
 - **Atari Scene Editor Model & UI ([atari-scene-editor/src/scene_editor/scene_model.py](atari-scene-editor/src/scene_editor/scene_model.py), [atari-scene-editor/src/scene_editor/main_window.py](atari-scene-editor/src/scene_editor/main_window.py), [atari-scene-editor/src/scene_editor/scene_items.py](atari-scene-editor/src/scene_editor/scene_items.py))**:

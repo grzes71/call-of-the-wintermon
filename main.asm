@@ -18,7 +18,7 @@ GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
-SCENE_TABLES = $A300    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
+SCENE_TABLES = $A220    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
                         ; in the RAM freed by the smaller tilesets (they end at $A20B, keeping 499 B
                         ; of tile headroom before the tables); budget: $A400-$BBFF = 6,144 bytes
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
@@ -461,34 +461,40 @@ title_dl_vs_addr
     .word dlist_title
 
 ; ==============================================================================
-; UNIFIED DLI ENGINE & DOUBLE BUFFERS SEGMENT ($6200)
-; Strictly between Title DList ($60CA) and PMG ($6800)
+; UNIFIED DLI ENGINE & DOUBLE BUFFERS SEGMENT ($6100)
+; Strictly between Title DList ($6079) and PMG ($6800)
 ; ==============================================================================
     org DLI_BUFFERS
     icl 'engine/dli.asm'
 
+; --- Active Scene Platforms State (Structure-of-Arrays, 215 B in $6706-$67DC) ---
+plat_count        .byte 0
+plat_movement     :24 .byte 0
+plat_dir          :24 .byte 0
+plat_speed        :24 .byte 0
+plat_speed_timer  :24 .byte 0
+plat_pause_timer  :24 .byte 0
+plat_pas          :24 .byte 0
+plat_hw_info      :24 .byte 0
+plat_check_j      .byte 0
+plat_other_x      .byte 0
+plat_other_w      .byte 0
+plat_cur_w        .byte 0
+plat_step_dir     .byte 0
+plat_cur_idx      .byte 0
+plat_cur_x        .byte 0
+secrets_plat_idx  :MAX_SECRETS .byte 0
+secrets_rel_x     :MAX_SECRETS .byte 0
+enemies_plat_idx  :MAX_ENEMIES .byte 0
+
 ; ==============================================================================
 ; GAMEOVER SCENE MODULE ($5C00) — two display lists + DLI chain + screen builder
-; Uses the free tail of the $5000 block (scene runtime ends at $5B94, title DL
+; Uses the free tail of the $5000 block (scene runtime ends at $5BC1, title DL
 ; starts at $6000): the whole module fits in the 1 KB page $5C00-$5FFF, so the
 ; display lists can never cross a 1 KB boundary.
 ; ==============================================================================
     org GAMEOVER_CODE
     icl 'scenes/gameover.asm'
-
-; ==============================================================================
-; GAMEOVER TEXT SEGMENT ($BC00) — generated compact text data
-; Kept out of the $5C00 page so the code + display lists stay under 1 KB (the
-; display lists must not cross a 1 KB boundary). The scene data tables start at
-; $A800 and grow with the scene count; they may use everything up to $BBFF.
-; ==============================================================================
-    org GAMEOVER_TEXT
-    icl 'gen/gameover_texts.inc'
-
-; The generated line count must match the display list size.
-.if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
-    .error "gen/gameover_texts.inc allows a different line count than the display list"
-.endif
 
 ; ==============================================================================
 ; RENDER LOOKUP TABLES SEGMENT ($6800)
@@ -585,6 +591,10 @@ tiles_data_end
     icl 'engine/platforms.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
+    icl 'gen/gameover_texts.inc'
+.if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
+    .error "gen/gameover_texts.inc allows a different line count than the display list"
+.endif
 scene_tables_end
 
 ; ==============================================================================

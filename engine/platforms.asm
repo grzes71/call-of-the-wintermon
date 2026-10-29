@@ -21,27 +21,9 @@ PLAT_SPEED_MEDIUM = 1   ; 1 pixel every 2 frames (25 px/s PAL)
 PLAT_SPEED_FAST   = 0   ; 1 pixel every 1 frame  (50 px/s PAL)
 PLATFORM_PAUSE_FRAMES = 50  ; 50 frames = 1.0 second PAL
 
-; --- Active Scene Platforms State (Structure-of-Arrays) ---
-plat_count        .byte 0
-plat_movement     :MAX_PLATFORMS .byte 0  ; 0..4
-plat_dir          :MAX_PLATFORMS .byte 0  ; 0 = right, 1 = left
-plat_speed        :MAX_PLATFORMS .byte 0  ; Frame reload count (3 = slow, 1 = medium, 0 = fast)
-plat_speed_timer  :MAX_PLATFORMS .byte 0  ; Frame divider countdown
-plat_pause_timer  :MAX_PLATFORMS .byte 0  ; 50-frame pause countdown
-plat_pas          :MAX_PLATFORMS .byte 0  ; 0..5 (derived from y)
-plat_hw_info      :MAX_PLATFORMS .byte 0  ; bit 7: type (0=sprite, 1=missile), bits 4..5: ch_start (0..3), bits 0..2: ch_count (1..4)
-
-; Temporary variables for inter-platform collision checks & object carriers
-plat_check_j      .byte 0
-plat_other_x      .byte 0
-plat_other_w      .byte 0
-plat_cur_w        .byte 0
-plat_step_dir     .byte 0                   ; 0 = stationary, 1 = moved right (+1), 2 = moved left (-1)
-plat_cur_idx      .byte 0                   ; Current platform index during object carrier pass
-plat_cur_x        .byte 0                   ; Current X of platform plat_cur_idx
-secrets_plat_idx  :MAX_SECRETS .byte 0      ; Platform index (0..plat_count-1) carrying each secret
-secrets_rel_x     :MAX_SECRETS .byte 0      ; Secret X offset relative to its platform's left edge
-enemies_plat_idx  :MAX_ENEMIES .byte 0      ; Platform index (0..plat_count-1) carrying each enemy
+; (Active Scene Platforms State SoA arrays plat_count..enemies_plat_idx
+;  reside in the tail of the $6100 DLI_BUFFERS segment in main.asm to preserve
+;  $A220-$BFFF headroom for scene data tables.)
 
 ; ==============================================================================
 ; PLATFORMS INIT
