@@ -2,6 +2,21 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-30] - Automate Version Bump in Title Scroll Text During Release Workflow
+
+- **Release Helper & Scroll Text Substitution ([scripts/release_helper.py](scripts/release_helper.py))**:
+  - Enhanced `update_scroll_version` to support both `vX.Y.Z` (e.g. `CALL OF THE WINTERMON v0.1.0`) and `version X.Y.Z` formats.
+  - Added build-time length validation enforcing Atari ANTIC Mode 2 40-character limit per line (`ValueError` raised if any line exceeds 40 characters after version substitution).
+- **GitHub Actions Release Pipeline ([.github/workflows/release.yml](.github/workflows/release.yml))**:
+  - Added `--update-scroll` flag to `scripts/release_helper.py` step in GitHub Actions release workflow.
+  - Updated manifest push step to stage and commit both `manifest.yaml` and `scroll/title.txt` to `main`.
+  - The binary compilation step (`make all`) runs immediately after version bump, ensuring the released `.xex` binary embeds the exact new version number in `gen/title_vscroll_data.asm`.
+- **Test Suite Updates ([tests/test_release_helper.py](tests/test_release_helper.py))**:
+  - Added unit test `test_update_scroll_version_v_prefix` verifying `CALL OF THE WINTERMON v0.1.0` -> `v0.2.0` substitution.
+  - Added unit test `test_update_scroll_version_line_too_long_rejected` verifying 40-character bounds protection.
+  - Updated `test_cli_execution` to test simultaneous `--update-manifest` and `--update-scroll` invocation.
+  - All 783 tests pass.
+
 ## [2026-10-30] - Fix Scene Transition Stack Overflow and Unexpected Return to Title
 
 - **Root Cause Analysis ([scenes/game.asm](scenes/game.asm), [hardware.asm](hardware.asm))**:

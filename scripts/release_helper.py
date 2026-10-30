@@ -329,7 +329,11 @@ def update_manifest_version(version: str, manifest_path: Path | None = None) -> 
 
 
 def update_scroll_version(version: str, scroll_file: Path | None = None) -> bool:
-    """Update the version string in a scroll text file if a version pattern is present."""
+    """Update the version string in a scroll text file if a version pattern is present.
+
+    Supports both 'vX.Y.Z' (e.g. 'CALL OF THE WINTERMON v0.1.0') and
+    'version X.Y.Z' (e.g. 'version 0.1.0'). Enforces Atari Mode 2 40-char line limit.
+    """
     if scroll_file is None:
         scroll_file = Path("scroll/title.txt")
     if isinstance(scroll_file, str):
@@ -341,11 +345,19 @@ def update_scroll_version(version: str, scroll_file: Path | None = None) -> bool
     content = scroll_file.read_text(encoding="utf-8")
     clean_version = version.lstrip("v").strip()
 
-    pattern = re.compile(r"version\s+v?[0-9]+(?:\.[0-9]+)*", re.IGNORECASE)
+    pattern = re.compile(r"(\bversion\s+v?|\bv)[0-9]+(?:\.[0-9]+)*", re.IGNORECASE)
     if not pattern.search(content):
         return False
 
-    new_content = pattern.sub(f"version {clean_version}", content)
+    new_content = pattern.sub(rf"\g<1>{clean_version}", content)
+
+    # Validate that no line exceeds the Atari 40-character playfield width limit
+    for i, line in enumerate(new_content.splitlines()):
+        if len(line.strip()) > 40:
+            raise ValueError(
+                f"Line {i} in {scroll_file} exceeds Atari 40-character limit ({len(line.strip())} chars): '{line.strip()}'"
+            )
+
     scroll_file.write_text(new_content, encoding="utf-8")
     return True
 

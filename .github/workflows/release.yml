@@ -58,7 +58,7 @@ jobs:
       - name: Analyze Conventional Commits & Determine Version
         id: semver
         run: |
-          python scripts/release_helper.py --event-path "$env:GITHUB_EVENT_PATH" --output-file "$env:GITHUB_OUTPUT" --changelog-file "changelog.md" --update-manifest
+          python scripts/release_helper.py --event-path "$env:GITHUB_EVENT_PATH" --output-file "$env:GITHUB_OUTPUT" --changelog-file "changelog.md" --update-manifest --update-scroll
 
       - name: Log Release Decision
         run: |
@@ -97,19 +97,19 @@ jobs:
           }
           Write-Host "Successfully built call_of_the_wintermon.xex ($((Get-Item call_of_the_wintermon.xex).Length) bytes)"
 
-      - name: Commit & Push updated manifest.yaml to main
+      - name: Commit & Push updated manifest.yaml and scroll/title.txt to main
         if: steps.semver.outputs.should_release == 'true'
         id: push_manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.yaml
+          git add manifest.yaml scroll/title.txt
           $status = git status --porcelain
           if ($status) {
-            git commit -m "chore(release): bump manifest version to ${{ steps.semver.outputs.version }} [skip ci]"
+            git commit -m "chore(release): bump version to ${{ steps.semver.outputs.version }} in manifest and scroll text [skip ci]"
             git push origin HEAD:main
           } else {
-            Write-Host "No changes in manifest.yaml to commit."
+            Write-Host "No changes in manifest.yaml or scroll/title.txt to commit."
           }
           "sha=$(git rev-parse HEAD)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
