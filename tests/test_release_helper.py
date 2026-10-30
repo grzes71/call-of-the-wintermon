@@ -188,6 +188,31 @@ def test_update_scroll_version(tmp_path: Path):
     assert "version 0.1.0" not in content
 
 
+def test_update_scroll_version_v_prefix(tmp_path: Path):
+    scroll_file = tmp_path / "title.txt"
+    scroll_file.write_text(
+        "CALL OF THE WINTERMON v0.1.0\nATARI 8-BIT PLATFORM GAME\ngithub.com/grzes71/call-of-the-wintermon\nPRESS FIRE TO START",
+        encoding="utf-8",
+    )
+
+    assert update_scroll_version("v0.2.0", scroll_file) is True
+    content = scroll_file.read_text(encoding="utf-8")
+    assert "CALL OF THE WINTERMON v0.2.0" in content
+    assert "v0.1.0" not in content
+
+
+def test_update_scroll_version_line_too_long_rejected(tmp_path: Path):
+    scroll_file = tmp_path / "title.txt"
+    # 38 chars initially, adding a long version string will exceed 40 chars
+    scroll_file.write_text(
+        "CALL OF THE WINTERMON SPECIAL EDITION v0.1.0\nPRESS FIRE",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="exceeds Atari 40-character limit"):
+        update_scroll_version("100.200.300-super-extra-long-suffix", scroll_file)
+
+
 def test_update_scroll_version_no_pattern(tmp_path: Path):
     scroll_file = tmp_path / "title.txt"
     scroll_file.write_text("CALL OF THE WINTERMON\nPRESS FIRE", encoding="utf-8")
@@ -215,6 +240,8 @@ def test_cli_execution(tmp_path: Path, monkeypatch):
     changelog_file = tmp_path / "changelog.md"
     manifest_file = tmp_path / "manifest.yaml"
     manifest_file.write_text('version: "0.1.0"\n', encoding="utf-8")
+    scroll_file = tmp_path / "title.txt"
+    scroll_file.write_text("CALL OF THE WINTERMON v0.1.0\nPRESS FIRE\n", encoding="utf-8")
 
     monkeypatch.setattr(
         "sys.argv",
@@ -229,6 +256,9 @@ def test_cli_execution(tmp_path: Path, monkeypatch):
             "--update-manifest",
             "--manifest-file",
             str(manifest_file),
+            "--update-scroll",
+            "--scroll-file",
+            str(scroll_file),
         ],
     )
 
@@ -239,3 +269,4 @@ def test_cli_execution(tmp_path: Path, monkeypatch):
     assert changelog_file.exists()
     assert "correct jump physics" in changelog_file.read_text(encoding="utf-8")
     assert 'version: "0.1.1"' in manifest_file.read_text(encoding="utf-8")
+    assert "CALL OF THE WINTERMON v0.1.1" in scroll_file.read_text(encoding="utf-8")
