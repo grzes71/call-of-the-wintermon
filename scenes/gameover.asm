@@ -31,6 +31,7 @@ GAMEOVER_TEXT_LINES   = 18       ; ANTIC 2 lines in the display list
 GAMEOVER_LINE_WIDTH   = 40
 GAMEOVER_TEXT_BYTES   = GAMEOVER_TEXT_LINES * GAMEOVER_LINE_WIDTH   ; 720
 GAMEOVER_CLEAR_BYTES  = GAMEOVER_HEADER_BYTES + GAMEOVER_TEXT_BYTES ; 1040
+GAMEOVER_HOLD_FRAMES  = 50       ; Minimum hold delay (50 PAL frames = 1.0 second)
 
 ; --- Buffers inside GAME_VRAM (no new XEX segment; cleared on every entry) ---
 gameover_header_buf = GAME_VRAM + $0000    ; $3000-$313F, 320 B
@@ -76,6 +77,7 @@ gameover_line     .byte 0          ; current text line while copying
 gameover_len      .byte 0          ; length of the current text line
 gameover_left     .byte 0          ; centring margin of the current text line
 gameover_dst      .word 0          ; destination line start while copying
+gameover_timer    .byte 0          ; minimum hold delay timer before accepting input
 
 ; --- Variant tables ---
 gameover_text_ptrs_lo:
@@ -259,31 +261,19 @@ dlist_gameover_success:
 ; the display list + DLI chain and enables the screen.
 ; ==============================================================================
 .proc gameover_init
-    ; 1. Turn off DMA (display list + players/missiles) while rebuilding the screen
+    ; 1. Turn off DMA and disable NMIs while rebuilding the screen
     lda #0
     sta SDMCTL
     sta DMACTL
+    sta NMIEN
+    sta NMIRES
 
-    ; 2. Disable GTIA PMG graphics and clear all player/missile positions and sizes
-    sta GRACTL
-    sta HPOSP0
-    sta HPOSP1
-    sta HPOSP2
-    sta HPOSP3
-    sta HPOSM0
-    sta HPOSM1
-    sta HPOSM2
-    sta HPOSM3
-    sta SIZEP0
-    sta SIZEP1
-    sta SIZEP2
-    sta SIZEP3
-    sta SIZEM
-    sta GRAFP0
-    sta GRAFP1
-    sta GRAFP2
-    sta GRAFP3
-    sta GRAFM
+    ; 2. Disable GTIA PMG graphics and clear all player/missile positions, sizes, and colors ($D000-$D01D)
+    ldx #$1D
+@clr_gtia
+    sta HPOSP0,x
+    dex
+    bpl @clr_gtia
 
     ; 3. Clear the active PMG memory buffer ($6B00-$6FFF, 1,280 bytes)
     tax
@@ -302,26 +292,32 @@ dlist_gameover_success:
 
     ; 5. Variant from the existing game result: GAME_SUCCESS -> SUCCESS, everything
     ;    else (GAME_FAILED, GAME_RESULT_NONE) -> FAILURE.
+    ldx #GAMEOVER_FAILURE
     lda game_result
     cmp #GAME_SUCCESS
-    beq @success
-    lda #GAMEOVER_FAILURE
-    jmp @variant_ready
-@success
-    lda #GAMEOVER_SUCCESS
+    bne @variant_ready
+    ldx #GAMEOVER_SUCCESS
 @variant_ready
-    sta gameover_result
+    stx gameover_result
 
-    ; 6. Clear exactly 1040 bytes of GAME_VRAM (header + text buffers)
+    ; 6. Repoint Display List early to prevent ANTIC from executing orphaned gameplay lines
+    lda gameover_dlist_ptrs_lo,x
+    sta SDLSTL
+    sta DLISTL
+    lda gameover_dlist_ptrs_hi,x
+    sta SDLSTH
+    sta DLISTH
+
+    ; 7. Clear exactly 1040 bytes of GAME_VRAM (header + text buffers)
     jsr gameover_clear_buffers
 
-    ; 7. Header glyphs (same 2bpp generator as the title screen)
+    ; 8. Header glyphs (same 2bpp generator as the title screen)
     jsr gameover_generate_header
 
-    ; 8. ANTIC 2 text lines, centred while copying
+    ; 9. ANTIC 2 text lines, centred while copying
     jsr gameover_copy_text
 
-    ; 9. Colours of this variant (read by the DLI chain)
+    ; 10. Colours of this variant (read by the DLI chain)
     ldx gameover_result
     lda gameover_color_ptrs_lo,x
     sta zp_ptr_src
@@ -333,14 +329,6 @@ dlist_gameover_success:
     sta gameover_colors,y
     dey
     bpl @copy_colors
-
-    ; 10. Display list of this variant
-    lda gameover_dlist_ptrs_lo,x
-    sta SDLSTL
-    sta DLISTL
-    lda gameover_dlist_ptrs_hi,x
-    sta SDLSTH
-    sta DLISTH
 
     ; 11. Character set for the ANTIC 2 text (same 1 KB font as the intro/title)
     lda >intro_font
@@ -360,9 +348,13 @@ dlist_gameover_success:
     sta SDMCTL
     sta DMACTL
 
-    ; 14. Require releasing fire before accepting the next press
+    ; 14. Purge OS keyboard latch and initialize debounce & hold delay timer
+    lda #$FF
+    sta CH
     lda #0
     sta fire_released
+    lda #GAMEOVER_HOLD_FRAMES
+    sta gameover_timer
 
     ; 15. Silence the sound effects engine
     jsr sfx_stop_all
@@ -623,19 +615,30 @@ dlist_gameover_success:
     lda #>dli_gameover_header
     sta VDSLST+1
 
+    ; Check minimum hold delay timer
+    lda gameover_timer
+    beq @check_input
+    dec gameover_timer
+    lda #$FF
+    sta CH              ; Purge key buffer during hold delay
+    lda #0
+    sta fire_released   ; Ensure release flag stays 0 during hold
+    rts
+
+@check_input
     ; Check if button was released first
     lda fire_released
     bne @can_press
 
+    ; Both fire button (STRIG0 = 1) and keyboard (CH = $FF) must be released
     lda STRIG0
-    bne @btn_released
+    beq @still_pressed
     lda CH
     cmp #$FF
-    beq @no_input
-@btn_released
+    bne @still_pressed
     lda #1
     sta fire_released
-@no_input
+@still_pressed
     rts
 
 @can_press

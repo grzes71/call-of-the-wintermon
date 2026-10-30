@@ -337,6 +337,9 @@ SCENE_TITLE_FADE_STEPS = 8
 
     ; Update Hero Player 0 (joystick input, horizontal movement, animation & PMG render)
     jsr player_update
+    lda game_state
+    cmp #STATE_GAME
+    bne @playing_done
     jsr enemies_update
     jsr secrets_check_player_collision
 

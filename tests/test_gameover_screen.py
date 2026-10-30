@@ -481,7 +481,7 @@ def run_gameover_frame(mpu, mem, labels, steps: int = 400_000, tick: int = 40) -
 
 
 def test_gameover_run_returns_to_the_title_screen():
-    """Fire (after being released once) leaves to the title screen and disables the DLI."""
+    """Fire (after hold delay and being released once) leaves to the title screen and disables the DLI."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -491,15 +491,45 @@ def test_gameover_run_returns_to_the_title_screen():
     init_gameover(mpu, mem, labels, 1)      # FAILURE screen
     mem[labels["GAME_STATE"]] = labels["STATE_OVER"]
 
-    # Fire still held from the gameplay: the handler only arms the release flag
+    # During hold delay timer, any input is ignored and FIRE_RELEASED stays 0
+    assert mem[labels["GAMEOVER_TIMER"]] > 0
+    run_gameover_frame(mpu, mem, labels)
+    assert mem[labels["FIRE_RELEASED"]] == 0
+    assert mem[labels["GAME_STATE"]] != labels["STATE_TITLE"]
+
+    # When hold timer expires, releasing the button arms the release flag
+    mem[labels["GAMEOVER_TIMER"]] = 0
     mem[labels["FIRE_RELEASED"]] = 0
-    mem[labels["STRIG0"]] = 0
+    mem[labels["CH"]] = 0xFF
+    mem[labels["STRIG0"]] = 1               # Button released
     run_gameover_frame(mpu, mem, labels)
     assert mem[labels["FIRE_RELEASED"]] == 1
     assert mem[labels["GAME_STATE"]] != labels["STATE_TITLE"]
 
     # Fire pressed again: leave to the title screen with the DLI disabled
+    mem[labels["STRIG0"]] = 0               # Button pressed
     run_gameover_frame(mpu, mem, labels)
     assert mem[labels["GAME_STATE"]] == labels["STATE_TITLE"]
     assert mem[labels["NMIEN"]] == 0x40
     assert mem[labels["VSCROL"]] == 0 and mem[labels["HSCROL"]] == 0
+
+
+def test_gameover_run_keypress_returns_to_the_title_screen():
+    """Keypress (after hold delay and release) leaves to the title screen and clears CH."""
+    mem, labels = load_xex_and_symbols()
+    mpu = MPU(memory=mem)
+    mpu.sp = 0xFD
+    mem[0x01FE] = 0x1F
+    mem[0x01FF] = 0x00
+
+    init_gameover(mpu, mem, labels, 1)      # FAILURE screen
+    mem[labels["GAME_STATE"]] = labels["STATE_OVER"]
+    mem[labels["GAMEOVER_TIMER"]] = 0
+    mem[labels["FIRE_RELEASED"]] = 1
+    mem[labels["STRIG0"]] = 1
+    mem[labels["CH"]] = 0x21                # Spacebar keypress
+
+    run_gameover_frame(mpu, mem, labels)
+    assert mem[labels["GAME_STATE"]] == labels["STATE_TITLE"]
+    assert mem[labels["CH"]] == 0xFF        # Buffer cleared
+    assert mem[labels["NMIEN"]] == 0x40
