@@ -113,5 +113,6 @@ When available under `.agents/skills/`, consult the following tools:
 | Skill | Path | Description & Trigger Criteria |
 | --- | --- | --- |
 | `atari-image-converter` | `.agents/skills/atari-image-converter/SKILL.md` | Converter pipeline for modern images to ANTIC graphics. |
+| `atari-music-composer` | `.agents/skills/atari-music-composer/SKILL.md` | Audio tooling and compositional pipeline for Atari POKEY music. |
 | `atari8bit` | `.agents/skills/atari8bit/SKILL.md` | Atari hardware architecture specs. |
 | `mads` | `.agents/skills/mads/SKILL.md` | MADS assembler directives and macro syntax. |

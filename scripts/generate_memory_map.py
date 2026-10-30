@@ -98,7 +98,7 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
         return "Title VScroll VRAM & Text", "GRAPHICS", COLORS["GRAPHICS"], "Vertical scroll VRAM ($4000) + Centered text lines ($4078)"
     if start in (0x5000, 0x2C30, 0x2D00):
         return "Scene Runtime Engine", "METADATA", COLORS["METADATA"], "Secrets (+sprite channel dispatch), enemies & SFX runtime engine"
-    if start in (0xA800, 0xA400, 0xA300, 0xA220):
+    if start in (0xA800, 0xA400, 0xA300, 0xA220, 0x9DFE, 0x9DFC, 0x9E00):
         return "Scene SoA Tables & DLI Blocks", "METADATA", COLORS["METADATA"], "Scene definitions, platforms, objects, pointer tables & per-scene DLI blocks (grows with the scene count)"
     if start == 0x6000:
         return "Title Display List", "DLIST", COLORS["DLIST"], "Procedural 2bpp Title Display List with Mode 2 VScroller"
@@ -126,7 +126,7 @@ def describe_free_gap(start: int, end: int, size: int) -> str:
         return "Low RAM gap before Gameplay VRAM ($3000) — vacated by scenes data"
     if end == 0x5FFF:
         return "Free expansion headroom in the $5000 block before Title DLIST ($6000)"
-    if start in (0xA800, 0xA400, 0xA300, 0xA220) or end in (0xA7FF, 0xA3FF, 0xA2FF, 0xA21F):
+    if start in (0xA800, 0xA400, 0xA300, 0xA220, 0x9DFC, 0x9E00) or end in (0xA7FF, 0xA3FF, 0xA2FF, 0xA21F):
         return "Tile headroom before the Scene Data Tables — keep the tilesets below"
     if end == 0x6AFF or start == 0x69C0:
         return "Free headroom in PMG block ($6800-$6AFF) before PMG missiles ($6B00)"

@@ -4,7 +4,11 @@
 # ==============================================================================
 
 # Toolchain configuration
-PYTHON           ?= .venv/Scripts/python.exe
+ifeq ($(wildcard $(CURDIR)/.venv/Scripts/python.exe),)
+    PYTHON ?= python
+else
+    PYTHON ?= $(CURDIR)/.venv/Scripts/python.exe
+endif
 MADS             ?= c:/Apps/Mad-Assembler-2.1.6/bin/windows_x86_64/mads.exe
 ALTIRRA          ?= C:/Apps/Altirra-4.40/Altirra64.exe
 
@@ -46,6 +50,10 @@ MUSIC_TITLE_JSON := music/title.json
 MUSIC_TITLE_ASM  := $(GEN_DIR)/title_music.asm
 MUSIC_INTRO_DSL  := music/intro.dsl
 MUSIC_INTRO_ASM  := $(GEN_DIR)/intro_music.asm
+MUSIC_GAMEOVER_DSL := music/game_over.dsl
+MUSIC_GAMEOVER_ASM := $(GEN_DIR)/game_over_music.asm
+MUSIC_VICTORY_DSL  := music/victory.dsl
+MUSIC_VICTORY_ASM  := $(GEN_DIR)/victory_music.asm
 
 SPRITES_SRC       := sprites/objects.sprite.json
 SPRITES_ASM       := $(GEN_DIR)/sprites_data.asm
@@ -67,7 +75,7 @@ ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 
-.PHONY: all assets tiles music data tests xex check_memory run clean
+.PHONY: all assets tiles music data tests test xex check_memory run clean stats
 
 all: assets tiles music data xex tests check_memory
 
@@ -108,7 +116,7 @@ $(TILES_ARTIFACTS): $(TILES_SRCS) scripts/convert_tiles.py
 # ------------------------------------------------------------------------------
 # 3. Audio / Music compilation
 # ------------------------------------------------------------------------------
-music: $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM)
+music: $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(MUSIC_GAMEOVER_ASM) $(MUSIC_VICTORY_ASM)
 
 $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 	@$(MKDIR) $(GEN_DIR)
@@ -117,6 +125,14 @@ $(MUSIC_TITLE_ASM): $(MUSIC_TITLE_JSON) scripts/compile_music.py
 $(MUSIC_INTRO_ASM): $(MUSIC_INTRO_DSL) scripts/compile_music.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_intro_data
+
+$(MUSIC_GAMEOVER_ASM): $(MUSIC_GAMEOVER_DSL) scripts/compile_music.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_gameover_data
+
+$(MUSIC_VICTORY_ASM): $(MUSIC_VICTORY_DSL) scripts/compile_music.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_music.py -i $< -o $@ -l music_victory_data
 
 # ------------------------------------------------------------------------------
 # 4. Data generation (Scene structures, platforms, objects, sprites)
@@ -156,6 +172,8 @@ $(TARGET): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $
 tests: $(TARGET)
 	$(PYTHON) -m pytest -v
 
+test: tests
+
 # ------------------------------------------------------------------------------
 # 6. Automated memory map verification and visual report
 # ------------------------------------------------------------------------------
@@ -166,6 +184,9 @@ memory_map: $(TARGET) scripts/generate_memory_map.py
 	$(PYTHON) scripts/generate_memory_map.py $(TARGET) --pdf memory_map.pdf
 
 map: memory_map
+
+stats: scripts/game_stats.py
+	$(PYTHON) scripts/game_stats.py
 
 # ------------------------------------------------------------------------------
 # 7. Emulator execution (Altirra)

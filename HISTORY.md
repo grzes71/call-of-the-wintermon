@@ -2,6 +2,88 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-30] - Release Workflow Review Fixes
+- [.github/workflows/release.yml](.github/workflows/release.yml): checkout now uses the PR base branch (not `refs/pull/N/merge`) so the manifest push to `main` is correct.
+- Added `concurrency` group `release`; removed redundant `make test` (already in `make all`); fixed escaped `$(...)` in the build log.
+- Release tag now targets the commit produced by the manifest bump (`target_commitish` from `push_manifest` step output).
+
+## [2026-10-30] - Add GitHub Release Workflow and Conventional Commits Automation
+
+- **GitHub Actions Release Workflow ([.github/workflows/release.yml](.github/workflows/release.yml))**:
+  - Implemented automated release pipeline triggered on PR merge into `main` and manual `workflow_dispatch`.
+  - Sets up Python 3.14, installs dependencies, derives SemVer bumps via conventional commits, downloads MADS 2.1.6, runs `make all` & `make test`, bumps version in [manifest.yaml](manifest.yaml), and creates GitHub Releases with attached binary [call_of_the_wintermon.xex](call_of_the_wintermon.xex).
+- **Release Helper Tooling ([scripts/release_helper.py](scripts/release_helper.py))**:
+  - Ported and tailored the release helper tool from the Jabberwocky project.
+  - Implemented Conventional Commits message parser, SemVer bump calculator, Markdown changelog generator in Polish, and automated version updaters for [manifest.yaml](manifest.yaml) and scroll texts.
+- **Build Pipeline Toolchain & Alias Updates ([Makefile](Makefile))**:
+  - Added portable Python detection (`ifeq ($(wildcard ...))`), ensuring seamless execution in both local `.venv` environments and CI runners.
+  - Added `test` alias forwarding to `tests` target.
+- **Unit and Integration Tests ([tests/test_release_helper.py](tests/test_release_helper.py))**:
+  - Added unit test suite covering commit parsing, bump determination, changelog synthesis, manifest/scroll version patching, and CLI exit paths (17 new tests, 781 total passing).
+
+## [2026-10-29] - Decouple Physics Gap Jump Test from Scene Layout Constraints
+
+- **Test Fixture Independence and Agnosticism ([tests/scene_expectations.py](tests/scene_expectations.py), [tests/test_player_movement.py](tests/test_player_movement.py))**:
+  - Removed brittle `missile_left` requirement from `scene_platform_roles` in [tests/scene_expectations.py](tests/scene_expectations.py), which previously failed collection when `scenes/01-forest.json` was edited and row 88 was merged into a single platform.
+  - Refactored `test_player_jump_short_crosses_gap` in [tests/test_player_movement.py](tests/test_player_movement.py) to synthesize a 16px gap across platforms in RAM using `PLAT_SCRATCH_IDX` and `PLAT_FLOOR` on `PLAT_FLOOR["y"]` per Rule 05.
+  - Test suite now executes independently of specific static platform layout in production scene files.
+
+## [2026-10-29] - Relocate Platform Helpers and Reclaim Headroom in Scene Tables
+
+- **Relocation of Platform and Scene Object Helpers ([engine/platforms.asm](engine/platforms.asm), [engine/platforms_init_helpers.asm](engine/platforms_init_helpers.asm), [engine/platforms_carry.asm](engine/platforms_carry.asm), [main.asm](main.asm))**:
+  - Extracted `secrets_copy_plat_idx` and `enemies_copy_plat_idx` (111 bytes) into [engine/platforms_init_helpers.asm](engine/platforms_init_helpers.asm) and placed them in the unused tail of the Title Display List segment ($6000, `$607A-$60E8 < $6100`).
+  - Extracted `platforms_carry_objects` (118 bytes) into [engine/platforms_carry.asm](engine/platforms_carry.asm) and placed it in the unused headroom between Intro Screen Handler and PMG active memory ($6800, `$6A6A-$6ADF < $6B00`).
+  - Freed 229 bytes directly from `SCENE_TABLES` ($9DFE).
+- **Headroom Expansion and Boundary Compliance**:
+  - `SCENE_TABLES` shrunk from `$9DFE-$C00A` (8,717 bytes, 11 bytes into OS ROM) to `$9DFE-$BF25` (8,488 bytes), providing 218 bytes of headroom before `$C000`.
+  - Resolves `AssertionError` in [tests/test_memory_map.py](tests/test_memory_map.py) (`test_build_memory_map_bounds_and_continuity`).
+  - All 764 unit and py65 integration tests pass with zero regressions.
+
+## [2026-10-29] - Integrate Game Over and Victory Music with Memory Rebalancing
+
+- **Game Over & Victory Audio Tracks ([music/game_over.dsl](music/game_over.dsl), [music/victory.dsl](music/victory.dsl), [Makefile](Makefile))**:
+  - Added build targets and dependency graph rules compiling `music/game_over.dsl` into `gen/game_over_music.asm` (343 bytes) and `music/victory.dsl` into `gen/victory_music.asm` (754 bytes).
+- **Audio Driver Expansion ([lib/audio.asm](lib/audio.asm))**:
+  - Added `audio_play_gameover` and `audio_play_victory` entry points in the audio driver interface, cleanly initiating the respective tracks into POKEY channels.
+- **Game Over Scene Audio Dispatch ([scenes/gameover.asm](scenes/gameover.asm))**:
+  - Updated `gameover_init` to inspect `gameover_result` and trigger `audio_play_victory` on `GAMEOVER_SUCCESS` or `audio_play_gameover` on `GAMEOVER_FAILURE`.
+  - Added `jsr audio_update` after `@sync_vblank` in `gameover_run` loop to advance music frames.
+  - Added `jsr audio_stop` upon fire button press before transitioning back to `STATE_TITLE`.
+- **Memory Optimization and Segment Alignment ([main.asm](main.asm), [scenes/title.asm](scenes/title.asm), [engine/platforms.asm](engine/platforms.asm), [scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Leveraged tile reduction in `tiles/depths.png` (saving 1,040 bytes, placing `tiles_data_end` at `$9DFB`).
+  - Relocated `SCENE_TABLES` to `$9DFE` (preserving a 2-byte gap for XEX segment separation) and included both `gen/game_over_music.asm` and `gen/victory_music.asm`.
+  - Optimized title screen initialization in `scenes/title.asm` (saved 4 bytes) and platform collision/timer logic in `engine/platforms.asm` (saved 28 bytes), fitting `SCENE_TABLES` at `$9DFE-$BFF9` (8,700 bytes) strictly within the `$C000` OS ROM boundary with 6 bytes segment margin and 887 bytes total headroom.
+  - Updated memory checker and map generator scripts to recognize the new segment start addresses.
+- **Unit and py65 Emulation Tests ([tests/test_gameover_music.py](tests/test_gameover_music.py))**:
+  - Created test suite asserting symbol exports, initialization routines, and proper track selection in `gameover_init` for both failure and victory outcomes.
+
+## [2026-10-29] - Fix YAML Frontmatter Structure in Atari Music Composer Skill
+
+- **Skill Specification Conformance ([.agents/skills/atari-music-composer/SKILL.md](.agents/skills/atari-music-composer/SKILL.md))**:
+  - Added required YAML frontmatter (`name: atari-music-composer`, `description: ...`) at the top of the file, allowing Antigravity and agent runtime to discover and register the skill.
+  - Normalized line endings across the file.
+- **Project Documentation ([.agents/AGENTS.md](.agents/AGENTS.md))**:
+  - Registered `atari-music-composer` in Section 8 (Available Agent Skills table).
+
+
+## [2026-10-29] - Add Game Statistics Tool and Per-Scene Metrics Reporting
+
+- **Game Statistics Tool ([scripts/game_stats.py](scripts/game_stats.py))**:
+  - Implemented standalone CLI utility reporting total and per-scene statistics for platforms (static vs. moving, widths breakdown), enemies, and secrets.
+  - Generates detailed listings of enemy and secret types/names per scene and globally across the game, with support for plain text, Markdown, and JSON export formats.
+  - Added `stats` target to [Makefile](Makefile).
+- **Unit and Integration Tests ([tests/test_game_stats.py](tests/test_game_stats.py))**:
+  - Added unit test suite verifying definitions parsing, single-scene metrics extraction, aggregated game totals, and compatibility with the live scene manifest.
+
+
+## [2026-10-29] - Increase Per-Scene Secret Capacity to 20 and Relocate Secret Arrays
+
+- **Capacity Increase ([scripts/sprite_roles.py](scripts/sprite_roles.py), [engine/secrets.asm](engine/secrets.asm))**:
+  - Increased `MAX_SECRETS_TOTAL` and `MAX_SECRETS` from `16` to `20`, allowing scenes like `07-depths.json` (17 secrets) to build and validate cleanly without exceeding engine arrays.
+- **Memory Balancing ([engine/secrets.asm](engine/secrets.asm), [engine/secrets_channel.asm](engine/secrets_channel.asm), [main.asm](main.asm))**:
+  - Relocated `secrets_special`, `secrets_killer`, `secrets_extra_life`, and `secrets_channel` arrays from `SCENES_DATA` ($5000) to the unused tail of the `GAMEOVER_CODE` segment ($5C00, `$5F0A-$5FDB < $6000`).
+  - Preserves headroom in both segments: `SCENES_DATA` ends at `$5BBD` (67 bytes free before `$5C00`), and `GAMEOVER_CODE` ends at `$5FDB` (37 bytes free before `$6000`).
+
 ## [2026-10-29] - Eliminate Irregular Gameplay Screen Flickering and Frame Overruns
 
 - **Root Cause**:

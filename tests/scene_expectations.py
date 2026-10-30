@@ -249,33 +249,6 @@ def scene_platform_roles(scene_index: int) -> tuple[dict[str, dict[str, Any]], l
         if ceiling is None:
             ceiling = next((p for p in platforms if p["y"] < floor["y"]), None)
         add("ceiling", ceiling)
-        add(
-            "missile_left",
-            next(
-                (
-                    p
-                    for p in platforms
-                    if p["type_code"] == 1
-                    and p["y"] == floor["y"]
-                    and p["x"] + p["width"] <= floor["x"]
-                    and any(
-                        t["y"] == floor["y"]
-                        and t["x"] > (p["x"] + p["width"] - 6) + 4
-                        and t["x"] <= (p["x"] + p["width"] - 6 + 18) + 4 < t["x"] + t["width"]
-                        for t in platforms
-                    )
-                    and not any(
-                        q["y"] == floor["y"] - 16
-                        and (upper is None or q["id"] != upper["id"])
-                        and q["x"] < (p["x"] + p["width"] - 6 + 18 + 8)
-                        and q["x"] + q["width"] > (p["x"] + p["width"] - 6)
-                        for q in platforms
-                    )
-                ),
-                None,
-            ),
-        )
-
     add("left_edge", next((p for p in platforms if p["x"] == 0), None))
     add("right_edge", next((p for p in platforms if p["x"] + p["width"] == scene_width), None))
     top_row_y = min((p["y"] for p in platforms), default=None)

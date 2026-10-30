@@ -63,8 +63,6 @@ PLAT_RIGHT_EDGE_IDX = _role_index("right_edge")
 PLAT_CEILING = PLAT_ROLES["ceiling"]                         # ceiling row above the floor
 PLAT_TOP_ROW = PLAT_ROLES["top"]                             # top platform row
 PLAT_TOP_ROW_IDX = _role_index("top")
-PLAT_GAP_LEFT = PLAT_ROLES["missile_left"]                   # missile platform left of the floor
-PLAT_GAP_LEFT_IDX = _role_index("missile_left")
 PLAT_JUMP_FROM = PLAT_ROLES["jump_from"]                     # missile platform on its row
 PLAT_JUMP_FROM_IDX = _role_index("jump_from")
 PLAT_JUMP_TO = PLAT_ROLES["jump_to"]                         # sprite platform left of it
@@ -814,23 +812,36 @@ def test_player_jump_short_crosses_gap():
     mpu.a = SCENE0
     run_subroutine(mpu, labels["PLAYER_INIT"])
 
-    # Start on the missile platform left of the floor row, near its right edge, and jump
-    # across the gap onto the floor platform (all geometry from the scene JSON).
+    # Configure a 16px gap in RAM using PLAT_SCRATCH_IDX and PLAT_FLOOR on PLAT_FLOOR["y"]
+    # (built in RAM per Rule 05 so scene edits or reordering cannot remove the test premise).
+    plat_ptr_x = mem[labels["ZP_PLAT_PTR_X"]] | (mem[labels["ZP_PLAT_PTR_X"] + 1] << 8)
+    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
+    plat_ptr_w = mem[labels["ZP_PLAT_PTR_W"]] | (mem[labels["ZP_PLAT_PTR_W"] + 1] << 8)
+
+    plat_y = PLAT_FLOOR["y"]
+    scratch_x = 16
+    scratch_w = 16
+    floor_x = 48  # 16px gap between scratch (16..32) and floor (48..144)
+    floor_w = 96
+
+    mem[plat_ptr_x + PLAT_SCRATCH_IDX] = scratch_x
+    mem[plat_ptr_w + PLAT_SCRATCH_IDX] = scratch_w
+    mem[plat_ptr_y + PLAT_SCRATCH_IDX] = plat_y
+
+    mem[plat_ptr_x + PLAT_FLOOR_IDX] = floor_x
+    mem[plat_ptr_w + PLAT_FLOOR_IDX] = floor_w
+    mem[plat_ptr_y + PLAT_FLOOR_IDX] = plat_y
+
     jump_len = labels["JUMP_SHORT_LEN"]
-    start_x = PLAT_GAP_LEFT["x"] + PLAT_GAP_LEFT["width"] - 6
-    landing_x = start_x + jump_dx_total(mem, labels, "JUMP_SHORT_DX", jump_len)
-    target = platform_supporting(SCENE0, landing_x + 4, PLAT_FLOOR["y"])
-    target_idx = scene_platform_index(SCENE0, target["id"])
-    assert target["x"] > start_x + 4, (
-        f"this scenario needs a gap right of {PLAT_GAP_LEFT['id']} with {target['id']} across it"
-    )
+    start_x = scratch_x + scratch_w - 6  # 26
+    landing_x = start_x + jump_dx_total(mem, labels, "JUMP_SHORT_DX", jump_len)  # 26 + 18 = 44
+    target_idx = PLAT_FLOOR_IDX
 
     mem[labels["PLAYER_X"]] = start_x
     mem[labels["PLAYER_Y"]] = SPAWN0_Y
-    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_GAP_LEFT_IDX
+    mem[labels["PLAYER_PLAT_IDX"]] = PLAT_SCRATCH_IDX
 
     # Ensure open sky above the gap: clear the platform row above the starting platform
-    plat_ptr_y = mem[labels["ZP_PLAT_PTR_Y"]] | (mem[labels["ZP_PLAT_PTR_Y"] + 1] << 8)
     mem[plat_ptr_y + PLAT_UPPER_IDX] = 0
 
     # Release fire, then press Fire + Right (STICK0 bit 3=0 -> 0x07)

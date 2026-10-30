@@ -17,7 +17,7 @@
 ; ==============================================================================
 
 ; --- Per-secret sprite channel: 0..2 = Players 1..3, 3 = 5th player (missiles) ---
-secrets_channel :MAX_SECRETS .byte 0
+; secrets_channel declared in main.asm under GAMEOVER_CODE
 
 ; PMG page holding the bitmap of each channel (index = channel)
 secret_pmg_pages

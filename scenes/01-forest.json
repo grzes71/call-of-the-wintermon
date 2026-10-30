@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scene": {
-    "name": "Beyond Good and Evil",
+    "name": "Call of the Wild",
     "width": 160,
     "height": 96,
     "tile_source": "tiles/trees.png"
@@ -74,17 +74,6 @@
   ],
   "platforms": [
     {
-      "id": "platform-002",
-      "type": "sprite",
-      "position": {
-        "x": 48,
-        "y": 88
-      },
-      "width": 96,
-      "height": 4,
-      "color_profile_id": 15
-    },
-    {
       "id": "platform-004",
       "type": "sprite",
       "position": {
@@ -126,7 +115,7 @@
       },
       "width": 16,
       "height": 4,
-      "color_profile_id": 20
+      "color_profile_id": 16
     },
     {
       "id": "platform-009",
@@ -137,7 +126,7 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 20
+      "color_profile_id": 16
     },
     {
       "id": "platform-010",
@@ -181,18 +170,18 @@
       },
       "width": 32,
       "height": 4,
-      "color_profile_id": 20
+      "color_profile_id": 16
     },
     {
       "id": "platform-014",
-      "type": "missile",
+      "type": "sprite",
       "position": {
-        "x": 8,
+        "x": 16,
         "y": 88
       },
-      "width": 32,
+      "width": 128,
       "height": 4,
-      "color_profile_id": 15
+      "color_profile_id": 22
     },
     {
       "id": "platform-016",
@@ -280,7 +269,7 @@
       "type": "secret",
       "definition_id": 3,
       "platform_id": "platform-014",
-      "x": 18,
+      "x": 26,
       "dependency": 2
     },
     {
@@ -310,17 +299,17 @@
     }
   ],
   "player_spawn": {
-    "x": 96,
+    "x": 86,
     "y": 68,
     "color": 14
   },
   "row_color_profiles": [
     1,
     16,
-    20,
     16,
     16,
-    15
+    16,
+    22
   ],
   "background_palette": {
     "upper": [

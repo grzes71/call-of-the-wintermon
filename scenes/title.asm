@@ -122,7 +122,6 @@ title_text_logo       = GAME_VRAM + $03C0 ; $33C0–$38BF (1,280 bytes)
     bne @clr_pmg
 
     ; Clear 120-byte vertical scroll buffer with spaces ($00: L0, L1, L2)
-    lda #0
     ldx #TITLE_VS_BUF_LEN - 1
 @clr_vs
     sta title_vs_buf,x
@@ -132,12 +131,11 @@ title_text_logo       = GAME_VRAM + $03C0 ; $33C0–$38BF (1,280 bytes)
     ; Initialize vertical scroll state machine
     lda #TITLE_VS_HIDDEN
     sta title_vs_pos
-    lda #TITLE_VS_STATE_IN
+    lda #TITLE_VS_STATE_IN      ; 0
     sta title_vs_state
+    sta title_vs_index
     lda #TITLE_VS_FRAMES_PER_STEP
     sta title_vs_timer
-    lda #0
-    sta title_vs_index
 
     ; Load first message into L2 (title_vs_buf + 80)
     jsr title_vs_load_message

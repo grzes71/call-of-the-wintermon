@@ -75,7 +75,7 @@ def check_memory(xex_path: Path) -> int:
             seg_type = "Tileset Metadata, Status Line & SFX Engine"
         elif start in (0x5000, 0x2C30, 0x2D00):
             seg_type = "Scene Runtime Engine (secrets/channel dispatch/enemies/sfx)"
-        elif start in (0xA800, 0xA400, 0xA300, 0xA220):
+        elif start in (0xA800, 0xA400, 0xA300, 0xA220, 0x9DFE, 0x9DFC, 0x9E00):
             seg_type = "Scene SoA Tables, DLI Blocks & Pointer Tables (grows with scene count)"
         elif start == 0x3000:
             seg_type = "Gameplay VRAM (ANTIC Mode D 160x96) + DLIST"
@@ -140,7 +140,7 @@ def check_memory(xex_path: Path) -> int:
         prev_end = end
 
     # Scene data tables headroom: how much room is left for additional scenes
-    scene_tables_seg = next((s for s in segments if s[0] in (0xA800, 0xA400, 0xA300, 0xA220)), None)
+    scene_tables_seg = next((s for s in segments if s[0] in (0xA800, 0xA400, 0xA300, 0xA220, 0x9DFE, 0x9DFC, 0x9E00)), None)
     if scene_tables_seg:
         st_start, st_end, st_size = scene_tables_seg
         # The Game Over text segment sits in the same window, so its bytes are not

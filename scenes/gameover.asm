@@ -366,6 +366,15 @@ dlist_gameover_success:
 
     ; 15. Silence the sound effects engine
     jsr sfx_stop_all
+
+    ; 16. Start appropriate music (victory or failure)
+    lda gameover_result
+    cmp #GAMEOVER_SUCCESS
+    beq @start_victory
+    jsr audio_play_gameover
+    rts
+@start_victory
+    jsr audio_play_victory
     rts
 .endp
 
@@ -605,6 +614,9 @@ dlist_gameover_success:
     cmp RTCLOK+2
     beq @sync_vblank
 
+    ; Advance music playback frame
+    jsr audio_update
+
     ; Keep the DLI chain head installed at the start of each frame (fallback safety)
     lda #<dli_gameover_header
     sta VDSLST
@@ -640,6 +652,9 @@ dlist_gameover_success:
     sta CH              ; Clear key buffer
 
 @fire_pressed
+    ; Silence music before leaving Game Over screen
+    jsr audio_stop
+
     ; Leave the screen clean for the title screen: no scroll, DLI disabled
     lda #0
     sta HSCROL

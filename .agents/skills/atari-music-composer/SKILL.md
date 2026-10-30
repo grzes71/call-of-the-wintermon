@@ -1,3 +1,12 @@
+---
+name: atari-music-composer
+description: >-
+  Use for Atari Music Composer tooling and POKEY audio pipelines: composing
+  music procedurally or with AI, validating 4-channel POKEY constraints,
+  parsing and compiling Music DSL and AICompositionDoc, rendering audio to WAV,
+  or exporting relocatable 6502 assembly (player.asm) and MADS data.
+---
+
 # Atari Music Composer — AI Agent Skill & Tooling Reference
 
 ## 1. Overview & Core Purpose

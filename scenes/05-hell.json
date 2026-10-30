@@ -95,7 +95,7 @@
       "height": 4,
       "color_profile_id": 6,
       "scroll": "medium",
-      "movement": "left-right",
+      "movement": "right-pause-left",
       "movement_speed": "fast"
     },
     {
@@ -328,13 +328,6 @@
       "dependency": 2
     },
     {
-      "id": 2,
-      "type": "secret",
-      "definition_id": 1,
-      "platform_id": "platform-005",
-      "x": 136
-    },
-    {
       "id": 3,
       "type": "secret",
       "definition_id": 1,
@@ -431,6 +424,29 @@
       "x": 36,
       "speed": "medium",
       "movement_strategy": "left_pause_right"
+    },
+    {
+      "id": 15,
+      "type": "secret",
+      "definition_id": 4,
+      "platform_id": "platform-006",
+      "x": 96,
+      "dependency": 2
+    },
+    {
+      "id": 2,
+      "type": "secret",
+      "definition_id": 1,
+      "platform_id": "platform-007",
+      "x": 56
+    },
+    {
+      "id": 16,
+      "type": "secret",
+      "definition_id": 7,
+      "platform_id": "platform-020",
+      "x": 76,
+      "dependency": 2
     }
   ],
   "player_spawn": {

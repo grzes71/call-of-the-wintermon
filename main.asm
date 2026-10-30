@@ -18,7 +18,7 @@ GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 
 GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
-SCENE_TABLES = $A220    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
+SCENE_TABLES = $9DFE    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
                         ; in the RAM freed by the smaller tilesets (they end at $A20B, keeping 499 B
                         ; of tile headroom before the tables); budget: $A400-$BBFF = 6,144 bytes
 DLIST_ADDR  = $6000     ; Title Display List (99 bytes: $6000-$6062, 1 KB aligned)
@@ -460,6 +460,9 @@ title_dl_vs_addr
     .byte DL_JVB
     .word dlist_title
 
+; --- Scene Object Init Helpers (111 B in $607A-$60E8 < $6100) ---
+    icl 'engine/platforms_init_helpers.asm'
+
 ; ==============================================================================
 ; UNIFIED DLI ENGINE & DOUBLE BUFFERS SEGMENT ($6100)
 ; Strictly between Title DList ($6079) and PMG ($6800)
@@ -494,9 +497,13 @@ plat_cur_x        .byte 0
 ; --- Active Scene Platforms State Part 2 (122 B in $5F0A-$5F83 < $6000) ---
 plat_pas          :42 .byte 0
 plat_hw_info      :42 .byte 0
-secrets_plat_idx  :MAX_SECRETS .byte 0
-secrets_rel_x     :MAX_SECRETS .byte 0
-enemies_plat_idx  :MAX_ENEMIES .byte 0
+secrets_plat_idx    :MAX_SECRETS .byte 0
+secrets_rel_x       :MAX_SECRETS .byte 0
+secrets_special     :MAX_SECRETS .byte 0
+secrets_killer      :MAX_SECRETS .byte 0
+secrets_extra_life  :MAX_SECRETS .byte 0
+secrets_channel     :MAX_SECRETS .byte 0
+enemies_plat_idx    :MAX_ENEMIES .byte 0
 
 ; ==============================================================================
 ; RENDER LOOKUP TABLES SEGMENT ($6800)
@@ -515,6 +522,7 @@ enemies_plat_idx  :MAX_ENEMIES .byte 0
 ; ==============================================================================
     org INTRO_CODE_ADDR
     icl 'scenes/intro.asm'
+    icl 'engine/platforms_carry.asm'
 
 ; ==============================================================================
 ; PLAYER-MISSILE GRAPHICS (PMG) ACTIVE MEMORY SEGMENT ($6B00)
@@ -597,6 +605,8 @@ tiles_data_end
 .if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
     .error "gen/gameover_texts.inc allows a different line count than the display list"
 .endif
+    icl 'gen/game_over_music.asm'
+    icl 'gen/victory_music.asm'
 scene_tables_end
 
 ; ==============================================================================

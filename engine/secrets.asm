@@ -17,7 +17,7 @@
 ; platform row and dependency stage, validated by the compiler and the scene
 ; editor), so this is only a memory guard - it must match MAX_SECRETS_TOTAL in
 ; scripts/sprite_roles.py (asserted by the test suite).
-MAX_SECRETS = 16
+MAX_SECRETS = 20
 SECRETS_BLINK_STEP_FRAMES = 2   ; Frames each luminance step is held (2 = 2x slower blink pulse)
 
 ; --- Active Scene Secrets State (Structure-of-Arrays) ---
@@ -37,9 +37,8 @@ secrets_frame_idx   :MAX_SECRETS .byte 0
 secrets_color       :MAX_SECRETS .byte 0
 secrets_zone        :MAX_SECRETS .byte 0
 secrets_blink       :MAX_SECRETS .byte 0
-secrets_special     :MAX_SECRETS .byte 0
-secrets_killer      :MAX_SECRETS .byte 0
-secrets_extra_life  :MAX_SECRETS .byte 0
+; secrets_special, secrets_killer, secrets_extra_life, and secrets_channel
+; live in the free tail of the  page (main.asm) to fit within -.
 ; The per-secret sprite channel (secrets_channel), the channel-aware PMG/HPOS writers
 ; (secret_pmg_dst / secret_write_player / secret_clear_player) and the scene->state
 ; channel copy (secrets_copy_channels) live in engine/secrets_channel.asm - the
