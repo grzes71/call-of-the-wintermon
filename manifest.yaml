@@ -7,7 +7,7 @@
 # ==============================================================================
 
 name: "Call of the Wintermon"
-version: "0.2.0"
+version: "0.2.1"
 target:
   platform: "Atari 8-bit (XL/XE)"
   cpu: "MOS 6502"
