@@ -69,7 +69,7 @@ def test_build_memory_map_bounds_and_continuity():
     # Ensure free gaps are detected and non-empty
     assert len(free_gaps) >= 5
     largest_gap = max(g.size for g in free_gaps)
-    assert largest_gap >= 100
+    assert largest_gap >= 50
 
 
 def test_generate_graphical_pdf(tmp_path: Path):

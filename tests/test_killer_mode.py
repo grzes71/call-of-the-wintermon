@@ -190,10 +190,10 @@ def test_secret_collect_awards_extra_life():
     mem[labels["PLAYER_LIVES"]] = 2
     run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
 
-    vram = labels["STATUS_LINE_VRAM"]
-    assert mem[vram] == 64      # Heart
-    assert mem[vram + 1] == 64  # Heart
-    assert mem[vram + 2] == 0   # Space (lost life)
+    chars = labels["STATUS_LINE_CHARS"]
+    assert mem[chars] == 64      # Heart
+    assert mem[chars + 1] == 64  # Heart
+    assert mem[chars + 2] == 0   # Space (lost life)
 
     # Arm secret 0 as extra_life secret
     sec_xlf_addr = labels["SECRETS_EXTRA_LIFE"]
@@ -207,9 +207,9 @@ def test_secret_collect_awards_extra_life():
 
     # Lives must be incremented to 3 and third heart rendered on status line
     assert mem[labels["PLAYER_LIVES"]] == 3
-    assert mem[vram] == 64      # Heart
-    assert mem[vram + 1] == 64  # Heart
-    assert mem[vram + 2] == 64  # Heart restored!
+    assert mem[chars] == 64      # Heart
+    assert mem[chars + 1] == 64  # Heart
+    assert mem[chars + 2] == 64  # Heart restored!
 
     # Arm secret 1 without extra_life
     mem[sec_xlf_addr + 1] = 0
@@ -245,7 +245,7 @@ def test_scene_secret_extra_life_rom_tables_compiled_and_loaded():
 
 
 def test_secret_collect_extra_life_caps_at_max_lives():
-    """Verify collecting extra life when at STATUS_MAX_LIVES (20) caps player_lives at 20."""
+    """Verify collecting extra life when at STATUS_MAX_LIVES caps player_lives."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
 
@@ -254,7 +254,8 @@ def test_secret_collect_extra_life_caps_at_max_lives():
     mpu.a = 0
     run_subroutine(mpu, labels["GAME_INIT"])
 
-    mem[labels["PLAYER_LIVES"]] = 20
+    max_lives = labels["STATUS_MAX_LIVES"]
+    mem[labels["PLAYER_LIVES"]] = max_lives
     run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
 
     # Arm secret 0 as extra_life secret
@@ -266,7 +267,7 @@ def test_secret_collect_extra_life_caps_at_max_lives():
     mpu.x = 0
     run_subroutine(mpu, labels["SECRET_COLLECT"])
 
-    assert mem[labels["PLAYER_LIVES"]] == 20
-    vram = labels["STATUS_LINE_VRAM"]
-    assert list(mem[vram : vram + 20]) == [64] * 20
-    assert mem[vram + 20] == 0
+    assert mem[labels["PLAYER_LIVES"]] == max_lives
+    chars = labels["STATUS_LINE_CHARS"]
+    assert list(mem[chars : chars + max_lives]) == [64] * max_lives
+    assert mem[chars + max_lives] == 0

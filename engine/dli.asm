@@ -357,6 +357,11 @@ dli_table_ptrs_hi
     lda >dli_handler
     sta VDSLST+1
 
+    ; Ensure Normal playfield width and PMG DMA are active for main scene
+    lda #$3E
+    sta DMACTL
+    sta SDMCTL
+
     ; Reset DLI pas index to active buffer base offset
     lda dli_active_offset
     sta dli_pas_idx
@@ -650,49 +655,6 @@ dli_table_ptrs_hi
     ; --------------------------------------------------------------------------
     ; EXIT: Restore registers from zero page and return
     ; --------------------------------------------------------------------------
-    lda dli_save_a         ; [3]
-    ldy dli_save_y         ; [3]
-    rti                    ; [6]
-.endp
-
-; ==============================================================================
-; DLI STATUS LINE (DLI 7)
-; Executed on the blank scanline right before ANTIC Mode 2 status line.
-; Sets up black background, white text, and clears PMG positions/sizes.
-; Points VDSLST back to dli_handler for the next frame.
-; ==============================================================================
-.proc dli_status_line
-    sta dli_save_a         ; [3]
-    sty dli_save_y         ; [3]
-
-    sta WSYNC              ; [4]
-    lda #0                 ; [2]
-    sta COLPF2             ; [4] Black background for Mode 2 text
-    lda #$0E               ; [2]
-    sta COLPF1             ; [4] Crisp white text
-    lda #0                 ; [2] Clear PMG positions so no sprites bleed into status bar
-    sta HPOSP0             ; [4]
-    sta HPOSP1             ; [4]
-    sta HPOSP2             ; [4]
-    sta HPOSP3             ; [4]
-    sta HPOSM0             ; [4]
-    sta HPOSM1             ; [4]
-    sta HPOSM2             ; [4]
-    sta HPOSM3             ; [4]
-    sta SIZEP0             ; [4]
-    sta SIZEP1             ; [4]
-    sta SIZEP2             ; [4]
-    sta SIZEP3             ; [4]
-    sta SIZEM              ; [4]
-
-    ; Point VDSLST back to dli_handler and reset pas index for next frame
-    lda dli_active_offset  ; [3]
-    sta dli_pas_idx        ; [3]
-    lda <dli_handler       ; [2]
-    sta VDSLST             ; [4]
-    lda >dli_handler       ; [2]
-    sta VDSLST+1           ; [4]
-
     lda dli_save_a         ; [3]
     ldy dli_save_y         ; [3]
     rti                    ; [6]

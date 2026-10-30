@@ -15,10 +15,11 @@ PLAYER_MAX_X        = 152       ; 160 - 8 (player width)
 PLAYER_HPOS_OFFSET  = 48        ; Normal playfield starts at HPOS 48 ($30)
 PLAYER_DEFAULT_COLOR = $98      ; Royal cyan/blue default for Player 0 (COLPM0 / PCOLR0)
 PLAYER_FALL_SPEED   = 1         ; 1 canvas line per frame
-PLAYER_DEATH_Y      = 94        ; Death threshold: entire frame past bottom of status line (y=94 -> pmg_y=240)
+PLAYER_DEATH_Y      = 92        ; Death threshold: entire frame past bottom of lowest platform
 PLAYER_VISIBLE_DEATH_Y = 68     ; Height of player on lowest platform (plat_y=88, y=88-20=68)
 PLAYER_VISIBLE_DEATH_PMG_Y = 188 ; PMG scanline at lowest platform height: (68*2)+52 = 188
-PLAYER_EMERGE_START_PMG_Y = 224 ; Emergence start: top of sprite at scanline 224 (fully below visible playfield)
+PLAYER_CLIP_PMG_Y       = 216   ; Clip scanline: top of 8-scanline blank margin below Row 5
+PLAYER_EMERGE_START_PMG_Y = 216 ; Emergence start: top of sprite at scanline 216 (fully below visible playfield)
 
 ; --- Player Inertia & Speed Constants ---
 PLAYER_MAX_SPEED    = $80       ; Maximum speed: 128/256 = 0.5 pixels/frame
@@ -252,8 +253,8 @@ player_jump_start_y .byte 0
     clc
     adc player_prev_pmg_y
     bcs @skip_clr_line      ; If carry set (>= 256), wrapped around -> skip!
-    cmp #224
-    bcs @skip_clr_line      ; If >= 224 (status line area) -> skip!
+    cmp #PLAYER_CLIP_PMG_Y
+    bcs @skip_clr_line      ; If >= PLAYER_CLIP_PMG_Y (margin/HUD area) -> skip!
     tax
     lda #0
     sta PMG_PLAYER0,x
@@ -352,8 +353,8 @@ player_jump_start_y .byte 0
     clc
     adc player_pmg_y
     bcs @skip_draw_line     ; If carry set (>= 256), wrapped around -> skip!
-    cmp #224
-    bcs @skip_draw_line     ; If >= 224 (status line area) -> skip!
+    cmp #PLAYER_CLIP_PMG_Y
+    bcs @skip_draw_line     ; If >= PLAYER_CLIP_PMG_Y (margin/HUD area) -> skip!
     tax
     lda (zp_ptr_src),y
     sta PMG_PLAYER0,x

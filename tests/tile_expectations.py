@@ -21,6 +21,7 @@ SCENES_DIR = Path("scenes")
 
 GAME_VRAM_PITCH = 40   # bytes per Mode E/D playfield line
 GAME_VRAM_LINES = 96
+SCENE_PLAYFIELD_LINES = 92
 
 
 def tileset_files() -> list[tuple[str, Path]]:
@@ -133,7 +134,7 @@ def element_is_rendered(element: dict[str, Any]) -> bool:
         return False
     return (
         0 <= geometry["dst_x_byte"] < GAME_VRAM_PITCH
-        and 0 <= geometry["dst_y"] < GAME_VRAM_LINES
+        and 0 <= geometry["dst_y"] < SCENE_PLAYFIELD_LINES
     )
 
 

@@ -2,6 +2,51 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-30] - Fix Scene Transition Stack Overflow and Unexpected Return to Title
+
+- **Root Cause Analysis ([scenes/game.asm](scenes/game.asm), [hardware.asm](hardware.asm))**:
+  - When completing a scene (e.g., collecting the two special disc secrets in Scene 0), `game_victory_update` invoked `game_next_scene` -> `game_init`.
+  - In `game_init`, DMA was disabled (`SDMCTL = 0`, `DMACTL = 0`) while ANTIC was still executing `dlist_game` with `NMIEN = $C0` (VBI + DLI active).
+  - With instruction DMA disabled mid-display-list, ANTIC repeated the last latched 8-scanline DLI instruction every 8 scanlines.
+  - Furthermore, `dli_init` re-armed `NMIEN` to `$C0` before the title card display list (`dlist_scene_title`) was installed, while `dli_handler` required 10 scanlines (`WSYNC`s) to run.
+  - Every 8 scanlines, a new unmasked NMI pre-empted `dli_handler`, pushing 3 bytes to the 6502 stack recursively (~45 bytes per frame) until the hardware stack wrapped around to `$06`, crashing into `$D000` hardware registers and resetting into `title_init` (`$4186`).
+- **Interrupt Isolation & Display List Sequencing ([scenes/game.asm](scenes/game.asm), [hardware.asm](hardware.asm))**:
+  - Added `NMIRES = $D40F` (NMI reset register) equate in [hardware.asm](hardware.asm).
+  - Updated `game_init` in [scenes/game.asm](scenes/game.asm) to immediately disable NMIs (`sta NMIEN`, `sta NMIRES`) alongside DMA at the very start of setup.
+  - Immediately points `SDLSTL`/`DLISTL` to `dlist_scene_title` (which has 0 DLIs) before background blitting or DLI initialization runs.
+  - Re-clears `NMIEN` and `NMIRES` immediately after `dli_init` during scene setup.
+  - Enables only VBLANK NMI (`NMIEN = $40`) for the scene title card animation sequence (`GAME_PHASE_TITLE_IN`, `GAME_PHASE_TITLE_HOLD`, `GAME_PHASE_TITLE_OUT`).
+  - Enables DLI NMIs (`NMIEN = $C0`) strictly upon entering active gameplay (`@do_title_out` -> `dlist_game` activation).
+- **Verification ([scratch/verify_scene1.py](scratch/verify_scene1.py))**:
+  - Verified 200 consecutive frames in AltirraSDL across victory fanfare, scene transition, 24-frame title card fade in, 100-frame title card hold, 24-frame title card fade out, and active gameplay on Scene 1 (`active_scene_id = 1`, `game_phase = 3`, `game_state = 2`).
+  - Stack pointer `S` remains completely stable at `$F7` without any leakage or recursion.
+  - Full test suite passed (781/781 tests) and memory verification validated.
+
+## [2026-10-30] - Refactor In-Game HUD to ANTIC Mode D Narrow Playfield
+
+- **Mode D In-Game HUD & Display List Reorganization ([main.asm](main.asm), [engine/hud_dli.asm](engine/hud_dli.asm), [engine/render.asm](engine/render.asm))**:
+  - Removed old ANTIC Mode 2 40-byte status line (`status_line_vram`).
+  - Implemented narrow ANTIC Mode D HUD (32 bytes x 8 lines = 256 bytes) directly mapped into `HUD_VRAM` ($3E60-$3F5F).
+  - Configured `dlist_game` in segment `GAME_DLIST` ($3F60-$3FED): 92 lines of scene Mode D, 8 blank scanlines margin below lowest platform (Row 5) with DLI 7, 8 lines of Narrow Mode D HUD, and 8 blank scanlines bottom margin with DLI 8.
+  - Clipped playfield element rendering in [engine/render.asm](engine/render.asm) at `SCENE_PLAYFIELD_LINES = 92` to protect the HUD margin from background tile bleeding.
+- **HUD Renderer & Icon Counters ([engine/status_line.asm](engine/status_line.asm))**:
+  - Redesigned status line to render 8x8 font glyphs (`intro_font`) directly into 2bpp Mode D bitmaps.
+  - Left side: renders up to 8 player lives (`STATUS_MAX_LIVES = 8`) as red/orange heart glyphs (`STATUS_GLYPH_HEART = 64`, color %01, `COLPF0 = $28`) occupying columns 0..7 (up to 64 pixels).
+  - Center area: columns 8..11 blank spacer columns with pure black background.
+  - Right side: renders special secrets as a 4-character 2-digit counter across columns 12..15 (`"💿*14"`): gold disc glyph (`STATUS_GLYPH_SPECIAL = 61`, color %11, `COLPF2 = $18`, col 12), asterisk '*' (`STATUS_GLYPH_STAR = 10`, rendered in hearts color %01 `HUD_COLOR_HEART` / `COLPF0`, col 13), and two digits in white (`HUD_COLOR_TEXT` / `COLPF1`, cols 14..15) for values up to 14.
+  - Fixed space-clearing bug in `hud_render_col` where address offsets leaked into VRAM for blank columns, ensuring clean black background in the middle area.
+- **DLI Timing & Hardware Register Isolation ([engine/hud_dli.asm](engine/hud_dli.asm), [engine/dli.asm](engine/dli.asm), [scenes/game.asm](scenes/game.asm))**:
+  - Extracted configurable HUD color constants (`HUD_COLOR_BK`, `HUD_COLOR_HEART`, `HUD_COLOR_TEXT`, `HUD_COLOR_DISC`) to the top of [engine/hud_dli.asm](engine/hud_dli.asm) for quick tuning.
+  - DLI 7 (`dli_status_line`): switches to Narrow playfield (`DMACTL = $21`), sets black background and HUD palette, disables PMG latching (`GRACTL = 0`) and clears `HPOSP0..3` / `HPOSM0..3`.
+  - DLI 8 (`dli_hud_restore`): cleanly restores normal playfield with PMG DMA (`DMACTL = $3E`), re-enables GTIA latching (`GRACTL = 3`), and chains back to `dli_handler`.
+  - Removed mid-screen `DMACTL` writes from `@do_playing` in [scenes/game.asm](scenes/game.asm) and fixed `dli_vblank_update` to preserve PMG DMA (`$3E`), eliminating screen flickering.
+- **Memory Optimization & Balancing ([main.asm](main.asm), [engine/status_line.asm](engine/status_line.asm), [engine/sfx_victory.asm](engine/sfx_victory.asm))**:
+  - Optimized glyph blitter and color LUT routines in [engine/status_line.asm](engine/status_line.asm).
+  - Relocated [engine/sfx_victory.asm](engine/sfx_victory.asm) to `RENDER_CODE` ($7A00, 67 B headroom before $8000), allowing `TILES_META` ($2A30-$2FD5) to stay within $3000 boundary with 42 bytes to spare.
+- **Test Suite Updates**:
+  - Updated [tests/test_convert_tiles.py](tests/test_convert_tiles.py), [tests/test_dli_system.py](tests/test_dli_system.py), [tests/test_status_line.py](tests/test_status_line.py), [tests/test_element_clipping.py](tests/test_element_clipping.py), [tests/tile_expectations.py](tests/tile_expectations.py), [tests/test_player_movement.py](tests/test_player_movement.py), [tests/test_killer_mode.py](tests/test_killer_mode.py), [tests/test_secrets_runtime.py](tests/test_secrets_runtime.py), [tests/test_memory_map.py](tests/test_memory_map.py), and [tests/test_state_machine_and_fade.py](tests/test_state_machine_and_fade.py); decoupled test palette expectations in [tests/test_dli_system.py](tests/test_dli_system.py) to read `HUD_COLOR_*` symbols dynamically.
+  - All 781 tests pass. Verified visual rendering with AltirraBridge.
+
 ## [2026-10-30] - Release Workflow Review Fixes
 - [.github/workflows/release.yml](.github/workflows/release.yml): checkout now uses the PR base branch (not `refs/pull/N/merge`) so the manifest push to `main` is correct.
 - Added `concurrency` group `release`; removed redundant `make test` (already in `make all`); fixed escaped `$(...)` in the build log.

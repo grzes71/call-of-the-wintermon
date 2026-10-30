@@ -18,10 +18,12 @@ scene_title_fade_colors
 SCENE_TITLE_FADE_STEPS = 8
 
 .proc game_init
-    ; 1. Turn off DMA during setup
+    ; 1. Turn off DMA and NMIs during setup
     lda #0
     sta SDMCTL
     sta DMACTL
+    sta NMIEN
+    sta NMIRES
 
     ; Ensure active_scene_id is within bounds (0..SCENE_COUNT-1)
     lda active_scene_id
@@ -30,6 +32,20 @@ SCENE_TITLE_FADE_STEPS = 8
     lda #0
     sta active_scene_id
 @scene_ok
+
+    ; Point display list to dlist_scene_title immediately so ANTIC no longer sees dlist_game
+    ldx active_scene_id
+    lda scene_name_line_lo,x
+    sta dlist_scene_title_addr
+    lda scene_name_line_hi,x
+    sta dlist_scene_title_addr+1
+
+    lda <dlist_scene_title
+    sta SDLSTL
+    sta DLISTL
+    lda >dlist_scene_title
+    sta SDLSTH
+    sta DLISTH
 
     ; 2. Set PMBASE (Player-Missile Graphics buffer page)
     lda #PMBASE_PAGE
@@ -41,6 +57,9 @@ SCENE_TITLE_FADE_STEPS = 8
 
     ; Initialize DLI engine and stage initial scene DLI data
     jsr dli_init
+    lda #0
+    sta NMIEN
+    sta NMIRES
     lda active_scene_id
     jsr dli_stage_scene
 
@@ -64,13 +83,6 @@ SCENE_TITLE_FADE_STEPS = 8
     lda active_scene_id
     jsr status_line_init
 
-    ; 4. Set up Scene Title Card LMS operand in dlist_scene_title
-    ldx active_scene_id
-    lda scene_name_line_lo,x
-    sta dlist_scene_title_addr
-    lda scene_name_line_hi,x
-    sta dlist_scene_title_addr+1
-
     ; 5. Set font pointer to intro_font ($24)
     lda >intro_font
     sta CHBAS
@@ -84,14 +96,6 @@ SCENE_TITLE_FADE_STEPS = 8
     sta COLPF2
     sta COLOR4
     sta COLBK
-
-    ; 7. Point display list to dlist_scene_title
-    lda <dlist_scene_title
-    sta SDLSTL
-    sta DLISTL
-    lda >dlist_scene_title
-    sta SDLSTH
-    sta DLISTH
 
     ; 8. Initialize sound effects engine
     jsr sfx_init
@@ -110,7 +114,11 @@ SCENE_TITLE_FADE_STEPS = 8
     dex
     bpl @clr_pmg_pos
 
-    ; 10. Initialize title card animation phase
+    ; 10. Enable VBLANK NMI only for title card (DLI enabled when dlist_game activates)
+    lda #$40
+    sta NMIEN
+
+    ; Initialize title card animation phase
     lda #GAME_PHASE_TITLE_IN
     sta game_phase
     lda #0
@@ -294,6 +302,10 @@ SCENE_TITLE_FADE_STEPS = 8
     lda #$03
     sta GRACTL
 
+    ; Enable VBLANK and DLI NMIs for active gameplay
+    lda #$C0
+    sta NMIEN
+
     lda #GAME_PHASE_PLAYING
     sta game_phase
     lda #0
@@ -317,7 +329,6 @@ SCENE_TITLE_FADE_STEPS = 8
 @do_playing
     lda #$3E
     sta SDMCTL
-    sta DMACTL
     lda #$03
     sta GRACTL
 

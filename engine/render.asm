@@ -138,7 +138,7 @@
     sta zp_temp_x             ; dst_x_byte
 
     lda (zp_ptr_elem_dy),y
-    cmp #96
+    cmp #SCENE_PLAYFIELD_LINES
     bcc @coords_ok
 
 @do_skip
@@ -163,13 +163,13 @@
     sta zp_elem_w
 @w_clipped_ok
 
-    ; Clip height: if dst_y + h > 96 -> h = 96 - dst_y
+    ; Clip height: if dst_y + h > SCENE_PLAYFIELD_LINES -> h = SCENE_PLAYFIELD_LINES - dst_y
     lda zp_temp_y
     clc
     adc zp_elem_h
-    cmp #97
+    cmp #SCENE_PLAYFIELD_LINES + 1
     bcc @h_clipped_ok
-    lda #96
+    lda #SCENE_PLAYFIELD_LINES
     sec
     sbc zp_temp_y
     sta zp_elem_h

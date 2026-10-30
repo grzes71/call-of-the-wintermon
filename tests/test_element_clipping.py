@@ -33,7 +33,7 @@ def compiled_is_rendered(elem) -> bool:
     """The renderer's own skip rules applied to compiled element values."""
     if elem.w_bytes <= 0 or elem.h_lines <= 0:
         return False
-    return 0 <= elem.dst_x_byte < GAME_VRAM_PITCH and 0 <= elem.dst_y < GAME_VRAM_LINES
+    return 0 <= elem.dst_x_byte < GAME_VRAM_PITCH and 0 <= elem.dst_y < 92
 
 
 def _compile(tmp_path: Path, scene_data: dict):
@@ -161,21 +161,24 @@ def test_every_element_reaches_the_playfield_in_the_compiled_rom(scene_index: in
     scene_file = scene_files()[scene_index]
     scene = load_scene(scene_file)
 
+    scene_lines = labels.get("SCENE_PLAYFIELD_LINES", 92)
     # Reference playfield: draw every element in z order, clipped exactly like render.asm
-    expected = bytearray(GAME_VRAM_PITCH * GAME_VRAM_LINES)
+    expected = bytearray(GAME_VRAM_PITCH * scene_lines)
     for element in sorted(scene["elements"], key=lambda e: e.get("z_index", 0)):
         if not element_is_rendered(element):
             continue
         dst_x, dst_y, w_bytes, h_lines = element_dst_rect(element)
+        if dst_y >= scene_lines:
+            continue
         w_bytes = min(w_bytes, GAME_VRAM_PITCH - dst_x)
-        h_lines = min(h_lines, GAME_VRAM_LINES - dst_y)
+        h_lines = min(h_lines, scene_lines - dst_y)
         reference = element_reference_bytes(mem, labels, element)
         for row in range(h_lines):
             start = (dst_y + row) * GAME_VRAM_PITCH + dst_x
             # The renderer copies exactly w_bytes (clipped) bytes, so slice the reference row
             expected[start : start + w_bytes] = bytes(reference[row][:w_bytes])
 
-    actual = bytes(mem[labels["GAME_VRAM"] : labels["GAME_VRAM"] + GAME_VRAM_PITCH * GAME_VRAM_LINES])
+    actual = bytes(mem[labels["GAME_VRAM"] : labels["GAME_VRAM"] + GAME_VRAM_PITCH * scene_lines])
     assert actual == bytes(expected), f"{scene_file}: rendered playfield differs from the reference"
 
     # Regression for elements placed above the playfield: the upper zone must not stay empty

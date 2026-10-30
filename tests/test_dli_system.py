@@ -144,7 +144,7 @@ def run_subroutine(mpu: MPU, addr: int, max_cycles: int = 50000) -> int:
 def test_dlist_game_structure_and_dli_flags():
     mem, labels = load_xex_and_symbols()
     dl_addr = labels["DLIST_GAME"]
-    assert dl_addr == 0x3F00, f"DLIST_GAME must be at $3F00, got ${dl_addr:04X}"
+    assert dl_addr == 0x3F60, f"DLIST_GAME must be at $3F60, got ${dl_addr:04X}"
 
     # Top blank margin: 3x DL_BLANK8 ($70)
     assert list(mem[dl_addr : dl_addr + 3]) == [0x70, 0x70, 0x70]
@@ -154,12 +154,12 @@ def test_dlist_game_structure_and_dli_flags():
     lms_target = mem[dl_addr + 4] | (mem[dl_addr + 5] << 8)
     assert lms_target == 0x3000
 
-    # Remaining 95 lines of Mode D:
+    # Remaining 91 scene lines of Mode D (lines 1..91):
     # DL_DLI ($80) MUST be set on lines 6, 22, 38, 54, 70, 86 (1 line before each platform pas)
     expected_dli_lines = {6, 22, 38, 54, 70, 86}
     dli_found = set()
 
-    for line_idx in range(1, 96):
+    for line_idx in range(1, 92):
         byte_val = mem[dl_addr + 6 + (line_idx - 1)]
         is_dli = bool(byte_val & 0x80)
         mode = byte_val & 0x0F
@@ -169,19 +169,21 @@ def test_dlist_game_structure_and_dli_flags():
 
     assert dli_found == expected_dli_lines, f"DLI flags must be exactly on lines {expected_dli_lines}, found {dli_found}"
 
-    # Bottom margin & Mode 2 status line:
-    # DL_BLANK8 | DL_DLI ($F0)
-    assert mem[dl_addr + 101] == 0xF0
-    # DL_MODE_2 | DL_LMS ($42) pointing to status_line_vram ($3F8B)
-    assert mem[dl_addr + 102] == 0x42
-    status_target = mem[dl_addr + 103] | (mem[dl_addr + 104] << 8)
-    assert status_target == labels["STATUS_LINE_VRAM"]
-    # DL_BLANK8 ($70)
-    assert mem[dl_addr + 105] == 0x70
+    # Margin before HUD (8 blank scanlines + DLI):
+    assert mem[dl_addr + 97] == 0xF0  # DL_BLANK8 | DL_DLI
+    # HUD Line 0: Mode D with LMS to HUD_VRAM
+    assert mem[dl_addr + 98] == 0x4D  # DL_MODE_D | DL_LMS
+    hud_target = mem[dl_addr + 99] | (mem[dl_addr + 100] << 8)
+    assert hud_target == labels["HUD_VRAM"]
+    # Remaining 7 lines of HUD Mode D
+    for i in range(7):
+        assert mem[dl_addr + 101 + i] == 0x0D
+    # Margin after HUD (8 blank scanlines + DLI):
+    assert mem[dl_addr + 108] == 0xF0  # DL_BLANK8 | DL_DLI
 
     # JVB ($41) jump back to dlist_game
-    assert mem[dl_addr + 106] == 0x41
-    jvb_target = mem[dl_addr + 107] | (mem[dl_addr + 108] << 8)
+    assert mem[dl_addr + 109] == 0x41
+    jvb_target = mem[dl_addr + 110] | (mem[dl_addr + 111] << 8)
     assert jvb_target == dl_addr
 
 
@@ -510,11 +512,14 @@ def test_dli_handler_full_execution_and_palette_transition():
     vdslst_dli7 = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)
     assert vdslst_dli7 == labels["DLI_STATUS_LINE"], "DLI 6 must hook VDSLST to DLI_STATUS_LINE"
 
-    # --- DLI 7 (Status line blank separator, sets Mode 2 text colors & clears PMG) ---
+    # --- DLI 7 (HUD separator: narrow playfield, HUD palette, clear PMG, chain to DLI 8) ---
     invoke_dli(mpu, vdslst_dli7)
-    assert mem[labels["COLPF2"]] == 0x00, "Status line background must be black ($00)"
-    assert mem[labels["COLPF1"]] == 0x0E, "Status line text foreground must be white ($0E)"
-    assert mem[labels["HPOSP0"]] == 0, "HPOSP0 must be 0 on status line to hide Hero"
+    assert mem[labels["DMACTL"]] == 0x21, "DLI 7 must switch DMACTL to narrow playfield ($21)"
+    assert mem[labels["COLBK"]] == labels.get("HUD_COLOR_BK", 0x00), "HUD background must match HUD_COLOR_BK"
+    assert mem[labels["COLPF0"]] == labels.get("HUD_COLOR_HEART", 0x28), "HUD COLPF0 must match HUD_COLOR_HEART"
+    assert mem[labels["COLPF1"]] == labels.get("HUD_COLOR_TEXT", 0x0E), "HUD COLPF1 must match HUD_COLOR_TEXT"
+    assert mem[labels["COLPF2"]] == labels.get("HUD_COLOR_DISC", 0x18), "HUD COLPF2 must match HUD_COLOR_DISC"
+    assert mem[labels["HPOSP0"]] == 0, "HPOSP0 must be 0 on HUD to hide Hero"
     assert mem[labels["HPOSP1"]] == 0
     assert mem[labels["HPOSP2"]] == 0
     assert mem[labels["HPOSP3"]] == 0
@@ -522,13 +527,16 @@ def test_dli_handler_full_execution_and_palette_transition():
     assert mem[labels["HPOSM1"]] == 0
     assert mem[labels["HPOSM2"]] == 0
     assert mem[labels["HPOSM3"]] == 0
-    assert mem[labels["SIZEP0"]] == 0
-    assert mem[labels["SIZEP1"]] == 0
-    assert mem[labels["SIZEM"]]  == 0
 
-    # Verify VDSLST was restored back to DLI_HANDLER for the next frame
+    # Verify VDSLST was chained to DLI_HUD_RESTORE
+    vdslst_dli8 = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)
+    assert vdslst_dli8 == labels["DLI_HUD_RESTORE"], "DLI 7 must hook VDSLST to DLI_HUD_RESTORE"
+
+    # --- DLI 8 (Bottom margin: restore normal playfield width & point VDSLST to DLI_HANDLER) ---
+    invoke_dli(mpu, vdslst_dli8)
+    assert mem[labels["DMACTL"]] == 0x3E, "DLI 8 must restore DMACTL to normal playfield ($3E)"
     vdslst_next = mem[labels["VDSLST"]] | (mem[labels["VDSLST"] + 1] << 8)
-    assert vdslst_next == labels["DLI_HANDLER"], "DLI_STATUS_LINE must restore VDSLST to DLI_HANDLER"
+    assert vdslst_next == labels["DLI_HANDLER"], "DLI_HUD_RESTORE must restore VDSLST to DLI_HANDLER"
 
     # Invariants verification:
     # 1. Hero P0 color was NEVER touched by any DLI

@@ -1,14 +1,18 @@
-"""Automated py65 integration test suite for Atari 8-bit In-Game Status Line.
+"""Automated py65 integration test suite for Atari 8-bit In-Game Mode D HUD.
 
 Validates:
-1. Status line display buffer (status_line_vram) is 40 bytes in ANTIC Mode 2.
+1. Status line display buffer:
+   - status_line_chars (16 bytes, narrow Mode D columns 0..15).
+   - HUD_VRAM (256 bytes, 32 bytes/line * 8 lines).
 2. Initial player lives: 3 characters of decimal code 64 (heart glyphs) at columns 0..2.
-3. Middle area (columns 3..N) is blank space (scene name is only displayed on the
-   scene title card, dlist_scene_title).
-4. Collected *special* secrets as disc glyphs (code 61) at the right end, filled from
-   column 39 leftwards; the icons survive scene changes and only a new game clears them.
+3. Middle area (columns 3..7 if unused, col 8..11) are blank space.
+4. Collected specials represented as a counter:
+   - Column 12: Disc glyph (code 61, gold).
+   - Column 13: 'X' glyph (code 56, white).
+   - Columns 14..15: Specials count digits ('0'..'9', 2-digit format, white).
 5. Decrementation of player lives (clearing hearts).
-6. Full scene change integration (Scene 0 vs Scene 1).
+6. Preserved registers across refresh calls.
+7. Support for up to STATUS_MAX_LIVES (8 hearts).
 """
 
 from __future__ import annotations
@@ -18,10 +22,6 @@ import pytest
 from py65.devices.mpu6502 import MPU
 
 from tests.test_dli_system import load_xex_and_symbols, run_subroutine
-from scripts.compile_scenes import (
-    STATUS_LINE_WIDTH,
-    text_to_screencodes_line,
-)
 from tests.scene_expectations import (
     load_scene,
     scene_files,
@@ -30,19 +30,20 @@ from tests.scene_expectations import (
     scene_symbol,
     special_secret_total,
 )
+from scripts.compile_scenes import text_to_screencodes_line
 
-
-# The status line tests need a scene with at least one "special" secret (its icon area) and a
-# second, different scene for the "icons survive a scene change" check (Rule 05: the fixture
-# must not depend on which scene happens to be first in scenes/scenes.json).
 SCENE = scene_index_with_secrets(special=True)
 SCENE_NEXT = scene_index_with_secrets(exclude=(SCENE,))
 
+STATUS_GLYPH_HEART   = 64
 STATUS_GLYPH_SPECIAL = 61
+STATUS_GLYPH_STAR    = 10
+STATUS_GLYPH_X       = STATUS_GLYPH_STAR
+STATUS_GLYPH_DIGIT0  = 16
 
 
 def test_status_line_reset_and_init_scene0():
-    """Verify status_line_init sets up hearts, blank middle and no icons."""
+    """Verify status_line_init sets up hearts, counter icons, and renders HUD_VRAM."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -54,39 +55,48 @@ def test_status_line_reset_and_init_scene0():
     assert mem[labels["PLAYER_LIVES"]] == 3, "Initial player lives must be 3"
     assert mem[labels["PLAYER_SPECIALS"]] == 0, "No special secret collected yet"
 
-    # Initialize for the fixture scene (its name is derived from the scene JSON below)
+    # Initialize for the fixture scene
     mem[labels["ACTIVE_SCENE_ID"]] = SCENE
     mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
-    vram = labels["STATUS_LINE_VRAM"]
-    status_bytes = list(mem[vram : vram + 40])
-    assert len(status_bytes) == 40
+    chars_addr = labels["STATUS_LINE_CHARS"]
+    status_chars = list(mem[chars_addr : chars_addr + 16])
+    assert len(status_chars) == 16
 
-    # 1. Left: 3 hearts of code 64 (decimal 64 = $40)
-    assert status_bytes[0] == 64, f"Column 0 must be heart glyph (64), got {status_bytes[0]}"
-    assert status_bytes[1] == 64, f"Column 1 must be heart glyph (64), got {status_bytes[1]}"
-    assert status_bytes[2] == 64, f"Column 2 must be heart glyph (64), got {status_bytes[2]}"
-    assert status_bytes[3] == 0, "Column 3 must be space"
+    # 1. Left: 3 hearts of code 64, cols 3..11 blank space
+    assert status_chars[0:3] == [STATUS_GLYPH_HEART, STATUS_GLYPH_HEART, STATUS_GLYPH_HEART]
+    assert status_chars[3:12] == [0] * 9
 
-    # 2. Middle: columns 3..name_end must be blank spaces (scene name is not displayed in HUD)
+    # 2. Right: Special counter: [col 12: disc 61] [col 13: 'X' 56] [col 14: '0' 16] [col 15: 0]
+    assert status_chars[12] == STATUS_GLYPH_SPECIAL
+    assert status_chars[13] == STATUS_GLYPH_X
+    assert status_chars[14] == STATUS_GLYPH_DIGIT0
+    assert status_chars[15] == 0
+
+    # 3. Check HUD_VRAM has rendered bitmap data across the 8 rows
+    hud_vram = labels["HUD_VRAM"]
+    assert any(mem[hud_vram + row * 32 + col * 2] != 0 for col in (0, 1, 2) for row in range(8)), "Hearts must be rendered to HUD_VRAM"
+    assert any(mem[hud_vram + row * 32 + 12 * 2] != 0 for row in range(8)), "Disc icon must be rendered to HUD_VRAM"
+    assert any(mem[hud_vram + row * 32 + 13 * 2] != 0 for row in range(8)), "'*' icon must be rendered to HUD_VRAM"
+    assert any(mem[hud_vram + row * 32 + 14 * 2] != 0 for row in range(8)), "Digit '0' must be rendered to HUD_VRAM"
+
+    # Verify column 13 uses color %01 (hearts color COLPF0) and column 14 uses color %10 (text color COLPF1)
+    col13_bytes = [mem[hud_vram + r * 32 + 13 * 2 + b] for r in range(8) for b in (0, 1)]
+    col14_bytes = [mem[hud_vram + r * 32 + 14 * 2 + b] for r in range(8) for b in (0, 1)]
+    assert any(col13_bytes) and all((b & 0xAA) == 0 for b in col13_bytes), "Col 13 must use color %01 (hearts color COLPF0)"
+    assert any(col14_bytes) and all((b & 0x55) == 0 for b in col14_bytes), "Col 14 must use color %10 (text color COLPF1)"
+
+    # Scene title name line check (for scene title card)
     scene_name = load_scene(scene_files()[SCENE])["scene"]["name"]
-    capacity = special_secret_total()
-    name_end = STATUS_LINE_WIDTH - capacity
-    assert status_bytes[3:name_end] == [0] * (name_end - 3), "Middle of HUD must be empty spaces"
-
-    # The centred variant is still compiled for the scene title card.
     exp_title = text_to_screencodes_line(scene_name, width=40)
     name_line_label = labels[f"SCENE_{scene_symbol(scene_files()[SCENE]).upper()}_NAME_LINE"]
     title_bytes = list(mem[name_line_label : name_line_label + 40])
     assert title_bytes == exp_title
 
-    # 3. Nothing collected yet: the special-secret icon area at the right end is blank.
-    assert status_bytes[name_end:] == [0] * capacity
-
 
 def test_status_line_init_scene1():
-    """Verify the collected special icons survive a scene change (Scene 1)."""
+    """Verify collected special count survives a scene change."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -102,28 +112,25 @@ def test_status_line_init_scene1():
     mpu.a = SCENE_NEXT
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
-    vram = labels["STATUS_LINE_VRAM"]
-    status_bytes = list(mem[vram : vram + 40])
+    chars_addr = labels["STATUS_LINE_CHARS"]
+    status_chars = list(mem[chars_addr : chars_addr + 16])
 
     # Left: 3 hearts
-    assert status_bytes[0:3] == [64, 64, 64]
+    assert status_chars[0:3] == [STATUS_GLYPH_HEART, STATUS_GLYPH_HEART, STATUS_GLYPH_HEART]
 
-    # Middle: columns 3..39-collected are spaces (no scene name displayed)
-    assert status_bytes[3:STATUS_LINE_WIDTH - collected] == [0] * (STATUS_LINE_WIDTH - collected - 3)
+    # Right: disc, 'X', and digits (2-digit counter)
+    assert status_chars[12] == STATUS_GLYPH_SPECIAL
+    assert status_chars[13] == STATUS_GLYPH_X
+    if collected < 10:
+        assert status_chars[14] == STATUS_GLYPH_DIGIT0 + collected
+        assert status_chars[15] == 0
+    else:
+        assert status_chars[14] == STATUS_GLYPH_DIGIT0 + 1
+        assert status_chars[15] == STATUS_GLYPH_DIGIT0 + (collected - 10)
 
-    # Right end: one disc glyph (61) per collected special secret, filled right to left.
-    icon_area = status_bytes[STATUS_LINE_WIDTH - collected:]
-    assert icon_area == [STATUS_GLYPH_SPECIAL] * collected, (
-        "special icons collected in an earlier scene must stay visible"
-    )
 
-
-def test_status_line_special_icons_fill_right_to_left():
-    """status_line_add_special draws one disc glyph (code 61) per special secret.
-
-    Contract (engine/status_line.asm): the icons fill the right end of the status line
-    from column 39 leftwards - the first one collected ends up rightmost.
-    """
+def test_status_line_special_counter_increments():
+    """status_line_add_special increments specials and updates columns 14..15 digits."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -131,8 +138,7 @@ def test_status_line_special_icons_fill_right_to_left():
     mem[0x01FF] = 0x00
 
     capacity = special_secret_total()
-    assert capacity > 0, "the project must place at least one special secret"
-    name_end = STATUS_LINE_WIDTH - capacity
+    assert capacity > 0
 
     mem[labels["ACTIVE_SCENE_ID"]] = SCENE
     mpu.a = SCENE
@@ -140,31 +146,29 @@ def test_status_line_special_icons_fill_right_to_left():
     mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
-    vram = labels["STATUS_LINE_VRAM"]
-    assert list(mem[vram + 3:vram + name_end]) == [0] * (name_end - 3), "Middle must be blank"
+    chars_addr = labels["STATUS_LINE_CHARS"]
 
-    # 1. Collect icons one by one: they appear from column 39 leftwards.
     for count in range(1, capacity + 1):
         run_subroutine(mpu, labels["STATUS_LINE_ADD_SPECIAL"])
         assert mem[labels["PLAYER_SPECIALS"]] == count
-        rightmost = list(mem[vram + STATUS_LINE_WIDTH - count:vram + STATUS_LINE_WIDTH])
-        assert rightmost == [STATUS_GLYPH_SPECIAL] * count, f"{count} icons must sit at the right end"
-        # The icon row is exactly `count` wide - while slots remain, the slot left of it stays blank.
-        if count < capacity:
-            assert mem[vram + STATUS_LINE_WIDTH - count - 1] == 0
-        # The middle area remains blank
-        assert list(mem[vram + 3:vram + name_end]) == [0] * (name_end - 3)
+        if count < 10:
+            assert mem[chars_addr + 14] == STATUS_GLYPH_DIGIT0 + count
+            assert mem[chars_addr + 15] == 0
+        else:
+            assert mem[chars_addr + 14] == STATUS_GLYPH_DIGIT0 + 1
+            assert mem[chars_addr + 15] == STATUS_GLYPH_DIGIT0 + (count - 10)
 
-    # 2. A new game clears the icons again (a scene change must not).
+    # Reset clears counter
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     assert mem[labels["PLAYER_SPECIALS"]] == 0
     mpu.a = SCENE
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
-    assert list(mem[vram + name_end:vram + STATUS_LINE_WIDTH]) == [0] * capacity
+    assert mem[chars_addr + 14] == STATUS_GLYPH_DIGIT0
+    assert mem[chars_addr + 15] == 0
 
 
 def test_status_line_refresh_specials_preserves_registers():
-    """The icon refresh documents "Preserves: X, Y" - secret_collect relies on it."""
+    """The icon refresh documents 'Preserves: X, Y' - callers rely on it."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
@@ -191,73 +195,65 @@ def test_status_line_player_lives_and_loss():
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
-    vram = labels["STATUS_LINE_VRAM"]
-    assert list(mem[vram : vram + 3]) == [64, 64, 64]
+    chars_addr = labels["STATUS_LINE_CHARS"]
+    assert list(mem[chars_addr : chars_addr + 3]) == [STATUS_GLYPH_HEART] * 3
 
     # Lose 1 life -> 2 lives remaining
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
     assert mem[labels["PLAYER_LIVES"]] == 2
-    assert list(mem[vram : vram + 3]) == [64, 64, 0]
+    assert list(mem[chars_addr : chars_addr + 3]) == [STATUS_GLYPH_HEART, STATUS_GLYPH_HEART, 0]
 
     # Lose 1 life -> 1 life remaining
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
     assert mem[labels["PLAYER_LIVES"]] == 1
-    assert list(mem[vram : vram + 3]) == [64, 0, 0]
+    assert list(mem[chars_addr : chars_addr + 3]) == [STATUS_GLYPH_HEART, 0, 0]
 
     # Lose 1 life -> 0 lives remaining
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
     assert mem[labels["PLAYER_LIVES"]] == 0
-    assert list(mem[vram : vram + 3]) == [0, 0, 0]
+    assert list(mem[chars_addr : chars_addr + 3]) == [0, 0, 0]
 
     # Lose life at 0 -> does not underflow
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
     assert mem[labels["PLAYER_LIVES"]] == 0
-    assert list(mem[vram : vram + 3]) == [0, 0, 0]
+    assert list(mem[chars_addr : chars_addr + 3]) == [0, 0, 0]
 
 
-def test_status_line_lives_up_to_max_limit_20():
-    """Verify player lives display supports up to STATUS_MAX_LIVES (20 hearts) and caps display."""
+def test_status_line_lives_up_to_max_limit_8():
+    """Verify player lives display supports up to STATUS_MAX_LIVES (8 hearts) and caps display."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
     mem[0x01FE] = 0x1F
     mem[0x01FF] = 0x00
 
-    vram = labels["STATUS_LINE_VRAM"]
+    chars_addr = labels["STATUS_LINE_CHARS"]
     max_lives = labels["STATUS_MAX_LIVES"]
-    assert max_lives == 20
+    assert max_lives == 8
 
     mem[labels["ACTIVE_SCENE_ID"]] = 0
     run_subroutine(mpu, labels["STATUS_LINE_RESET"])
     run_subroutine(mpu, labels["STATUS_LINE_INIT"])
 
-    # 1. Test 4 lives: columns 0..3 are hearts (64), columns 4..19 are spaces (0)
+    # 1. Test 4 lives: columns 0..3 are hearts (64), columns 4..7 are spaces (0)
     mem[labels["PLAYER_LIVES"]] = 4
     run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
-    assert list(mem[vram : vram + 4]) == [64, 64, 64, 64]
-    assert list(mem[vram + 4 : vram + 20]) == [0] * 16
+    assert list(mem[chars_addr : chars_addr + 4]) == [STATUS_GLYPH_HEART] * 4
+    assert list(mem[chars_addr + 4 : chars_addr + 8]) == [0] * 4
 
-    # 2. Test 10 lives: columns 0..9 are hearts, columns 10..19 are spaces
-    mem[labels["PLAYER_LIVES"]] = 10
+    # 2. Test 8 lives (max capacity): all 8 columns are hearts
+    mem[labels["PLAYER_LIVES"]] = 8
     run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
-    assert list(mem[vram : vram + 10]) == [64] * 10
-    assert list(mem[vram + 10 : vram + 20]) == [0] * 10
+    assert list(mem[chars_addr : chars_addr + 8]) == [STATUS_GLYPH_HEART] * 8
 
-    # 3. Test 20 lives (max capacity): all 20 columns are hearts, column 20 is space
-    mem[labels["PLAYER_LIVES"]] = 20
-    run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
-    assert list(mem[vram : vram + 20]) == [64] * 20
-    assert mem[vram + 20] == 0
-
-    # 4. Test life loss from 20 to 19: column 19 cleared to space
+    # 3. Test life loss from 8 to 7: column 7 cleared to space
     run_subroutine(mpu, labels["STATUS_LINE_LOSE_LIFE"])
-    assert mem[labels["PLAYER_LIVES"]] == 19
-    assert list(mem[vram : vram + 19]) == [64] * 19
-    assert mem[vram + 19] == 0
-    assert mem[vram + 20] == 0
+    assert mem[labels["PLAYER_LIVES"]] == 7
+    assert list(mem[chars_addr : chars_addr + 7]) == [STATUS_GLYPH_HEART] * 7
+    assert mem[chars_addr + 7] == 0
 
-    # 5. Test lives exceeding 20 (e.g. 25): display strictly caps at 20 hearts, column 20 is untouched
-    mem[labels["PLAYER_LIVES"]] = 25
+    # 4. Test lives exceeding 8 (e.g. 12): display strictly caps at 8 hearts
+    mem[labels["PLAYER_LIVES"]] = 12
     run_subroutine(mpu, labels["STATUS_LINE_REFRESH_LIVES"])
-    assert list(mem[vram : vram + 20]) == [64] * 20
-    assert mem[vram + 20] == 0
+    assert list(mem[chars_addr : chars_addr + 8]) == [STATUS_GLYPH_HEART] * 8
+    assert mem[chars_addr + 8] == 0  # Col 8 remains spacer
