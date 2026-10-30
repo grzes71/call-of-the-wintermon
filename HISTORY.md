@@ -2,6 +2,29 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-10-30] - Fix Immediate Skip of Game Over Failure Screen on Player Death
+
+- **Root Cause Analysis ([scenes/gameover.asm](scenes/gameover.asm), [scenes/game.asm](scenes/game.asm))**:
+  - `gameover_init` did not disable NMIs (`sta NMIEN`, `sta NMIRES`), leaving ANTIC running with `NMIEN = $C0` and DMA off while generating screen text buffers.
+  - `gameover_init` did not clear the Atari OS keyboard latch register `CH` ($02FC). If any key was pressed during gameplay, title, or scene transitions, `CH != $FF` persisted.
+  - On frame 0 of `gameover_run`, releasing the joystick button set `fire_released = 1`.
+  - On frame 1 of `gameover_run`, `fire_released == 1` caused immediate branch to `@can_press`, which evaluated `CH != $FF` and instantly branched to `@key_pressed` -> `@fire_pressed`, transitioning back to `STATE_TITLE` after exactly one frame (20 ms).
+  - Additionally, there was zero hold delay / debounce timer on the Game Over screen: any button press or tap during the hero's death animation immediately skipped the Game Over screen.
+- **Debounce Timer, Input Isolation & Display List Sequencing ([scenes/gameover.asm](scenes/gameover.asm))**:
+  - Added `GAMEOVER_HOLD_FRAMES = 50` (1.0 second hold delay at 50 Hz PAL) and runtime variable `gameover_timer`.
+  - Updated `gameover_init` to disable NMIs and reset NMI state immediately (`lda #0; sta SDMCTL; sta DMACTL; sta NMIEN; sta NMIRES`) to prevent recursive interrupts during buffer rebuild.
+  - Repointed `SDLSTL`/`DLISTL` early to `dlist_gameover_failure` before text copying.
+  - Cleared `CH` ($02FC) with `#$FF` and initialized `gameover_timer = GAMEOVER_HOLD_FRAMES` and `fire_released = 0`.
+  - Updated `gameover_run` to count down `gameover_timer` while clearing `CH` each frame; during this 50-frame period, all button and keyboard inputs are ignored.
+  - Once the timer expires, both joystick fire (`STRIG0 == 1`) and keyboard (`CH == $FF`) must be observed released before `fire_released` is set to 1.
+  - Replaced 18 individual GTIA register clears with an indexed loop (`ldx #$1D; @clr: sta HPOSP0,x; dex; bpl @clr`), reducing module size by 17 bytes and increasing user RAM headroom below `$C000` to 487 bytes.
+- **State Transition Guard ([scenes/game.asm](scenes/game.asm))**:
+  - In `scenes/game.asm` (`@do_playing`), immediately stops frame execution if `player_update` transitioned `game_state` to `STATE_OVER`.
+- **Automated Verification & AltirraSDL Integration ([tests/test_gameover_screen.py](tests/test_gameover_screen.py))**:
+  - Updated unit tests in `tests/test_gameover_screen.py` to assert hold timer behavior, button release arming, fire press transition, and keyboard press transition.
+  - Verified full build and automated test suite: 784/784 tests passing with 0 errors and valid memory map (`check_memory.py`).
+  - Tested in AltirraSDL via `altirra_bridge`: verified player death with 0 lives remaining transitions to `STATE_OVER`, hold timer counts down from 50 to 0 while holding the screen, and subsequent fire button press cleanly returns to `STATE_TITLE`. Captured artifact screenshot.
+
 ## [2026-10-30] - Automate Version Bump in Title Scroll Text During Release Workflow
 
 - **Release Helper & Scroll Text Substitution ([scripts/release_helper.py](scripts/release_helper.py))**:
