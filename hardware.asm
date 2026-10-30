@@ -77,6 +77,7 @@ WSYNC       = $D40A     ; Wait for Horizontal Sync
 VCOUNT      = $D40B     ; Licznik linii rastra
 NMIEN       = $D40E     ; Włączenie przerwań NMI (DLI, VBI)
 NMIST       = $D40F     ; Rejestr statusu NMI
+NMIRES      = $D40F     ; Rejestr resetu NMI (zapis)
 
 ; --- POKEY Hardware Registers ---
 AUDF1       = $D200     ; Częstotliwość kanału 1

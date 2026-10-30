@@ -14,8 +14,9 @@ FONT_ADDR   = $2400     ; 1 KB aligned font (1024 bytes: $2400-$27FF)
 INTRO_VRAM  = $2800     ; Intro text VRAM (480 bytes: $2800-$29DF, 12 lines x 40 cols)
 INTRO_DLIST = $2A00     ; Intro display list (~30 bytes: $2A00-$2A1D)
 TILES_META  = $2A30     ; Tileset SoA metadata & row offset tables (~494 bytes: $2A30-$2C1D)
-GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp (3,840 bytes: $3000-$3EFF, 4 KB aligned)
-GAME_DLIST  = $3F00     ; Gameplay Display List (~107 bytes: $3F00-$3F6A, 1 KB aligned)
+GAME_VRAM   = $3000     ; Playfield VRAM: ANTIC Mode D ($0D) 160x96 2bpp ($3000-$3F5F: 92 scene lines + Narrow HUD 128x8)
+HUD_VRAM    = $3E60     ; In-Game HUD VRAM (256 bytes: $3E60-$3F5F, 8 lines x 32 bytes)
+GAME_DLIST  = $3F60     ; Gameplay Display List (~141 bytes: $3F60-$3FED, strictly within $3C00-$3FFF)
 TITLE_VRAM  = $4000     ; Title Scroll VRAM & Text ($4000-$40C6, 4 KB aligned)
 SCENES_DATA = $5000     ; Scene runtime engine (secrets + channel dispatch/enemies/sfx): $5000-$5BFF
 SCENE_TABLES = $9DFE    ; Scene SoA tables + pointer tables + per-scene DLI blocks + platforms engine,
@@ -34,7 +35,11 @@ RENDER_CODE = $7A00     ; Playfield Blitter Engine & Sprites Data (headroom befo
 TILES_ADDR  = $8000     ; ANTIC Mode E Tileset Bitmaps (16,237 bytes: $8000-$BF6C)
 
 ; --- Gameplay & Title Buffer Equates ---
-GAME_VRAM_SIZE        = 3840  ; 40 bytes/line * 96 lines
+SCENE_PLAYFIELD_LINES = 92
+HUD_LINES             = 8
+HUD_PITCH             = 32
+HUD_VRAM_SIZE         = 256
+GAME_VRAM_SIZE        = 3936  ; 3680 (scene) + 256 (HUD)
 GAME_VRAM_LINES       = 96
 GAME_VRAM_PITCH       = 40
 TITLE_VS_BUF_LEN      = 120   ; 3 lines * 40 bytes for vertical scroll window (L0, L1, L2)
@@ -216,19 +221,17 @@ dlist_intro
     .word dlist_intro
 
 ; ==============================================================================
-; TILESET METADATA, STATUS LINE & SFX ENGINE ($2A30)
+; TILESET METADATA, STATUS LINE & SCROLL ENGINE ($2A30)
 ; ==============================================================================
     org TILES_META
     icl 'gen/tiles_data.asm'
     icl 'gen/player_sprites.asm'
     icl 'engine/status_line.asm'
-    icl 'engine/sfx_victory.asm'
-    icl 'engine/sfx_secret.asm'
     icl 'engine/scroll.asm'
 
 ; ==============================================================================
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
-; ANTIC Mode D ($0D, 160x96 2bpp, 2 scanlines/line, 40 bytes/line * 96 lines = 3,840 bytes)
+; ANTIC Mode D ($0D, 160x92 scene = 3680 B + 128x8 narrow HUD = 256 B, total 3,936 bytes)
 ; 4 KB aligned: strictly within $3000-$3FFF (never crosses 4 KB boundary)
 ; ==============================================================================
     org GAME_VRAM
@@ -236,9 +239,9 @@ game_vram_buf
     :GAME_VRAM_SIZE .byte 0
 
 ; ==============================================================================
-; GAME DISPLAY LIST SEGMENT ($3F00)
-; 96 lines of ANTIC Mode D ($0D) with top/bottom blank margins (~107 bytes: $3F00-$3F6A)
-; 1 KB aligned: strictly within $3C00-$3FFF (never crosses 1 KB boundary)
+; GAME DISPLAY LIST SEGMENT ($3F60)
+; 92 lines of ANTIC Mode D (Normal 40B) + 8 blank scanlines margin + 8 lines Mode D (Narrow 32B) + 8 blank scanlines
+; Strictly within $3C00-$3FFF (never crosses 1 KB boundary)
 ; ==============================================================================
     org GAME_DLIST
 dlist_game
@@ -246,7 +249,7 @@ dlist_game
     .byte DL_BLANK8
     .byte DL_BLANK8
 
-    ; Line 0 with LMS (starts at $3000, 3840 bytes -> ends at $3EFF, never wraps)
+    ; Line 0 with LMS (starts at $3000, 3680 bytes -> ends at $3E5F, 92 lines)
     .byte DL_MODE_D | DL_LMS
     .word GAME_VRAM
     :5 .byte DL_MODE_D          ; Lines 1-5
@@ -261,13 +264,18 @@ dlist_game
     .byte DL_MODE_D | DL_DLI    ; Line 70 (DLI 5: setup Pas 4 at line 72)
     :15 .byte DL_MODE_D         ; Lines 71-85
     .byte DL_MODE_D | DL_DLI    ; Line 86 (DLI 6: setup Pas 5 at line 88)
-    :9 .byte DL_MODE_D          ; Lines 87-95
+    :5 .byte DL_MODE_D          ; Lines 87-91 (Row 5 platform: 88, 89, 90, 91)
 
-    ; Bottom spacing & Status Line (ANTIC Mode 2, 40 columns)
-    .byte DL_BLANK8 | DL_DLI    ; 8 blank scanlines; DLI 7 triggers on line 7
-    .byte DL_MODE_2 | DL_LMS    ; 1 line ANTIC Mode 2 (8 scanlines)
-    .word status_line_vram
-    .byte DL_BLANK8             ; 8 blank scanlines bottom margin
+    ; 8 blank scanlines margin below lowest platform (DLI 7 triggers here: narrow width + HUD palette)
+    .byte DL_BLANK8 | DL_DLI
+
+    ; HUD in ANTIC Mode D (Narrow width: 32 bytes/line * 8 lines = 256 bytes)
+    .byte DL_MODE_D | DL_LMS
+    .word HUD_VRAM
+    :7 .byte DL_MODE_D          ; Lines 1-7 of HUD
+
+    ; 8 blank scanlines bottom margin (DLI 8 triggers here: restore normal width + reset DLI chain)
+    .byte DL_BLANK8 | DL_DLI
 
     ; Jump and wait for vertical blank
     .byte DL_JVB
@@ -278,7 +286,7 @@ dlist_game
 ; 1 line of ANTIC Mode 2 (8 scanlines) centered in 192 scanlines:
 ; 92 blank scanlines (11x8 + 1x4), 1 line ANTIC 2 with LMS (8 scanlines),
 ; 92 blank scanlines (11x8 + 1x4), and JVB.
-; Strictly within $3F00-$3FFF (never crosses 1 KB boundary)
+; Strictly within $3C00-$3FFF (never crosses 1 KB boundary)
 ; ==============================================================================
 dlist_scene_title
     :11 .byte DL_BLANK8
@@ -293,13 +301,6 @@ dlist_scene_title_addr
 
     .byte DL_JVB
     .word dlist_scene_title
-
-; ==============================================================================
-; STATUS LINE VRAM (40 bytes, ANTIC Mode 2)
-; Strictly within $3F00-$3FFF (never crosses 4 KB boundary)
-; ==============================================================================
-status_line_vram
-    :40 .byte 0
 
 ; ==============================================================================
 ; TITLE VERTICAL SCROLLER DATA SEGMENT ($4000)
@@ -552,6 +553,8 @@ pmg_memory
     org RENDER_CODE
     icl 'engine/render.asm'
     icl 'gen/sprites_data.asm'
+    icl 'engine/hud_dli.asm'
+    icl 'engine/sfx_victory.asm'
 
 ; ==============================================================================
 ; EARLY INIT VECTOR: Disable BASIC ROM so $A000-$BFFF RAM is writable by loader
@@ -605,6 +608,7 @@ tiles_data_end
 .if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
     .error "gen/gameover_texts.inc allows a different line count than the display list"
 .endif
+    icl 'engine/sfx_secret.asm'
     icl 'gen/game_over_music.asm'
     icl 'gen/victory_music.asm'
 scene_tables_end

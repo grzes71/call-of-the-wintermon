@@ -277,8 +277,8 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
     assert labels["GAME_VRAM"] % 0x1000 == 0, "GAME_VRAM must be 4 KB aligned"
     assert labels["GAME_VRAM_BUF"] == 0x3000
 
-    assert labels["GAME_DLIST"] == 0x3F00
-    assert labels["DLIST_GAME"] == 0x3F00
+    assert labels["GAME_DLIST"] == 0x3F60
+    assert labels["DLIST_GAME"] == 0x3F60
     assert labels["GAME_DLIST"] % 0x0400 == 0 or labels["GAME_DLIST"] >= 0x3C00, "GAME_DLIST must not cross 1 KB"
 
     assert labels["PMG_ADDR"] == 0x6800
@@ -313,22 +313,27 @@ def test_gameplay_vram_and_pmg_reservation() -> None:
     lms_target = mem[dl_addr + 4] | (mem[dl_addr + 5] << 8)
     assert lms_target == 0x3000
 
-    # Remaining 95 lines of mode D ($0D), with DL_DLI ($8D) on lines 6, 22, 38, 54, 70, 86 (i in 5, 21, 37, 53, 69, 85)
+    # Remaining 91 scene lines of mode D ($0D), with DL_DLI ($8D) on lines 6, 22, 38, 54, 70, 86
     dli_indices = {5, 21, 37, 53, 69, 85}
-    for i in range(95):
+    for i in range(91):
         expected = 0x8D if i in dli_indices else 0x0D
         assert mem[dl_addr + 6 + i] == expected, f"Mode D line {i+1} mismatch: expected {expected:#x}, got {mem[dl_addr + 6 + i]:#x}"
 
-    # Bottom margin & Mode 2 status line:
-    assert mem[dl_addr + 101] == 0xF0  # DL_BLANK8 | DL_DLI
-    assert mem[dl_addr + 102] == 0x42  # DL_MODE_2 | DL_LMS
-    status_target = mem[dl_addr + 103] | (mem[dl_addr + 104] << 8)
-    assert status_target == labels["STATUS_LINE_VRAM"]
-    assert mem[dl_addr + 105] == 0x70  # DL_BLANK8
+    # Margin before HUD (8 blank scanlines + DLI):
+    assert mem[dl_addr + 97] == 0xF0  # DL_BLANK8 | DL_DLI
+    # HUD Line 0: Mode D with LMS to HUD_VRAM
+    assert mem[dl_addr + 98] == 0x4D  # DL_MODE_D | DL_LMS
+    hud_target = mem[dl_addr + 99] | (mem[dl_addr + 100] << 8)
+    assert hud_target == labels["HUD_VRAM"]
+    # Remaining 7 lines of HUD Mode D
+    for i in range(7):
+        assert mem[dl_addr + 101 + i] == 0x0D
+    # Margin after HUD (8 blank scanlines + DLI to restore normal width):
+    assert mem[dl_addr + 108] == 0xF0  # DL_BLANK8 | DL_DLI
 
-    # JVB instruction ($41) pointing to dlist_game ($3F00)
-    assert mem[dl_addr + 106] == 0x41
-    jvb_target = mem[dl_addr + 107] | (mem[dl_addr + 108] << 8)
+    # JVB instruction ($41) pointing to dlist_game
+    assert mem[dl_addr + 109] == 0x41
+    jvb_target = mem[dl_addr + 110] | (mem[dl_addr + 111] << 8)
     assert jvb_target == dl_addr
 
     # 3. Simulate game_init with py65

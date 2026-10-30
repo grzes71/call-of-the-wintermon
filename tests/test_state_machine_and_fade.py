@@ -198,8 +198,7 @@ def test_scene_title_card_frame_progression(emu_env):
     # Display list switched to dlist_game ($3F00)
     sdlst = mpu.memory[labels["SDLSTL"]] | (mpu.memory[labels["SDLSTH"]] << 8)
     assert sdlst == labels["DLIST_GAME"]
-    assert sdlst == 0x3F00
-    # Gameplay re-enables PMG latching (disabled while the title card was shown)
+        # Gameplay re-enables PMG latching (disabled while the title card was shown)
     assert mpu.memory[labels["GRACTL"]] == 0x03
 
 

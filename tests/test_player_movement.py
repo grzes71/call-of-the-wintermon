@@ -43,7 +43,7 @@ SPAWN0_Y = player_spawn(SCENE0)["y"]
 SPAWN0_PMG_Y = player_spawn_pmg_y(SCENE0)
 
 # The engine clips PMG writes at the status-line area (player.asm compares against 224).
-PMG_STATUS_LINE_TOP = 224
+PMG_STATUS_LINE_TOP = 216
 
 
 def _role_index(role: str) -> int:
@@ -557,10 +557,10 @@ def test_player_fall_death_and_respawn_with_lives_decrement():
     # Lives decremented from 3 to 2
     assert mem[labels["PLAYER_LIVES"]] == 2
     # Status line updated: 3rd heart glyph turned off
-    status_vram = labels["STATUS_LINE_VRAM"]
-    assert mem[status_vram + 0] == 64  # Heart 1
-    assert mem[status_vram + 1] == 64  # Heart 2
-    assert mem[status_vram + 2] == 0   # Space (lost life)
+    status_chars = labels["STATUS_LINE_CHARS"]
+    assert mem[status_chars + 0] == 64  # Heart 1
+    assert mem[status_chars + 1] == 64  # Heart 2
+    assert mem[status_chars + 2] == 0   # Space (lost life)
 
     # Hero enters EMERGE state starting below the status line edge
     assert mem[labels["PLAYER_STATE"]] == 5  # PLAYER_STATE_EMERGE
@@ -628,10 +628,10 @@ def test_player_fall_death_game_over_when_zero_lives():
     assert mem[labels["PLAYER_LIVES"]] == 0
 
     # All 3 hearts turned off
-    status_vram = labels["STATUS_LINE_VRAM"]
-    assert mem[status_vram + 0] == 0
-    assert mem[status_vram + 1] == 0
-    assert mem[status_vram + 2] == 0
+    status_chars = labels["STATUS_LINE_CHARS"]
+    assert mem[status_chars + 0] == 0
+    assert mem[status_chars + 1] == 0
+    assert mem[status_chars + 2] == 0
 
     # Player is in EMERGE state (5)
     assert mem[labels["PLAYER_STATE"]] == 5

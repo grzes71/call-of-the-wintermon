@@ -538,9 +538,7 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
     spec_addr = labels["SECRETS_SPECIAL"]
     blip_timer = labels["SFX_SECRET_TIMER"]
     fanfare_timer = labels["SFX_VICTORY_TIMER"]
-    hud = labels["STATUS_LINE_VRAM"]
-    icon_capacity = special_secret_total()
-    icon_start = 40 - icon_capacity
+    status_chars = labels["STATUS_LINE_CHARS"]
 
     # 1. Engine flag table mirrors the catalogue (compiler -> ROM -> secrets_init)
     for i, secret in enumerate(secrets):
@@ -576,10 +574,16 @@ def test_secret_collect_blip_variant_and_final_secret_silence():
         assert mem[labels["PLAYER_SPECIALS"]] == specials_collected, (
             f"secret {expected}: the HUD counter must follow the collected special secrets"
         )
-        icon_area = [mem[hud + icon_start + k] for k in range(icon_capacity)]
-        assert icon_area == [0] * (icon_capacity - specials_collected) + [61] * specials_collected, (
-            f"secret {expected}: collected special secrets must be drawn at the right end"
-        )
+        assert mem[status_chars + 12] == 61, "HUD must show disc icon at column 12"
+        assert mem[status_chars + 13] == labels.get("STATUS_GLYPH_STAR", 10), "HUD must show '*' at column 13"
+        if specials_collected < 10:
+            assert mem[status_chars + 14] == 16 + specials_collected, (
+                f"secret {expected}: HUD digit at column 14 must show {specials_collected}"
+            )
+            assert mem[status_chars + 15] == 0
+        else:
+            assert mem[status_chars + 14] == 17
+            assert mem[status_chars + 15] == 16 + (specials_collected - 10)
 
         model.collect(expected)
         if not model.scene_advanced:
