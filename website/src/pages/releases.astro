@@ -1,0 +1,254 @@
+---
+/**
+ * releases.astro
+ * Official release history, changelog entries, and verified binary downloads.
+ * Consumes reports/portal/releases.json and historical release snapshots.
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getReleases, getHistoricalSnapshots, formatBytes } from '../lib/data';
+
+const releasesData = getReleases();
+const snapshots = getHistoricalSnapshots();
+
+// Map snapshots by tag for quick lookup of binary_sha256
+const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
+---
+
+<BaseLayout
+  title="Releases & Downloads — Call of the Wintermon"
+  description="Official binary downloads (XEX), verified SHA-256 checksums, and memory metrics for Call of the Wintermon (Atari 8-bit)."
+>
+  <div class="space-y-10">
+
+    <!-- Page Header -->
+    <div class="border-b border-atari-border pb-6 space-y-2">
+      <div class="flex items-center gap-2 text-xs font-mono text-atari-green font-bold tracking-wider uppercase">
+        <span>&gt; RELEASE ARCHIVE</span>
+        <span class="text-atari-muted">/</span>
+        <span>VERIFIED BINARY TELEMETRY</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-atari-text font-mono">
+        OFFICIAL <span class="text-atari-green">RELEASES &amp; CHANGELOGS</span>
+      </h1>
+      <p class="text-xs sm:text-sm text-atari-muted leading-relaxed max-w-3xl">
+        All release packages feature standalone Atari 8-bit executable binaries (<code class="text-atari-text">.xex</code>)
+        tested against official Atari 800XL / 65XE PAL hardware and Altirra emulation. 
+        Each release includes an immutable SHA-256 checksum and memory utilization profile.
+      </p>
+    </div>
+
+    <!-- Historical Comparison Matrix -->
+    <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>HISTORICAL VERSION COMPARISON MATRIX</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Cross-release evolution of memory headroom and game world content.
+          </p>
+        </div>
+        <div class="text-xs text-atari-muted">
+          {releasesData.total_releases} Total Releases
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="text-atari-muted border-b border-atari-border/70 text-[11px]">
+              <th class="py-2 px-2">VERSION</th>
+              <th class="py-2 px-2">DATE</th>
+              <th class="py-2 px-2 text-right">BINARY SIZE</th>
+              <th class="py-2 px-2 text-right">USER RAM</th>
+              <th class="py-2 px-2 text-right">FREE HEADROOM</th>
+              <th class="py-2 px-2 text-right">UTILIZATION</th>
+              <th class="py-2 px-2 text-right">SCENES</th>
+              <th class="py-2 px-2 text-right">PLATFORMS</th>
+              <th class="py-2 px-2 text-right">ENEMIES</th>
+              <th class="py-2 px-3">COMMIT</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-atari-border/30">
+            {releasesData.releases.map((rel) => {
+              const snap = snapshotMap.get(rel.tag_name);
+              const mem = rel.memory_metrics || snap?.memory_report.memory_summary;
+              const game = rel.game_metrics || snap?.frozen_game_stats;
+              const dateStr = rel.published_at ? rel.published_at.split('T')[0] : 'N/A';
+              const binarySize = rel.xex_asset ? rel.xex_asset.size_bytes : (snap ? snap.binary_size_bytes : 0);
+
+              return (
+                <tr class="hover:bg-atari-surfaceLight/30 transition-colors">
+                  <td class="py-2.5 px-2 font-bold text-atari-green font-mono">{rel.tag_name}</td>
+                  <td class="py-2.5 px-2 text-atari-muted font-mono text-[11px]">{dateStr}</td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-text">
+                    {binarySize > 0 ? formatBytes(binarySize) : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-text font-bold">
+                    {mem ? formatBytes(mem.total_allocated_bytes) : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-cyan font-bold">
+                    {mem ? formatBytes(mem.total_free_bytes) : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-muted">
+                    {mem ? `${mem.utilization_percent.toFixed(2)}%` : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-text">
+                    {game ? game.scene_count : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-muted">
+                    {game ? game.total_platforms : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right text-atari-muted">
+                    {game ? game.total_enemies : 'N/A'}
+                  </td>
+                  <td class="py-2.5 px-3 font-mono text-atari-cyan text-[11px]">
+                    <a
+                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${rel.source_commit_sha}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:underline"
+                    >
+                      {rel.source_commit_sha ? rel.source_commit_sha.substring(0, 7) : 'N/A'}
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Individual Release Cards -->
+    <div class="space-y-6">
+      {releasesData.releases.map((rel) => {
+        const snap = snapshotMap.get(rel.tag_name);
+        const mem = rel.memory_metrics || snap?.memory_report.memory_summary;
+        const game = rel.game_metrics || snap?.frozen_game_stats;
+        const sha256 = snap?.binary_sha256;
+        const dateStr = rel.published_at ? rel.published_at.split('T')[0] : 'N/A';
+
+        return (
+          <article class="border border-atari-border bg-atari-surface/70 rounded-lg p-6 space-y-5 font-mono">
+            <!-- Header bar -->
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-atari-border/70 pb-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-3">
+                  <h2 class="text-xl font-bold text-atari-green font-mono">{rel.tag_name}</h2>
+                  <span class="text-sm font-semibold text-atari-text">{rel.name || 'Release Build'}</span>
+                  {rel.prerelease && (
+                    <span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      PRE-RELEASE
+                    </span>
+                  )}
+                </div>
+                <div class="text-xs text-atari-muted flex items-center gap-3">
+                  <span>Published: <strong class="text-atari-text">{dateStr}</strong></span>
+                  <span>·</span>
+                  <span>
+                    Commit:{' '}
+                    <a
+                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${rel.source_commit_sha}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-atari-cyan hover:underline"
+                    >
+                      {rel.source_commit_sha ? rel.source_commit_sha.substring(0, 7) : 'N/A'}
+                    </a>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Download Buttons -->
+              <div class="flex flex-wrap items-center gap-2">
+                {rel.xex_asset && (
+                  <a
+                    href={rel.xex_asset.download_url}
+                    class="px-4 py-2 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2"
+                  >
+                    <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                    <span>DOWNLOAD XEX ({formatBytes(rel.xex_asset.size_bytes)})</span>
+                  </a>
+                )}
+                {rel.pdf_asset && (
+                  <a
+                    href={rel.pdf_asset.download_url}
+                    class="px-3 py-2 rounded border border-atari-border text-atari-muted hover:text-atari-text text-xs tracking-wider uppercase flex items-center gap-1.5"
+                  >
+                    <svg class="w-3.5 h-3.5 fill-current text-red-400" viewBox="0 0 24 24">
+                      <path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .8-.7 1.5-1.5 1.5H9v2H7.5V7H10c.8 0 1.5.7 1.5 1.5v1zm5 2c0 .8-.7 1.5-1.5 1.5h-2.5V7H15c.8 0 1.5.7 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zm4 2h1v-3h-1v3zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/>
+                    </svg>
+                    <span>PDF REPORT</span>
+                  </a>
+                )}
+                <a
+                  href={rel.html_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="px-3 py-2 rounded border border-atari-border text-atari-muted hover:text-atari-cyan text-xs tracking-wider"
+                >
+                  VIEW ON GITHUB &rarr;
+                </a>
+              </div>
+            </div>
+
+            <!-- Technical Telemetry Pills -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">USER RAM ALLOC</div>
+                <div class="font-bold text-atari-green font-mono">{mem ? formatBytes(mem.total_allocated_bytes) : 'N/A'}</div>
+              </div>
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">FREE HEADROOM</div>
+                <div class="font-bold text-atari-cyan font-mono">{mem ? formatBytes(mem.total_free_bytes) : 'N/A'}</div>
+              </div>
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">RAM UTILIZATION</div>
+                <div class="font-bold text-atari-text font-mono">{mem ? `${mem.utilization_percent.toFixed(2)}%` : 'N/A'}</div>
+              </div>
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">STAGES / SCENES</div>
+                <div class="font-bold text-atari-amber font-mono">{game ? `${game.scene_count} Stages` : 'N/A'}</div>
+              </div>
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">TOTAL PLATFORMS</div>
+                <div class="font-bold text-atari-text font-mono">{game ? game.total_platforms : 'N/A'}</div>
+              </div>
+              <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+                <div class="text-[10px] text-atari-muted">ENEMIES / SECRETS</div>
+                <div class="font-bold text-atari-text font-mono">{game ? `${game.total_enemies} / ${game.total_secrets}` : 'N/A'}</div>
+              </div>
+            </div>
+
+            <!-- SHA-256 Checksum Box -->
+            {sha256 && (
+              <div class="border border-atari-border/60 bg-atari-dark/80 rounded p-3 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-bold text-atari-muted uppercase tracking-wider">SHA-256:</span>
+                  <code class="text-atari-green text-[11px] break-all select-all font-mono">{sha256}</code>
+                </div>
+                <span class="text-[10px] text-atari-muted shrink-0">Exact Binary Digest</span>
+              </div>
+            )}
+
+            <!-- Release Notes / Changelog Body -->
+            {rel.body && (
+              <div class="border-t border-atari-border/40 pt-4 space-y-2">
+                <div class="text-xs font-bold text-atari-text uppercase tracking-wider">RELEASE NOTES:</div>
+                <div class="text-xs text-atari-muted leading-relaxed whitespace-pre-line bg-atari-surfaceLight/20 rounded p-4 border border-atari-border/30 max-h-60 overflow-y-auto">
+                  {rel.body}
+                </div>
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+
+  </div>
+</BaseLayout>

@@ -1,0 +1,262 @@
+---
+/**
+ * stats.astro
+ * Game statistics and telemetry dashboard for Call of the Wintermon.
+ * Extracted directly from scenes.json, definitions.json, and compiled asset manifests.
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getGameStats } from '../lib/data';
+
+const stats = getGameStats();
+
+const summary = stats.summary;
+
+// Calculate aggregate platform widths across all scenes
+const aggregateWidths: Record<string, number> = {};
+stats.scenes.forEach((scene) => {
+  if (scene.platforms && scene.platforms.widths) {
+    Object.entries(scene.platforms.widths).forEach(([width, count]) => {
+      aggregateWidths[width] = (aggregateWidths[width] || 0) + Number(count);
+    });
+  }
+});
+
+// Sort platform widths numerically
+const sortedWidths = Object.entries(aggregateWidths).sort(([w1], [w2]) => Number(w1) - Number(w2));
+const maxPlatformCount = Math.max(...Object.values(aggregateWidths), 1);
+---
+
+<BaseLayout
+  title="Game Telemetry & Stage Statistics — Call of the Wintermon"
+  description="Empirical gameplay metrics: scenes, platform width distributions, enemy bestiary, and secret distributions for Call of the Wintermon (Atari 8-bit)."
+>
+  <div class="space-y-10">
+
+    <!-- Page Header -->
+    <div class="border-b border-atari-border pb-6 space-y-2">
+      <div class="flex items-center gap-2 text-xs font-mono text-atari-cyan font-bold tracking-wider uppercase">
+        <span>&gt; GAME TELEMETRY</span>
+        <span class="text-atari-muted">/</span>
+        <span>LEVEL DESIGN &amp; BESTIARY METRICS</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-atari-text font-mono">
+        DEVELOPMENT <span class="text-atari-cyan">TELEMETRY &amp; STATISTICS</span>
+      </h1>
+      <p class="text-xs sm:text-sm text-atari-muted leading-relaxed max-w-3xl">
+        Empirical metrics extracted directly from the game's level definitions and scene manifests. 
+        All metrics reflect the verified build state without manual approximations or interpolated values.
+      </p>
+    </div>
+
+    <!-- Quick Telemetry Summary Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">SCENES</div>
+        <div class="text-2xl font-bold text-atari-green font-mono">{summary.scene_count}</div>
+        <div class="text-[10px] text-atari-muted">Active Stages</div>
+      </div>
+
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">TOTAL PLATFORMS</div>
+        <div class="text-2xl font-bold text-atari-text font-mono">{summary.total_platforms}</div>
+        <div class="text-[10px] text-atari-muted">{summary.total_static_platforms} Static / {summary.total_moving_platforms} Moving</div>
+      </div>
+
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">MOVING PLATFORMS</div>
+        <div class="text-2xl font-bold text-atari-amber font-mono">{summary.total_moving_platforms}</div>
+        <div class="text-[10px] text-atari-muted">{((summary.total_moving_platforms / summary.total_platforms) * 100).toFixed(1)}% of total</div>
+      </div>
+
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">TOTAL ENEMIES</div>
+        <div class="text-2xl font-bold text-atari-cyan font-mono">{summary.total_enemies}</div>
+        <div class="text-[10px] text-atari-muted">{stats.enemy_types.length} Unique Types</div>
+      </div>
+
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">TOTAL SECRETS</div>
+        <div class="text-2xl font-bold text-atari-amber font-mono">{summary.total_secrets}</div>
+        <div class="text-[10px] text-atari-muted">{stats.secret_types.length} Secret Classes</div>
+      </div>
+
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-4 space-y-1">
+        <div class="text-[10px] text-atari-muted font-bold tracking-wider uppercase">AUDIO CHANNELS</div>
+        <div class="text-2xl font-bold text-atari-green font-mono">4</div>
+        <div class="text-[10px] text-atari-muted">POKEY Hardware</div>
+      </div>
+
+    </div>
+
+    <!-- Platform Width Distribution Histogram (Native CSS / SVG Bars) -->
+    <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-amber">&gt;</span>
+            <span>PLATFORM WIDTH DISTRIBUTION (TILES PER PLATFORM)</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Breakdown of platform span sizes across all 7 scenes.
+          </p>
+        </div>
+        <div class="text-xs text-atari-muted">
+          Total Analyzed: {summary.total_platforms} Platforms
+        </div>
+      </div>
+
+      <!-- Histogram Bars -->
+      <div class="space-y-3 pt-2">
+        {sortedWidths.map(([width, count]) => {
+          const widthPct = (count / maxPlatformCount) * 100;
+          return (
+            <div class="flex items-center gap-3 text-xs">
+              <span class="w-20 text-atari-muted text-[11px] font-mono text-right shrink-0">
+                {width} {Number(width) === 1 ? 'Tile' : 'Tiles'}:
+              </span>
+              <div class="flex-1 bg-atari-surfaceLight h-5 rounded overflow-hidden flex items-center px-2 relative">
+                <div
+                  class="bg-atari-amber h-full rounded transition-all opacity-80"
+                  style={`width: ${widthPct}%`}
+                ></div>
+                <span class="absolute left-3 text-[11px] font-bold text-atari-text drop-shadow">
+                  {count} platforms ({((count / summary.total_platforms) * 100).toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    <!-- Stages / Scenes Directory Table -->
+    <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>GAME STAGES DIRECTORY ({stats.scenes.length} SCENES)</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Dimensions, terrain layout, and entity quotas per scene.
+          </p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="text-atari-muted border-b border-atari-border/70 text-[11px]">
+              <th class="py-2 px-2">#</th>
+              <th class="py-2 px-3">SCENE TITLE</th>
+              <th class="py-2 px-2 text-right">PLATFORMS</th>
+              <th class="py-2 px-2 text-right">STATIC / MOVING</th>
+              <th class="py-2 px-2 text-right">ENEMIES</th>
+              <th class="py-2 px-2 text-right">SECRETS</th>
+              <th class="py-2 px-3">SOURCE FILE</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-atari-border/30">
+            {stats.scenes.map((scene, idx) => (
+              <tr class="hover:bg-atari-surfaceLight/30 transition-colors">
+                <td class="py-2.5 px-2 font-mono text-atari-muted">{idx + 1}</td>
+                <td class="py-2.5 px-3 font-bold text-atari-text">{scene.name}</td>
+                <td class="py-2.5 px-2 font-mono text-right text-atari-text">{scene.platforms.total}</td>
+                <td class="py-2.5 px-2 font-mono text-right text-atari-muted">
+                  <span class="text-atari-text">{scene.platforms.static}</span> / <span class="text-atari-amber font-semibold">{scene.platforms.moving}</span>
+                </td>
+                <td class="py-2.5 px-2 font-mono text-right text-atari-cyan font-bold">{scene.enemies.total}</td>
+                <td class="py-2.5 px-2 font-mono text-right text-atari-green font-bold">{scene.secrets.total}</td>
+                <td class="py-2.5 px-3 font-mono text-[11px] text-atari-muted">{scene.filename}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr class="border-t-2 border-atari-border font-bold text-atari-text text-xs">
+              <td colspan="2" class="py-3 px-2 text-right text-atari-muted uppercase text-[11px]">TOTALS:</td>
+              <td class="py-3 px-2 text-right font-mono text-atari-text">{summary.total_platforms}</td>
+              <td class="py-3 px-2 text-right font-mono text-atari-amber">{summary.total_static_platforms} / {summary.total_moving_platforms}</td>
+              <td class="py-3 px-2 text-right font-mono text-atari-cyan">{summary.total_enemies}</td>
+              <td class="py-3 px-2 text-right font-mono text-atari-green">{summary.total_secrets}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Enemy Bestiary & Secret Types Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 font-mono">
+      
+      <!-- Enemy Bestiary -->
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4">
+        <div class="border-b border-atari-border pb-3">
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-cyan">&gt;</span>
+            <span>ELDRITCH ENEMY BESTIARY ({stats.enemy_types.length} TYPES)</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Global counts and habitat scenes for hostile entities.
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          {stats.enemy_types.map((enemy) => (
+            <div class="border border-atari-border/50 bg-atari-surfaceLight/30 rounded p-3 text-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-atari-cyan text-sm flex items-center gap-2">
+                  <span class="text-atari-muted text-xs">#{enemy.id}</span>
+                  <span>{enemy.name}</span>
+                </span>
+                <span class="px-2 py-0.5 rounded bg-atari-cyan/10 border border-atari-cyan/30 text-atari-cyan font-bold font-mono">
+                  {enemy.total_count} in game
+                </span>
+              </div>
+              <div class="text-[11px] text-atari-muted leading-relaxed">
+                <span class="text-atari-text font-semibold">Encountered In:</span>{' '}
+                {enemy.scenes && enemy.scenes.length > 0 ? enemy.scenes.join(', ') : 'None'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Secret Collectibles Catalogue -->
+      <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4">
+        <div class="border-b border-atari-border pb-3">
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>SECRET COLLECTIBLES ({stats.secret_types.length} CLASSES)</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Artifacts and score discs hidden throughout Wintermon mountain.
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          {stats.secret_types.map((secret) => (
+            <div class="border border-atari-border/50 bg-atari-surfaceLight/30 rounded p-3 text-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-atari-green text-sm flex items-center gap-2">
+                  <span class="text-atari-muted text-xs">#{secret.id}</span>
+                  <span>{secret.name}</span>
+                </span>
+                <span class="px-2 py-0.5 rounded bg-atari-green/10 border border-atari-green/30 text-atari-green font-bold font-mono">
+                  {secret.total_count} total
+                </span>
+              </div>
+              <div class="text-[11px] text-atari-muted leading-relaxed">
+                <span class="text-atari-text font-semibold">Hidden In:</span>{' '}
+                {secret.scenes && secret.scenes.length > 0 ? secret.scenes.join(', ') : 'None'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</BaseLayout>

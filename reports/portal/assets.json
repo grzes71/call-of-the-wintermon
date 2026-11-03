@@ -1,0 +1,152 @@
+{
+  "schema_version": "3.2.0",
+  "game_name": "Call of the Wintermon",
+  "version": "0.2.0",
+  "target": {
+    "platform": "Atari 8-bit (XL/XE)",
+    "cpu": "MOS 6502",
+    "memory": "64 KB RAM",
+    "assembler": "MADS",
+    "binary": "call_of_the_wintermon.xex"
+  },
+  "graphics": {
+    "tilesets": [
+      {
+        "id": "trees",
+        "path": "tiles/trees.png",
+        "type": "image/png",
+        "target_mode": "ANTIC Mode E (160x96 2bpp)",
+        "description": "Forest trees and foliage environment tileset",
+        "size_bytes": 1489,
+        "exists": true
+      },
+      {
+        "id": "castles",
+        "path": "tiles/castles.png",
+        "type": "image/png",
+        "target_mode": "ANTIC Mode E (160x96 2bpp)",
+        "description": "Wintermon castle stone blocks, towers and ramparts tileset",
+        "size_bytes": 1692,
+        "exists": true
+      },
+      {
+        "id": "depths",
+        "path": "tiles/depths.png",
+        "type": "image/png",
+        "target_mode": "ANTIC Mode E (160x96 2bpp)",
+        "description": "Mountain depths, cavern rocks and underground structures tileset",
+        "size_bytes": 1977,
+        "exists": true
+      },
+      {
+        "id": "hell",
+        "path": "tiles/hell.png",
+        "type": "image/png",
+        "target_mode": "ANTIC Mode E (160x96 2bpp)",
+        "description": "Hell and fire cavern environment tileset",
+        "size_bytes": 2149,
+        "exists": true
+      }
+    ],
+    "fonts": [
+      {
+        "id": "main_font",
+        "path": "fonts/font.fnt",
+        "type": "binary",
+        "size_bytes": 1024,
+        "description": "Standard 1 KB Atari character generator font (intro narrative & HUD)",
+        "exists": true
+      }
+    ],
+    "sprites": [
+      {
+        "id": "objects",
+        "path": "sprites/objects.sprite.json",
+        "type": "sprite_sheet",
+        "description": "Collectible secrets (CD, Ladder, Gold Key) animated frames and 5th-player missile bit patterns",
+        "size_bytes": 22302,
+        "exists": true
+      },
+      {
+        "id": "player",
+        "path": "sprites/player.sprite.json",
+        "type": "sprite_sheet",
+        "description": "Player 0 hero animations (walk right/left, jump, kneel, death)",
+        "size_bytes": 12611,
+        "exists": true
+      }
+    ]
+  },
+  "audio": {
+    "music": [
+      {
+        "id": "title_music",
+        "path": "music/title.json",
+        "format": "json",
+        "channels": 4,
+        "description": "Title screen music score definition",
+        "size_bytes": 68558,
+        "exists": true
+      },
+      {
+        "id": "intro_music",
+        "path": "music/intro.dsl",
+        "format": "dsl",
+        "channels": 4,
+        "description": "Intro narrative sequence theme in Atari Music DSL",
+        "size_bytes": 1249,
+        "exists": true
+      }
+    ]
+  },
+  "texts": [
+    {
+      "id": "title_text",
+      "path": "texts/title.txt",
+      "encoding": "utf-8",
+      "description": "Title screen 3 main lines (CALL / OF THE / WINTERMON) procedurally rendered to 2bpp",
+      "size_bytes": 23,
+      "exists": true
+    },
+    {
+      "id": "intro_text",
+      "path": "texts/intro.txt",
+      "encoding": "utf-8",
+      "description": "Intro story crawl text (converted to ATASCII screen codes)",
+      "size_bytes": 435,
+      "exists": true
+    },
+    {
+      "id": "title_scroll",
+      "path": "scroll/title.txt",
+      "encoding": "utf-8",
+      "description": "Title screen bottom vertical scrolling messages (converted to centered 40-byte lines)",
+      "size_bytes": 118,
+      "exists": true
+    }
+  ],
+  "scenes": {
+    "manifest": "scenes/scenes.json",
+    "catalogues": "scenes/definitions.json",
+    "levels": [
+      {
+        "index": 1,
+        "id": "forest",
+        "path": "scenes/01-forest.json",
+        "name": "The Forest Whispers My Name",
+        "description": "Introductory forest scene: platforms, tree tiles, player spawn, secrets",
+        "size_bytes": 6101,
+        "exists": true
+      },
+      {
+        "index": 2,
+        "id": "forest_castle",
+        "path": "scenes/02-forest-castle.json",
+        "name": "Be Quick or Be Dead",
+        "description": "Castle exterior approach: castle ramparts, vertical platforms, secrets",
+        "size_bytes": 7747,
+        "exists": true
+      }
+    ]
+  }
+}

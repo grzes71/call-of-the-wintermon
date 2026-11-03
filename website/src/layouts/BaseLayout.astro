@@ -1,0 +1,58 @@
+---
+/**
+ * BaseLayout.astro
+ * Master layout for Call of the Wintermon official game portal.
+ * Retro Atari 8-bit dark mode aesthetic with toggleable CRT overlay.
+ */
+
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import CrtOverlay from '../components/CrtOverlay.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Call of the Wintermon — Atari 8-Bit Official Game Portal',
+  description = 'Official game portal, telemetry, and 64 KB memory explorer for Call of the Wintermon (Atari 800XL / 65XE).',
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<!doctype html>
+<html lang="en" data-crt="on" class="dark scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    
+    <!-- Open Graph / Meta -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${base}/cover.png`} />
+
+    <title>{title}</title>
+  </head>
+  <body class="bg-atari-bg text-atari-text font-mono antialiased min-h-screen flex flex-col selection:bg-atari-green selection:text-atari-dark relative">
+    <!-- CRT Overlay Layer (Toggleable) -->
+    <CrtOverlay />
+
+    <!-- Site Header -->
+    <Header />
+
+    <!-- Main Viewport Slot -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <slot />
+    </main>
+
+    <!-- Site Footer -->
+    <Footer />
+  </body>
+</html>
+

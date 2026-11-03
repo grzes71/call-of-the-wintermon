@@ -1,0 +1,574 @@
+{
+  "summary": {
+    "scene_count": 7,
+    "total_platforms": 140,
+    "total_static_platforms": 117,
+    "total_moving_platforms": 23,
+    "total_enemies": 23,
+    "total_secrets": 87
+  },
+  "enemy_types": [
+    {
+      "id": 1,
+      "name": "Azathoth",
+      "total_count": 7,
+      "scenes": [
+        "Call of the Wild",
+        "Old Mornings Dawn",
+        "Run to the hills",
+        "Welcome to Hell",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Nyarlathotep",
+      "total_count": 8,
+      "scenes": [
+        "Call of the Wild",
+        "Old Mornings Dawn",
+        "Hell Awaits",
+        "Welcome to Hell"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Yog-Sothoth",
+      "total_count": 4,
+      "scenes": [
+        "Hell Awaits",
+        "Welcome to Hell",
+        "Cthulhu Dawn"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Shub-Niggurath",
+      "total_count": 2,
+      "scenes": [
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Hastog",
+      "total_count": 2,
+      "scenes": [
+        "The Call of Ktulu"
+      ]
+    }
+  ],
+  "secret_types": [
+    {
+      "id": 1,
+      "name": "Gold Key",
+      "total_count": 25,
+      "scenes": [
+        "Call of the Wild",
+        "Old Mornings Dawn",
+        "Run to the hills",
+        "Hell Awaits",
+        "Welcome to Hell",
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Skull",
+      "total_count": 21,
+      "scenes": [
+        "Call of the Wild",
+        "Old Mornings Dawn",
+        "Run to the hills",
+        "Hell Awaits",
+        "Welcome to Hell",
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "CD",
+      "total_count": 14,
+      "scenes": [
+        "Call of the Wild",
+        "Old Mornings Dawn",
+        "Run to the hills",
+        "Hell Awaits",
+        "Welcome to Hell",
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Mjolnir",
+      "total_count": 3,
+      "scenes": [
+        "Hell Awaits",
+        "Welcome to Hell",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Ghost",
+      "total_count": 6,
+      "scenes": [
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Phantom",
+      "total_count": 13,
+      "scenes": [
+        "Hell Awaits",
+        "Welcome to Hell",
+        "Cthulhu Dawn",
+        "The Call of Ktulu"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Extra",
+      "total_count": 5,
+      "scenes": [
+        "Old Mornings Dawn",
+        "Run to the hills",
+        "Welcome to Hell",
+        "Cthulhu Dawn"
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "filename": "01-forest.json",
+      "name": "Call of the Wild",
+      "platforms": {
+        "total": 12,
+        "static": 12,
+        "moving": 0,
+        "widths": {
+          "8": 2,
+          "16": 2,
+          "32": 6,
+          "48": 1,
+          "128": 1
+        }
+      },
+      "enemies": {
+        "total": 4,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Azathoth",
+            "count": 2
+          },
+          {
+            "id": 2,
+            "name": "Nyarlathotep",
+            "count": 2
+          }
+        ]
+      },
+      "secrets": {
+        "total": 7,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 3
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 2
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "filename": "02-forest-castle.json",
+      "name": "Old Mornings Dawn",
+      "platforms": {
+        "total": 18,
+        "static": 17,
+        "moving": 1,
+        "widths": {
+          "8": 9,
+          "16": 4,
+          "24": 1,
+          "32": 3,
+          "96": 1
+        }
+      },
+      "enemies": {
+        "total": 3,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Azathoth",
+            "count": 1
+          },
+          {
+            "id": 2,
+            "name": "Nyarlathotep",
+            "count": 2
+          }
+        ]
+      },
+      "secrets": {
+        "total": 11,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 4
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 4
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 7,
+            "name": "Extra",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "filename": "03-castle.json",
+      "name": "Run to the hills",
+      "platforms": {
+        "total": 17,
+        "static": 16,
+        "moving": 1,
+        "widths": {
+          "8": 5,
+          "16": 5,
+          "24": 1,
+          "32": 4,
+          "48": 2
+        }
+      },
+      "enemies": {
+        "total": 2,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Azathoth",
+            "count": 2
+          }
+        ]
+      },
+      "secrets": {
+        "total": 11,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 4
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 3
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 7,
+            "name": "Extra",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "filename": "04-castle-hell.json",
+      "name": "Hell Awaits",
+      "platforms": {
+        "total": 23,
+        "static": 21,
+        "moving": 2,
+        "widths": {
+          "8": 10,
+          "16": 5,
+          "24": 1,
+          "32": 6,
+          "48": 1
+        }
+      },
+      "enemies": {
+        "total": 4,
+        "by_type": [
+          {
+            "id": 2,
+            "name": "Nyarlathotep",
+            "count": 2
+          },
+          {
+            "id": 3,
+            "name": "Yog-Sothoth",
+            "count": 2
+          }
+        ]
+      },
+      "secrets": {
+        "total": 13,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 4
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 3
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 4,
+            "name": "Mjolnir",
+            "count": 1
+          },
+          {
+            "id": 6,
+            "name": "Phantom",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "filename": "05-hell.json",
+      "name": "Welcome to Hell",
+      "platforms": {
+        "total": 21,
+        "static": 16,
+        "moving": 5,
+        "widths": {
+          "8": 12,
+          "16": 1,
+          "32": 7,
+          "64": 1
+        }
+      },
+      "enemies": {
+        "total": 4,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Azathoth",
+            "count": 1
+          },
+          {
+            "id": 2,
+            "name": "Nyarlathotep",
+            "count": 2
+          },
+          {
+            "id": 3,
+            "name": "Yog-Sothoth",
+            "count": 1
+          }
+        ]
+      },
+      "secrets": {
+        "total": 12,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 3
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 2
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 4,
+            "name": "Mjolnir",
+            "count": 1
+          },
+          {
+            "id": 6,
+            "name": "Phantom",
+            "count": 3
+          },
+          {
+            "id": 7,
+            "name": "Extra",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "filename": "06-hell-depths.json",
+      "name": "Cthulhu Dawn",
+      "platforms": {
+        "total": 22,
+        "static": 19,
+        "moving": 3,
+        "widths": {
+          "8": 14,
+          "16": 3,
+          "32": 3,
+          "64": 1,
+          "128": 1
+        }
+      },
+      "enemies": {
+        "total": 2,
+        "by_type": [
+          {
+            "id": 3,
+            "name": "Yog-Sothoth",
+            "count": 1
+          },
+          {
+            "id": 4,
+            "name": "Shub-Niggurath",
+            "count": 1
+          }
+        ]
+      },
+      "secrets": {
+        "total": 16,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 3
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 3
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 5,
+            "name": "Ghost",
+            "count": 3
+          },
+          {
+            "id": 6,
+            "name": "Phantom",
+            "count": 4
+          },
+          {
+            "id": 7,
+            "name": "Extra",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "filename": "07-depths.json",
+      "name": "The Call of Ktulu",
+      "platforms": {
+        "total": 27,
+        "static": 16,
+        "moving": 11,
+        "widths": {
+          "8": 16,
+          "16": 5,
+          "32": 5,
+          "96": 1
+        }
+      },
+      "enemies": {
+        "total": 4,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Azathoth",
+            "count": 1
+          },
+          {
+            "id": 4,
+            "name": "Shub-Niggurath",
+            "count": 1
+          },
+          {
+            "id": 5,
+            "name": "Hastog",
+            "count": 2
+          }
+        ]
+      },
+      "secrets": {
+        "total": 17,
+        "by_type": [
+          {
+            "id": 1,
+            "name": "Gold Key",
+            "count": 4
+          },
+          {
+            "id": 2,
+            "name": "Skull",
+            "count": 4
+          },
+          {
+            "id": 3,
+            "name": "CD",
+            "count": 2
+          },
+          {
+            "id": 4,
+            "name": "Mjolnir",
+            "count": 1
+          },
+          {
+            "id": 5,
+            "name": "Ghost",
+            "count": 3
+          },
+          {
+            "id": 6,
+            "name": "Phantom",
+            "count": 3
+          }
+        ]
+      }
+    }
+  ]
+}

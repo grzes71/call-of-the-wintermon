@@ -1,0 +1,291 @@
+---
+/**
+ * gallery.astro
+ * Graphics gallery presenting authentic ANTIC Mode E tilesets and Player-Missile sprites.
+ * Respects original Atari XL/XE pixel proportions and hardware constraints.
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SpriteRenderer from '../components/SpriteRenderer.astro';
+import { getPlayerSprites, getObjectSprites } from '../lib/data';
+
+const playerSheet = getPlayerSprites();
+const objectSheet = getObjectSprites();
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+// Environment Tilesets
+const tilesets = [
+  {
+    id: 'trees',
+    title: 'FOREST & FOLIAGE TILESET',
+    filename: 'trees.png',
+    path: `${base}/tiles/trees.png`,
+    size: '1,489 Bytes',
+    mode: 'ANTIC Mode E (160x96 2bpp)',
+    description: 'Used in Scene 1 (The Forest Whispers My Name). Composed of organic tree bark, snow-laden pine branches, and brambles.',
+  },
+  {
+    id: 'castles',
+    title: 'WINTERMON FORTRESS TILESET',
+    filename: 'castles.png',
+    path: `${base}/tiles/castles.png`,
+    size: '1,692 Bytes',
+    mode: 'ANTIC Mode E (160x96 2bpp)',
+    description: 'Used in Scene 2 (Be Quick or Be Dead). Features weathered granite masonry, arrow slits, gothic parapets, and battlements.',
+  },
+  {
+    id: 'depths',
+    title: 'SUBTERRANEAN DEPTHS TILESET',
+    filename: 'depths.png',
+    path: `${base}/tiles/depths.png`,
+    size: '1,977 Bytes',
+    mode: 'ANTIC Mode E (160x96 2bpp)',
+    description: 'Used in Cavern scenes. Stalactite formations, jagged mountain cavern rock, and ancient subterranean catacombs.',
+  },
+  {
+    id: 'hell',
+    title: 'FIRE & BRIMSTONE TILESET',
+    filename: 'hell.png',
+    path: `${base}/tiles/hell.png`,
+    size: '2,149 Bytes',
+    mode: 'ANTIC Mode E (160x96 2bpp)',
+    description: 'Used in Welcome to Hell and Hell Awaits. Volcanic basalt rock, brimstone platforms, and infernal demon architecture.',
+  },
+];
+
+// Separate enemies vs collectibles from objectSheet
+const enemyNames = ['Azathoth', 'Nyarlathotep', 'Yol-Sogoth', 'Shub-Niggurath', 'Hastog', 'Ghost', 'Phantom'];
+const collectibleNames = ['CD', 'Skull', 'Key', 'Mjolnir', 'Extra'];
+
+const enemySprites = objectSheet.sprites.filter((s) => enemyNames.some((en) => s.description.toLowerCase().includes(en.toLowerCase())));
+const collectibleSprites = objectSheet.sprites.filter((s) => collectibleNames.some((cn) => s.description.toLowerCase().includes(cn.toLowerCase())));
+---
+
+<BaseLayout
+  title="Graphics & Sprite Gallery — Call of the Wintermon"
+  description="Authentic ANTIC Mode E tilesets and Player-Missile Graphics sprites for Call of the Wintermon (Atari 8-bit XL/XE)."
+>
+  <div class="space-y-10">
+
+    <!-- Page Header -->
+    <div class="border-b border-atari-border pb-6 space-y-2">
+      <div class="flex items-center gap-2 text-xs font-mono text-atari-green font-bold tracking-wider uppercase">
+        <span>&gt; VISUAL ASSETS</span>
+        <span class="text-atari-muted">/</span>
+        <span>ANTIC &amp; GTIA GRAPHICS PIPELINE</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-atari-text font-mono">
+        ATARI GRAPHICS &amp; <span class="text-atari-green">SPRITE GALLERY</span>
+      </h1>
+      <p class="text-xs sm:text-sm text-atari-muted leading-relaxed max-w-3xl">
+        All graphical assets in Call of the Wintermon strictly observe Atari XL/XE hardware constraints: 
+        ANTIC Mode E (160×96 color clocks, 2 bits per pixel), dual DLI dynamic palette modulation per scanline, 
+        and hardware Player-Missile Graphics (PMG).
+      </p>
+    </div>
+
+    <!-- 1. Environment Tilesets Section -->
+    <section class="space-y-4 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>ANTIC MODE E ENVIRONMENT TILESETS (7,676 B TOTAL)</span>
+          </h2>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Compiled to 2bpp binary bitmaps residing in RAM at $8000–$9DFB.
+          </p>
+        </div>
+        <div class="text-xs text-atari-muted">
+          4 Master Tilesets
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {tilesets.map((t) => (
+          <div class="border border-atari-border bg-atari-surface/70 rounded-lg p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="font-bold text-atari-green text-sm">{t.title}</h3>
+                <span class="text-[11px] text-atari-muted font-mono">{t.mode}</span>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-atari-surfaceLight border border-atari-border text-atari-cyan text-[11px] font-mono">
+                {t.size}
+              </span>
+            </div>
+
+            <!-- Authentic Pixelated Image Preview -->
+            <div class="border border-atari-border/80 bg-atari-dark rounded p-3 flex items-center justify-center overflow-hidden">
+              <img
+                src={t.path}
+                alt={t.title}
+                class="max-h-48 w-auto object-contain rounded"
+                style="image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;"
+                loading="lazy"
+              />
+            </div>
+
+            <p class="text-xs text-atari-muted leading-relaxed">
+              {t.description}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- 2. Player Hero Animations (Player 0 PMG) -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-5 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>PLAYER HERO ANIMATIONS (PLAYER 0 HARDWARE SPRITE)</span>
+          </h2>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Single-line resolution Player-Missile Graphics (128 bytes per player, 8 pixels wide × 20 scanlines tall).
+          </p>
+        </div>
+        <div class="text-xs text-atari-green font-bold">
+          {playerSheet.sprites.length} Animation States
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+        {playerSheet.sprites.map((s) => {
+          const firstFrame = s.frames && s.frames.length > 0 ? s.frames[0].pixels : [];
+          return (
+            <div class="border border-atari-border/60 bg-atari-surfaceLight/30 rounded p-3 flex flex-col items-center space-y-2">
+              <SpriteRenderer
+                pixels={firstFrame}
+                width={s.width}
+                height={s.height}
+                pixelColor="#00ff66"
+                scale={5}
+                label={s.description.toUpperCase()}
+              />
+              <span class="text-[9px] text-atari-muted font-mono">{s.frames.length} frame(s)</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- 3. Eldritch Enemy Bestiary (Software / Multiplexed Sprites) -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-5 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-cyan">&gt;</span>
+            <span>ELDRITCH ENEMY BESTIARY (HOSTILE SPRITES)</span>
+          </h2>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Rendered via hardware Player 1-3 registers and software playfield blitter routines.
+          </p>
+        </div>
+        <div class="text-xs text-atari-cyan font-bold">
+          {enemySprites.length} Enemy Classes
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
+        {enemySprites.map((s) => {
+          const firstFrame = s.frames && s.frames.length > 0 ? s.frames[0].pixels : [];
+          return (
+            <div class="border border-atari-border/60 bg-atari-surfaceLight/30 rounded p-3 flex flex-col items-center space-y-2">
+              <SpriteRenderer
+                pixels={firstFrame}
+                width={s.width}
+                height={s.height}
+                pixelColor="#00e5ff"
+                scale={4.5}
+                label={s.description}
+              />
+              <span class="text-[9px] text-atari-muted font-mono">ID #{s.id}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- 4. Collectibles & Secret Artifacts -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-5 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-amber">&gt;</span>
+            <span>COLLECTIBLE SECRETS &amp; SPECIAL ARTIFACTS</span>
+          </h2>
+          <p class="text-xs text-atari-muted mt-0.5">
+            5th-Player Missile bit patterns and special collectible score discs.
+          </p>
+        </div>
+        <div class="text-xs text-atari-amber font-bold">
+          {collectibleSprites.length} Collectible Types
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+        {collectibleSprites.map((s) => {
+          const firstFrame = s.frames && s.frames.length > 0 ? s.frames[0].pixels : [];
+          return (
+            <div class="border border-atari-border/60 bg-atari-surfaceLight/30 rounded p-3 flex flex-col items-center space-y-2">
+              <SpriteRenderer
+                pixels={firstFrame}
+                width={s.width}
+                height={s.height}
+                pixelColor="#ffb000"
+                scale={5}
+                label={s.description}
+              />
+              <span class="text-[9px] text-atari-muted font-mono">ID #{s.id}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+
+    <!-- 5. Technical Specifications of ANTIC & GTIA Rendering -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono text-xs">
+      <div class="border-b border-atari-border pb-3">
+        <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>TECHNICAL SPECIFICATIONS OF ANTIC MODE E &amp; PMG</span>
+        </h3>
+        <p class="text-xs text-atari-muted mt-0.5">
+          Hardware rasterization specifications governing the game's visuals.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/20 rounded p-4 space-y-2">
+          <div class="font-bold text-atari-green uppercase text-xs">ANTIC MODE E RASTER</div>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            160 horizontal color clocks across 96 scanlines. Each byte encodes 4 pixels (2 bits per pixel)
+            mapping to GTIA color registers <code class="text-atari-text">COLBK</code>, <code class="text-atari-text">COLPF0</code>,
+            <code class="text-atari-text">COLPF1</code>, and <code class="text-atari-text">COLPF2</code>.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/20 rounded p-4 space-y-2">
+          <div class="font-bold text-atari-cyan uppercase text-xs">DISPLAY LIST INTERRUPTS (DLI)</div>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            Mid-screen CPU interrupts triggered by bit 7 of ANTIC Display List instructions.
+            Allows changing GTIA palette registers line-by-line without screen flickering, creating rich gradients and
+            atmospheric lighting.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/20 rounded p-4 space-y-2">
+          <div class="font-bold text-atari-amber uppercase text-xs">PLAYER-MISSILE GRAPHICS (PMG)</div>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            Hardware sprites fetched automatically by ANTIC DMA into GTIA shift registers.
+            Supports 4 8-pixel players (P0-P3) and 4 2-pixel missiles (M0-M3), with hardware horizontal positioning
+            (<code class="text-atari-text">HPOSP0-HPOSP3</code>).
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</BaseLayout>

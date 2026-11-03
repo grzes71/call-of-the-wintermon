@@ -1,0 +1,99 @@
+name: Deploy Game Portal to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Minimal workflow-level permissions
+permissions:
+  contents: read
+
+# Single deployment concurrency group for GitHub Pages
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate & Build Static Portal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest jsonschema pyyaml requests
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'website/package-lock.json'
+
+      - name: Install Node dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Generate portal telemetry data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make portal_data
+
+      - name: Validate portal schemas & memory invariants
+        run: |
+          python scripts/portal/validate_data.py --schema website/src/data/schemas/memory-report.schema.json
+          python -m pytest tests/test_portal_data.py -v
+
+      - name: Run Astro diagnostic type check
+        working-directory: website
+        run: npm run check
+
+      - name: Build static site with Astro
+        working-directory: website
+        run: npm run build
+        env:
+          ASTRO_BASE_URL: '/call-of-the-wintermon'
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

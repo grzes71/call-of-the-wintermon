@@ -1,0 +1,101 @@
+---
+/**
+ * Footer.astro
+ * Retro Atari technical specs bar, system registers status, and repository footer.
+ */
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const buildTime = new Date().toISOString().split('T')[0];
+---
+
+<footer class="border-t border-atari-border bg-atari-dark text-atari-muted text-xs font-mono mt-16">
+  <!-- System Architecture Banner -->
+  <div class="border-b border-atari-border/60 bg-atari-surface/40 py-3 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-y-2 gap-x-6 text-[11px]">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-atari-green animate-pulse"></span>
+        <span class="text-atari-text font-semibold">TARGET PLATFORM:</span>
+        <span class="text-atari-green">ATARI 800XL / 65XE (MOS 6502 @ 1.77 MHz PAL)</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-4 text-atari-muted">
+        <span>CHIPS: <span class="text-atari-cyan">ANTIC · GTIA · POKEY · PIA</span></span>
+        <span>VRAM: <span class="text-atari-amber">ANTIC MODE D / E</span></span>
+        <span>PORTB: <span class="text-atari-green">$FF (OS ROM ENABLED)</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Footer Content -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+      
+      <!-- Col 1: Project Identity -->
+      <div class="md:col-span-2 space-y-3">
+        <div class="flex items-center gap-2 text-atari-green font-bold text-sm tracking-wider">
+          <span>&gt; CALL OF THE WINTERMON</span>
+          <span class="inline-block animate-ping text-[10px]">_</span>
+        </div>
+        <p class="text-xs text-atari-muted leading-relaxed max-w-md">
+          An authentic new platform adventure for 64 KB Atari 8-bit computers. 
+          Written in 100% MOS 6502 assembly with custom Python asset tooling, 
+          smooth dual-line ANTIC scrolling, unified DLI color chains, and 4-channel POKEY music.
+        </p>
+        <div class="text-[11px] text-atari-muted/70">
+          Source code licensed under MIT. Atari is a registered trademark.
+        </div>
+      </div>
+
+      <!-- Col 2: Navigation Links -->
+      <div class="space-y-2">
+        <div class="text-atari-text font-bold text-xs tracking-wider uppercase">PORTAL SECTIONS</div>
+        <ul class="space-y-1 text-xs">
+          <li><a href={`${base}/`} class="hover:text-atari-green transition-colors">&gt; System Overview</a></li>
+          <li><a href={`${base}/memory`} class="hover:text-atari-green transition-colors">&gt; 64 KB Memory Map</a></li>
+          <li><a href={`${base}/stats`} class="hover:text-atari-green transition-colors">&gt; Game Telemetry</a></li>
+          <li><a href={`${base}/releases`} class="hover:text-atari-green transition-colors">&gt; Releases &amp; Downloads</a></li>
+          <li><a href={`${base}/gallery`} class="hover:text-atari-green transition-colors">&gt; Graphics &amp; Sprites</a></li>
+          <li><a href={`${base}/about`} class="hover:text-atari-green transition-colors">&gt; 6502 Technical Specs</a></li>
+        </ul>
+      </div>
+
+      <!-- Col 3: Resources & External -->
+      <div class="space-y-2">
+        <div class="text-atari-text font-bold text-xs tracking-wider uppercase">DEVELOPMENT</div>
+        <ul class="space-y-1 text-xs">
+          <li>
+            <a href="https://github.com/grzes71/call-of-the-wintermon" target="_blank" rel="noopener noreferrer" class="hover:text-atari-cyan transition-colors">
+              &gt; GitHub Repository
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/grzes71/call-of-the-wintermon/releases" target="_blank" rel="noopener noreferrer" class="hover:text-atari-cyan transition-colors">
+              &gt; GitHub Releases
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/grzes71/call-of-the-wintermon/actions" target="_blank" rel="noopener noreferrer" class="hover:text-atari-cyan transition-colors">
+              &gt; CI/CD Pipelines
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/grzes71/call-of-the-wintermon/issues" target="_blank" rel="noopener noreferrer" class="hover:text-atari-cyan transition-colors">
+              &gt; Bug Tracker
+            </a>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Bottom Bar -->
+    <div class="border-t border-atari-border/40 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-atari-muted/60">
+      <div>
+        PORTAL BUILD: <span class="text-atari-muted">{buildTime}</span> · STATIC SSG (ASTRO 4.x)
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-atari-amber font-mono">READY.</span>
+      </div>
+    </div>
+  </div>
+</footer>
+

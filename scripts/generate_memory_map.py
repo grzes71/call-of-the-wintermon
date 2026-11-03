@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import datetime
+import hashlib
+import json
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -108,10 +111,14 @@ def identify_segment(start: int, end: int, size: int) -> tuple[str, str, str, st
         return "Render Tables + Intro Handler", "CODE", COLORS["CODE"], "2bpp flip LUT + row offsets (MEM-006) and the relocated Intro screen code"
     if start == 0x69C0:
         return "Intro Screen Handler", "CODE", COLORS["CODE"], "Intro text screen init/run (relocated out of the $2000 block)"
+    if start == 0x5C00:
+        return "Game Over / Victory Module", "DATA", COLORS["METADATA"], "Game Over & Victory module (display lists, DLI chain, builder)"
     if start == 0x6B00:
+        if end == 0x6FFF or size == 1280:
+            return "Player-Missile Active Buffer", "PMG", COLORS["PMG"], "1.25 KB active PMG DMA buffer ($6B00-$6FFF)"
         return "Player-Missile & Audio", "PMG", COLORS["PMG"], "1.25 KB active PMG buffer ($6B00) + Audio Player & Music ($7000)"
     if start == 0x7000:
-        return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], "POKEY Player engine & Title track"
+        return "Audio Player & Music", "AUDIO", COLORS["AUDIO"], f"POKEY Player engine & Title track (${start:04X}-${end:04X})"
     if start in (0x79D0, 0x7A00):
         return "Playfield Blitter & Sprites", "CODE", COLORS["CODE"], "Playfield blitter engine & sprite bitmaps"
     if start == 0x8000:
@@ -152,6 +159,18 @@ def build_memory_map(
     # Filter out DOS vectors
     user_segs = [s for s in raw_segments if s[0] != 0x02E0 and s[0] != 0x02E2]
     user_segs.sort(key=lambda s: s[0])
+
+    # Normalize architectural sub-blocks (e.g. split contiguous PMG+Audio block at $7000)
+    normalized_segs: list[tuple[int, int, int]] = []
+    for start, end, size in user_segs:
+        if start == 0x6B00 and end > 0x6FFF:
+            # 5-page active PMG DMA buffer ($6B00-$6FFF, 1280 B)
+            normalized_segs.append((0x6B00, 0x6FFF, 0x0500))
+            # POKEY audio player & music ($7000-end)
+            normalized_segs.append((0x7000, end, end - 0x7000 + 1))
+        else:
+            normalized_segs.append((start, end, size))
+    user_segs = normalized_segs
 
     all_regions: list[MemorySegment] = []
     free_gaps: list[MemorySegment] = []
@@ -208,6 +227,82 @@ def build_memory_map(
     return all_regions, free_gaps
 
 
+ZERO_PAGE_ALLOCATIONS: list[dict] = [
+    {
+        "range_hex": "$00 - $7F",
+        "start": 0x00,
+        "end": 0x7F,
+        "size": 128,
+        "label": "SYSTEM (OS)",
+        "color": "#64748B",
+        "description": "Reserved for Atari OS Kernel",
+    },
+    {
+        "range_hex": "$80 - $87",
+        "start": 0x80,
+        "end": 0x87,
+        "size": 8,
+        "label": "ENGINE",
+        "color": "#38BDF8",
+        "description": "Registers & temporary pointers (zp_temp, zp_ptr_src/dst)",
+    },
+    {
+        "range_hex": "$88 - $8F",
+        "start": 0x88,
+        "end": 0x8F,
+        "size": 8,
+        "label": "STATE",
+        "color": "#818CF8",
+        "description": "Game states, title card fade counters, fire debouncing",
+    },
+    {
+        "range_hex": "$90 - $99",
+        "start": 0x90,
+        "end": 0x99,
+        "size": 10,
+        "label": "AUDIO",
+        "color": "#A855F7",
+        "description": "POKEY Audio Player base pointers (PLAYER_ZP_BASE)",
+    },
+    {
+        "range_hex": "$9A - $B7",
+        "start": 0x9A,
+        "end": 0xB7,
+        "size": 30,
+        "label": "RENDERER",
+        "color": "#06B6D4",
+        "description": "Scene renderer table pointers & parameters",
+    },
+    {
+        "range_hex": "$B8 - $C0",
+        "start": 0xB8,
+        "end": 0xC0,
+        "size": 9,
+        "label": "DLI ENGINE",
+        "color": "#E879F9",
+        "description": "DLI registers save, pas counters & PMG pattern ptr",
+    },
+    {
+        "range_hex": "$C1 - $E6",
+        "start": 0xC1,
+        "end": 0xE6,
+        "size": 38,
+        "label": "GAMEPLAY",
+        "color": "#F472B6",
+        "description": "Lives, HUD specials, Player 0 physics, platforms, secrets, killer mode",
+    },
+    {
+        "range_hex": "$E7 - $FF",
+        "start": 0xE7,
+        "end": 0xFF,
+        "size": 25,
+        "label": "FREE",
+        "color": "#34D399",
+        "description": "Unallocated Zero Page available for engine expansion",
+    },
+]
+
+
 def print_text_report(
     xex_path: Path,
     all_regions: list[MemorySegment],
@@ -249,20 +344,11 @@ def print_text_report(
     print("\n" + "=" * 82)
     print("ZERO PAGE ALLOCATION ($00 - $FF / 256 bytes):")
     print("=" * 82)
-    zp_info = [
-        ("$00 - $7F", 128, "SYSTEM (OS)", "Reserved for Atari OS Kernel"),
-        ("$80 - $87", 8, "ENGINE", "Registers & temporary pointers (zp_temp, zp_ptr_src/dst)"),
-        ("$88 - $8F", 8, "STATE", "Game states, title card fade counters, fire debouncing"),
-        ("$90 - $99", 10, "AUDIO", "POKEY Audio Player base pointers (PLAYER_ZP_BASE)"),
-        ("$9A - $B7", 30, "RENDERER", "Scene renderer table pointers & parameters"),
-        ("$B8 - $C0", 9, "DLI ENGINE", "DLI registers save, pas counters & PMG pattern ptr"),
-        ("$C1 - $FF", 63, "FREE", "Available for player physics, enemies AI & collision"),
-    ]
-    for rng, sz, cat, desc in zp_info:
-        cat_str = f"[{cat}]"
-        col_prefix = "\033[32m" if cat == "FREE" else ""
-        col_suffix = "\033[0m" if cat == "FREE" else ""
-        print(f"  {col_prefix}{rng:11} ({sz:3d} B) {cat_str:12} : {desc}{col_suffix}")
+    for zp in ZERO_PAGE_ALLOCATIONS:
+        cat_str = f"[{zp['label']}]"
+        col_prefix = "\033[32m" if zp['label'] == "FREE" else ""
+        col_suffix = "\033[0m" if zp['label'] == "FREE" else ""
+        print(f"  {col_prefix}{zp['range_hex']:11} ({zp['size']:3d} B) {cat_str:12} : {zp['description']}{col_suffix}")
     print("=" * 82 + "\n")
 
 
@@ -498,23 +584,122 @@ def generate_graphical_pdf(
     # Card 4: Zero Page Map
     y_pos = draw_section_header("ZERO PAGE BREAKDOWN ($00 – $FF)", y_pos)
     zp_lines = [
-        ("$00 – $7F (128 B)", "Reserved for Atari OS Kernel", "#64748B"),
-        ("$80 – $8F ( 16 B)", "Engine temporaries & state machine", "#38BDF8"),
-        ("$90 – $99 ( 10 B)", "POKEY Audio Player base pointers", "#A855F7"),
-        ("$9A – $B7 ( 30 B)", "Scene background renderer pointers", "#06B6D4"),
-        ("$B8 – $C0 (  9 B)", "DLI engine registers & pattern pointers", "#E879F9"),
-        ("$C1 – $FF ( 63 B)", "★ 100% FREE for Entities, AI, Physics", "#34D399"),
+        (f"{zp['range_hex']} ({zp['size']:2d} B)", zp['description'], zp['color'])
+        for zp in ZERO_PAGE_ALLOCATIONS
     ]
     for rng, desc, col in zp_lines:
-        ax_sidebar.text(0.06, y_pos, rng, fontsize=8, fontweight="bold", color=col)
-        ax_sidebar.text(0.42, y_pos, desc, fontsize=7.5, color="#94A3B8")
-        y_pos -= 0.026
+        ax_sidebar.text(0.06, y_pos, rng, fontsize=7.5, fontweight="bold", color=col)
+        ax_sidebar.text(0.42, y_pos, desc, fontsize=7.0, color="#94A3B8")
+        y_pos -= 0.022
 
     # Save vector PDF
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(pdf_path, format="pdf", bbox_inches="tight", facecolor=fig.get_facecolor(), edgecolor="none")
     plt.close(fig)
     print(f"\033[36mGenerated graphical memory map PDF: {pdf_path}\033[0m")
+
+
+def export_json_report(
+    xex_path: Path,
+    all_regions: list[MemorySegment],
+    free_gaps: list[MemorySegment],
+    output_path: Path,
+    version: str = "0.2.1",
+    commit_sha: str = "",
+) -> dict:
+    """Export memory map structure as validated JSON for portal telemetry."""
+    data = xex_path.read_bytes() if xex_path.exists() else b""
+    sha256_hash = hashlib.sha256(data).hexdigest() if data else ""
+    total_allocated = sum(r.size for r in all_regions if not r.is_free)
+    total_free = sum(r.size for r in all_regions if r.is_free)
+    sorted_free = sorted(free_gaps, key=lambda g: g.size, reverse=True)
+    largest = sorted_free[0] if sorted_free else None
+
+    # Compute category totals
+    category_totals = {
+        "CODE": 0,
+        "GRAPHICS": 0,
+        "BITMAPS": 0,
+        "DLIST": 0,
+        "PMG": 0,
+        "AUDIO": 0,
+        "METADATA": 0,
+        "DATA": 0,
+    }
+    for r in all_regions:
+        if not r.is_free and r.category in category_totals:
+            category_totals[r.category] += r.size
+
+    report = {
+        "schema_version": "3.2.0",
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "game": {
+            "name": "Call of the Wintermon",
+            "version": version,
+            "target": "Atari 8-bit (XL/XE)",
+            "executable": xex_path.name,
+            "binary_size_bytes": len(data),
+            "binary_sha256": sha256_hash,
+        },
+        "build": {
+            "commit_sha": commit_sha or "0000000000000000000000000000000000000000",
+            "ref": f"refs/tags/v{version}" if version else "refs/heads/main",
+            "mads_version": "2.1.6",
+        },
+        "memory_summary": {
+            "user_ram_start": 8192,
+            "user_ram_end": 49151,
+            "total_user_ram_bytes": 40960,
+            "total_allocated_bytes": total_allocated,
+            "total_free_bytes": total_free,
+            "utilization_percent": round(total_allocated / 40960 * 100, 2),
+            "largest_free_block_bytes": largest.size if largest else 0,
+            "largest_free_block_range": f"${largest.start:04X} - ${largest.end:04X}" if largest else "",
+            "is_valid": total_allocated <= 40960,
+            "category_totals": category_totals,
+        },
+        "allocated_segments": [
+            {
+                "start": r.start,
+                "end": r.end,
+                "start_hex": f"${r.start:04X}",
+                "end_hex": f"${r.end:04X}",
+                "size": r.size,
+                "name": r.name,
+                "category": r.category,
+                "color": r.color,
+                "details": r.details,
+            }
+            for r in all_regions
+            if not r.is_free
+        ],
+        "free_gaps": [
+            {
+                "start": g.start,
+                "end": g.end,
+                "start_hex": f"${g.start:04X}",
+                "end_hex": f"${g.end:04X}",
+                "size": g.size,
+                "name": g.name,
+                "category": g.category,
+                "color": g.color,
+                "details": g.details,
+            }
+            for g in free_gaps
+        ],
+        "zero_page": {
+            "total_bytes": 256,
+            "os_reserved_bytes": 128,
+            "user_allocated_bytes": 103,
+            "free_bytes": 25,
+            "allocations": ZERO_PAGE_ALLOCATIONS,
+        },
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\033[36mExported JSON memory report: {output_path}\033[0m")
+    return report
 
 
 def main() -> int:
@@ -537,6 +722,24 @@ def main() -> int:
         action="store_true",
         help="Skip PDF generation and only print terminal report",
     )
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="Output path for structured JSON memory report",
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        default="0.2.1",
+        help="Game version string for JSON report",
+    )
+    parser.add_argument(
+        "--commit",
+        type=str,
+        default="",
+        help="Commit SHA string for JSON report",
+    )
 
     args = parser.parse_args()
 
@@ -551,8 +754,19 @@ def main() -> int:
     # 1. Print formatted console report
     print_text_report(args.xex, all_regions, free_gaps)
 
-    # 2. Generate vector PDF
-    if not args.no_pdf:
+    # 2. Export JSON report if requested
+    if args.json:
+        export_json_report(
+            args.xex,
+            all_regions,
+            free_gaps,
+            args.json,
+            version=args.version,
+            commit_sha=args.commit,
+        )
+
+    # 3. Generate vector PDF
+    if not args.no_pdf and args.pdf:
         generate_graphical_pdf(args.pdf, args.xex.name, all_regions, free_gaps)
 
     return 0

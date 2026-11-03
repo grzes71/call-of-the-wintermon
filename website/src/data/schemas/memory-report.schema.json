@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grzes71.github.io/call-of-the-wintermon/schemas/memory-report.schema.json",
+  "title": "CallOfTheWintermonMemoryReport",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "game",
+    "build",
+    "memory_summary",
+    "allocated_segments",
+    "free_gaps",
+    "zero_page"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "3.2.0"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "game": {
+      "type": "object",
+      "required": ["name", "version", "target", "executable", "binary_size_bytes"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "Call of the Wintermon"
+        },
+        "version": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "const": "Atari 8-bit (XL/XE)"
+        },
+        "executable": {
+          "type": "string",
+          "const": "call_of_the_wintermon.xex"
+        },
+        "binary_size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binary_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["commit_sha", "ref", "mads_version"],
+      "properties": {
+        "commit_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "mads_version": {
+          "type": "string"
+        }
+      }
+    },
+    "memory_summary": {
+      "type": "object",
+      "required": [
+        "user_ram_start",
+        "user_ram_end",
+        "total_user_ram_bytes",
+        "total_allocated_bytes",
+        "total_free_bytes",
+        "utilization_percent",
+        "largest_free_block_bytes",
+        "largest_free_block_range",
+        "is_valid",
+        "category_totals"
+      ],
+      "properties": {
+        "user_ram_start": {
+          "type": "integer",
+          "const": 8192
+        },
+        "user_ram_end": {
+          "type": "integer",
+          "const": 49151
+        },
+        "total_user_ram_bytes": {
+          "type": "integer",
+          "const": 40960
+        },
+        "total_allocated_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 40960
+        },
+        "total_free_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 40960
+        },
+        "utilization_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "largest_free_block_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "largest_free_block_range": {
+          "type": "string"
+        },
+        "is_valid": {
+          "type": "boolean"
+        },
+        "category_totals": {
+          "type": "object",
+          "required": ["CODE", "GRAPHICS", "BITMAPS", "DLIST", "PMG", "AUDIO", "METADATA", "DATA"],
+          "properties": {
+            "CODE": { "type": "integer", "minimum": 0 },
+            "GRAPHICS": { "type": "integer", "minimum": 0 },
+            "BITMAPS": { "type": "integer", "minimum": 0 },
+            "DLIST": { "type": "integer", "minimum": 0 },
+            "PMG": { "type": "integer", "minimum": 0 },
+            "AUDIO": { "type": "integer", "minimum": 0 },
+            "METADATA": { "type": "integer", "minimum": 0 },
+            "DATA": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "allocated_segments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/memory_segment"
+      }
+    },
+    "free_gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/memory_segment"
+      }
+    },
+    "zero_page": {
+      "type": "object",
+      "required": ["total_bytes", "os_reserved_bytes", "user_allocated_bytes", "free_bytes", "allocations"],
+      "properties": {
+        "total_bytes": {
+          "type": "integer",
+          "const": 256
+        },
+        "os_reserved_bytes": {
+          "type": "integer",
+          "const": 128
+        },
+        "user_allocated_bytes": {
+          "type": "integer",
+          "const": 103
+        },
+        "free_bytes": {
+          "type": "integer",
+          "const": 25
+        },
+        "allocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["range_hex", "start", "end", "size", "label", "color", "description"],
+            "properties": {
+              "range_hex": { "type": "string" },
+              "start": { "type": "integer", "minimum": 0, "maximum": 255 },
+              "end": { "type": "integer", "minimum": 0, "maximum": 255 },
+              "size": { "type": "integer", "minimum": 1 },
+              "label": { "type": "string" },
+              "color": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "memory_segment": {
+      "type": "object",
+      "required": ["start", "end", "start_hex", "end_hex", "size", "name", "category", "color", "details"],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 8192,
+          "maximum": 49151
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 8192,
+          "maximum": 49151
+        },
+        "start_hex": {
+          "type": "string",
+          "pattern": "^\\$[0-9A-F]{4}$"
+        },
+        "end_hex": {
+          "type": "string",
+          "pattern": "^\\$[0-9A-F]{4}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["CODE", "GRAPHICS", "BITMAPS", "DLIST", "PMG", "AUDIO", "METADATA", "DATA", "FREE"]
+        },
+        "color": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

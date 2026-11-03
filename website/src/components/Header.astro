@@ -1,0 +1,161 @@
+---
+/**
+ * Header.astro
+ * Retro Atari 8-bit navigation header with Fuji symbol and responsive menu.
+ */
+
+const currentPath = Astro.url.pathname;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const navLinks = [
+  { name: 'OVERVIEW', href: `${base}/` },
+  { name: 'MEMORY MAP', href: `${base}/memory` },
+  { name: 'TELEMETRY', href: `${base}/stats` },
+  { name: 'RELEASES', href: `${base}/releases` },
+  { name: 'GALLERY', href: `${base}/gallery` },
+  { name: 'SPECS & LORE', href: `${base}/about` },
+];
+
+function isActive(href: string): boolean {
+  if (href === `${base}/` || href === `${base}`) {
+    return currentPath === `${base}/` || currentPath === base || currentPath === '';
+  }
+  return currentPath.startsWith(href);
+}
+---
+
+<header class="border-b border-atari-border bg-atari-surface/90 backdrop-blur sticky top-0 z-40 font-mono">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between h-16">
+      
+      <!-- Brand Logo / Title -->
+      <div class="flex items-center gap-3">
+        <a href={`${base}/`} class="flex items-center gap-3 group">
+          <!-- Atari Fuji Symbol (SVG) -->
+          <div class="w-8 h-8 rounded bg-atari-surfaceLight border border-atari-green/40 flex items-center justify-center text-atari-green group-hover:border-atari-green transition-colors">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10.8 2h2.4v20h-2.4z"/>
+              <path d="M5 3h2.2c0 6.6 2.4 12.3 5 15.3l-1.6 1.7C7.4 16.7 5 10.4 5 3z"/>
+              <path d="M19 3h-2.2c0 6.6-2.4 12.3-5 15.3l1.6 1.7C16.6 16.7 19 10.4 19 3z"/>
+            </svg>
+          </div>
+          <div>
+            <span class="text-sm sm:text-base font-bold tracking-wider text-atari-text group-hover:text-atari-green transition-colors block leading-tight">
+              CALL OF THE WINTERMON
+            </span>
+            <span class="text-[10px] text-atari-muted tracking-widest block uppercase font-mono">
+              ATARI 8-BIT XL/XE PORTAL
+            </span>
+          </div>
+        </a>
+      </div>
+
+      <!-- Desktop Navigation -->
+      <nav class="hidden md:flex items-center gap-1">
+        {navLinks.map((link) => {
+          const active = isActive(link.href);
+          return (
+            <a
+              href={link.href}
+              class={`px-3 py-1.5 text-xs tracking-wider transition-all rounded ${
+                active
+                  ? 'text-atari-green bg-atari-green/10 border border-atari-green/30 shadow-atari-green font-bold'
+                  : 'text-atari-muted hover:text-atari-text hover:bg-atari-surfaceLight/60'
+              }`}
+            >
+              {link.name}
+            </a>
+          );
+        })}
+      </nav>
+
+      <!-- Action Utilities (CRT Toggle & GitHub) -->
+      <div class="flex items-center gap-3">
+        
+        <!-- CRT Toggle Button -->
+        <button
+          type="button"
+          data-crt-toggle
+          class="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono tracking-wider text-atari-amber border border-atari-amber/40 bg-atari-amber/5 rounded hover:bg-atari-amber/15 hover:border-atari-amber transition-colors select-none"
+          title="Toggle CRT Scanline Effect"
+          aria-label="Toggle CRT Scanline Effect"
+        >
+          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M21 3H3C1.9 3 1 3.9 1 5v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zM5 8h14v1H5zm0 3h14v1H5zm0 3h14v1H5z"/>
+          </svg>
+          <span class="hidden sm:inline">CRT:</span>
+          <span data-crt-status class="font-bold">ON</span>
+        </button>
+
+        <!-- GitHub Repository Link -->
+        <a
+          href="https://github.com/grzes71/call-of-the-wintermon"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono tracking-wider text-atari-muted border border-atari-border rounded hover:text-atari-green hover:border-atari-green/50 transition-colors"
+          title="GitHub Repository"
+        >
+          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          <span>GITHUB</span>
+        </a>
+
+        <!-- Mobile Menu Toggle Button -->
+        <button
+          type="button"
+          id="mobile-menu-btn"
+          class="md:hidden p-2 text-atari-muted hover:text-atari-text focus:outline-none"
+          aria-label="Toggle navigation menu"
+        >
+          <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Drawer Menu -->
+  <div id="mobile-menu" class="hidden md:hidden border-t border-atari-border bg-atari-surface px-4 pt-2 pb-4 space-y-1">
+    {navLinks.map((link) => {
+      const active = isActive(link.href);
+      return (
+        <a
+          href={link.href}
+          class={`block px-3 py-2 text-xs tracking-wider rounded ${
+            active
+              ? 'text-atari-green bg-atari-green/10 font-bold border-l-2 border-atari-green'
+              : 'text-atari-muted hover:text-atari-text hover:bg-atari-surfaceLight'
+          }`}
+        >
+          {link.name}
+        </a>
+      );
+    })}
+    <div class="pt-2 border-t border-atari-border/50 flex gap-2">
+      <a
+        href="https://github.com/grzes71/call-of-the-wintermon"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex-1 text-center py-2 text-xs text-atari-cyan border border-atari-cyan/30 rounded"
+      >
+        GITHUB REPO
+      </a>
+    </div>
+  </div>
+</header>
+
+<script is:inline>
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('mobile-menu-btn');
+    const menu = document.getElementById('mobile-menu');
+    if (btn && menu) {
+      btn.addEventListener('click', () => {
+        menu.classList.toggle('hidden');
+      });
+    }
+  });
+</script>
+

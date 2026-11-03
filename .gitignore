@@ -50,3 +50,9 @@ gen/
 .DS_Store
 Thumbs.db
 *.bak
+
+# Node & Web Portal
+node_modules/
+website/node_modules/
+website/dist/
+website/.astro/

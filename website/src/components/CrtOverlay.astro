@@ -1,0 +1,79 @@
+---
+/**
+ * CrtOverlay.astro
+ * Retro CRT scanline effect and toggle controller.
+ * Restrained scanlines that preserve 100% text readability.
+ */
+---
+
+<div id="crt-scanlines" class="crt-overlay pointer-events-none fixed inset-0 z-50 select-none transition-opacity duration-300" aria-hidden="true"></div>
+
+<style is:global>
+  /* CRT Scanline layer */
+  html[data-crt="on"] .crt-overlay {
+    opacity: 0.18;
+    background: linear-gradient(
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.45) 50%
+    );
+    background-size: 100% 4px;
+  }
+
+  html[data-crt="off"] .crt-overlay {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Subtle CRT phosphor screen vignette */
+  html[data-crt="on"] body::before {
+    content: " ";
+    display: block;
+    position: fixed;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background: radial-gradient(circle at center, transparent 70%, rgba(2, 4, 8, 0.5) 100%);
+    pointer-events: none;
+    z-index: 49;
+  }
+</style>
+
+<script is:inline>
+  (function initCrt() {
+    const STORAGE_KEY = 'atari_crt_enabled';
+    // Default to 'on' on first visit for retro atmosphere, but respect user choice
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const isEnabled = saved === null ? 'on' : (saved === 'true' ? 'on' : 'off');
+    
+    document.documentElement.setAttribute('data-crt', isEnabled);
+
+    function updateToggleButtons(state) {
+      document.querySelectorAll('[data-crt-toggle]').forEach((btn) => {
+        const textSpan = btn.querySelector('[data-crt-status]');
+        if (textSpan) {
+          textSpan.textContent = state === 'on' ? 'ON' : 'OFF';
+        }
+        btn.setAttribute('aria-pressed', state === 'on' ? 'true' : 'false');
+      });
+    }
+
+    // Attach click listeners to all toggle buttons
+    document.addEventListener('DOMContentLoaded', () => {
+      updateToggleButtons(isEnabled);
+
+      document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!target) return;
+        const toggleBtn = target.closest('[data-crt-toggle]');
+        if (!toggleBtn) return;
+
+        e.preventDefault();
+        const current = document.documentElement.getAttribute('data-crt') === 'on' ? 'on' : 'off';
+        const next = current === 'on' ? 'off' : 'on';
+        
+        document.documentElement.setAttribute('data-crt', next);
+        localStorage.setItem(STORAGE_KEY, next === 'on' ? 'true' : 'false');
+        updateToggleButtons(next);
+      });
+    });
+  })();
+</script>
+

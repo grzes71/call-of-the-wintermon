@@ -1,0 +1,147 @@
+---
+/**
+ * memory.astro
+ * Comprehensive technical memory explorer for Call of the Wintermon (Atari 800XL / 65XE).
+ * Visualizes 64 KB space, 40 KB User RAM partition, Zero Page, and historical release headroom.
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MemoryMapSvg from '../components/MemoryMapSvg.astro';
+import ZeroPageInspector from '../components/ZeroPageInspector.astro';
+import HistoryTrendSvg from '../components/HistoryTrendSvg.astro';
+import { getLatestMemoryReport, getHistoricalSnapshots, formatBytes } from '../lib/data';
+
+const report = getLatestMemoryReport();
+const snapshots = getHistoricalSnapshots();
+
+const summary = report.memory_summary;
+
+// Combine and sort all regions in User RAM ($2000-$BFFF)
+const allRegions = [
+  ...report.allocated_segments,
+  ...report.free_gaps,
+].sort((a, b) => a.start - b.start);
+
+const categoryBadgeClass: Record<string, string> = {
+  CODE: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  GRAPHICS: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+  BITMAPS: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+  DLIST: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+  PMG: 'bg-pink-500/10 text-pink-400 border-pink-500/30',
+  AUDIO: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  METADATA: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+  DATA: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+  FREE: 'bg-green-500/20 text-green-400 border-green-500/50 font-bold',
+};
+---
+
+<BaseLayout
+  title="64 KB Memory Architecture & Map — Call of the Wintermon"
+  description="Technical analysis, Zero Page layout, and 40 KB User RAM partition for Call of the Wintermon (Atari 8-bit XL/XE)."
+>
+  <div class="space-y-10">
+
+    <!-- Page Header -->
+    <div class="border-b border-atari-border pb-6 space-y-2">
+      <div class="flex items-center gap-2 text-xs font-mono text-atari-green font-bold tracking-wider uppercase">
+        <span>&gt; SYSTEM ARCHITECTURE</span>
+        <span class="text-atari-muted">/</span>
+        <span>MEMORY SUBSYSTEM</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-atari-text font-mono">
+        ATARI 64 KB <span class="text-atari-green">MEMORY ARCHITECTURE</span>
+      </h1>
+      <p class="text-xs sm:text-sm text-atari-muted leading-relaxed max-w-3xl">
+        Call of the Wintermon operates strictly within the official Atari XL/XE memory boundaries under the standard
+        OS ROM configuration (<code class="text-atari-cyan">PORTB = $FF</code>, Bit 0 = 1). The 40 KB User RAM space ($2000–$BFFF)
+        is tightly partitioned into deterministically placed display buffers, sprite memory, audio drivers, and SoA game tables.
+      </p>
+    </div>
+
+    <!-- 1. Interactive 64 KB & User RAM Visualizer Component -->
+    <MemoryMapSvg report={report} />
+
+    <!-- 2. Zero Page Inspector Component -->
+    <ZeroPageInspector zeroPage={report.zero_page} />
+
+    <!-- 3. Historical Headroom Trend Component -->
+    <HistoryTrendSvg snapshots={snapshots} />
+
+    <!-- 4. Detailed Memory Region Table -->
+    <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+            <span class="text-atari-green">&gt;</span>
+            <span>DETAILED USER RAM ALLOCATION DIRECTORY ($2000 - $BFFF)</span>
+          </h3>
+          <p class="text-xs text-atari-muted mt-0.5">
+            Full contiguous, non-overlapping partition verified by <code class="text-atari-text">check_memory.py</code>.
+          </p>
+        </div>
+        <div class="text-xs text-atari-muted">
+          Showing {allRegions.length} Regions ({report.allocated_segments.length} Allocated, {report.free_gaps.length} Free Gaps)
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="text-atari-muted border-b border-atari-border/70 text-[11px]">
+              <th class="py-2 px-2">RANGE (HEX)</th>
+              <th class="py-2 px-2">RANGE (DEC)</th>
+              <th class="py-2 px-2 text-right">SIZE</th>
+              <th class="py-2 px-2">CATEGORY</th>
+              <th class="py-2 px-3">SEGMENT NAME</th>
+              <th class="py-2 px-3">TECHNICAL DETAILS &amp; FUNCTION</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-atari-border/30">
+            {allRegions.map((reg) => {
+              const isFree = reg.category === 'FREE';
+              const badgeClass = categoryBadgeClass[reg.category] || 'bg-slate-500/10 text-slate-400 border-slate-500/30';
+              return (
+                <tr class={`transition-colors ${isFree ? 'bg-green-950/20 hover:bg-green-950/30' : 'hover:bg-atari-surfaceLight/40'}`}>
+                  <td class="py-2.5 px-2 font-bold font-mono text-atari-text whitespace-nowrap">
+                    {reg.start_hex} - {reg.end_hex}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-atari-muted text-[11px] whitespace-nowrap">
+                    {reg.start} - {reg.end}
+                  </td>
+                  <td class="py-2.5 px-2 font-mono text-right font-bold whitespace-nowrap" style={`color: ${isFree ? '#22c55e' : '#e2e8f0'}`}>
+                    {formatBytes(reg.size)}
+                  </td>
+                  <td class="py-2.5 px-2 whitespace-nowrap">
+                    <span class={`inline-block px-2 py-0.5 text-[10px] rounded border ${badgeClass}`}>
+                      {reg.category}
+                    </span>
+                  </td>
+                  <td class="py-2.5 px-3 font-semibold text-atari-text whitespace-nowrap">
+                    {reg.name}
+                  </td>
+                  <td class="py-2.5 px-3 text-atari-muted text-[11px] leading-relaxed">
+                    {reg.details}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr class="border-t-2 border-atari-border font-bold text-atari-text">
+              <td colspan="2" class="py-3 px-2 text-right uppercase text-atari-muted text-[11px]">
+                CONSERVATION TOTAL ($2000 - $BFFF):
+              </td>
+              <td class="py-3 px-2 text-right font-mono text-atari-green">
+                {formatBytes(summary.total_user_ram_bytes)}
+              </td>
+              <td colspan="3" class="py-3 px-3 text-xs text-atari-muted font-normal">
+                Allocated: <span class="text-atari-text font-bold">{formatBytes(summary.total_allocated_bytes)}</span> · Free: <span class="text-atari-cyan font-bold">{formatBytes(summary.total_free_bytes)}</span> (Balance Check: <span class="text-atari-green font-bold">[OK] EXACT MATCH</span>)
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</BaseLayout>

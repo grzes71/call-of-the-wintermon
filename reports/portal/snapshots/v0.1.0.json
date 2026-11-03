@@ -1,0 +1,461 @@
+{
+  "schema_version": "3.2.0",
+  "release_tag": "v0.1.0",
+  "version": "0.1.0",
+  "published_at": "2026-10-30T15:59:43Z",
+  "source_commit_sha": "b680bdb7020d4655a6c49937402fac7ce87dda61",
+  "binary_size_bytes": 40554,
+  "binary_sha256": "865e621907604a7a3d4d41c81efcb6867b6041734d52cbf882bbefb0a2390fe6",
+  "xex_download_url": "https://github.com/grzes71/call-of-the-wintermon/releases/download/v0.1.0/call_of_the_wintermon.xex",
+  "pdf_download_url": null,
+  "changelog_body": "## Co nowego w wersji 0.1.0\n\n- Pierwsze oficjalne wydanie gry Call of the Wintermon na Atari 8-bit XL/XE.\n- 7 grywalnych scen z unikalnymi kafelkami i wyzwaniami platformowymi.\n- 4-kana\u0142owy odtwarzacz muzyczny POKEY, dynamiczny silnik DLI i sprz\u0119towy render Player-Missile.",
+  "memory_report": {
+    "schema_version": "3.2.0",
+    "generated_at": "2026-10-30T15:59:43Z",
+    "game": {
+      "name": "Call of the Wintermon",
+      "version": "0.1.0",
+      "target": "Atari 8-bit (XL/XE)",
+      "executable": "call_of_the_wintermon.xex",
+      "binary_size_bytes": 40554,
+      "binary_sha256": "865e621907604a7a3d4d41c81efcb6867b6041734d52cbf882bbefb0a2390fe6"
+    },
+    "build": {
+      "commit_sha": "b680bdb7020d4655a6c49937402fac7ce87dda61",
+      "ref": "refs/tags/v0.1.0",
+      "mads_version": "2.1.6"
+    },
+    "memory_summary": {
+      "user_ram_start": 8192,
+      "user_ram_end": 49151,
+      "total_user_ram_bytes": 40960,
+      "total_allocated_bytes": 40484,
+      "total_free_bytes": 476,
+      "utilization_percent": 98.84,
+      "largest_free_block_bytes": 85,
+      "largest_free_block_range": "$67AB - $67FF",
+      "is_valid": true,
+      "category_totals": {
+        "CODE": 4888,
+        "GRAPHICS": 12684,
+        "BITMAPS": 7676,
+        "DLIST": 267,
+        "PMG": 1280,
+        "AUDIO": 2544,
+        "METADATA": 10137,
+        "DATA": 1008
+      }
+    },
+    "allocated_segments": [
+      {
+        "start": 8192,
+        "end": 9165,
+        "start_hex": "$2000",
+        "end_hex": "$23CD",
+        "size": 974,
+        "name": "Engine & State Code",
+        "category": "CODE",
+        "color": "#2563EB",
+        "details": "Main loop, Game state machine, Game Over logic"
+      },
+      {
+        "start": 9216,
+        "end": 10719,
+        "start_hex": "$2400",
+        "end_hex": "$29DF",
+        "size": 1504,
+        "name": "Intro Font & VRAM",
+        "category": "GRAPHICS",
+        "color": "#059669",
+        "details": "Custom 1 KB font ($2400) + Intro text ($2800)"
+      },
+      {
+        "start": 10752,
+        "end": 10785,
+        "start_hex": "$2A00",
+        "end_hex": "$2A21",
+        "size": 34,
+        "name": "Intro Display List",
+        "category": "DLIST",
+        "color": "#D97706",
+        "details": "10-line ANTIC Mode 2 Display List"
+      },
+      {
+        "start": 10800,
+        "end": 12282,
+        "start_hex": "$2A30",
+        "end_hex": "$2FFA",
+        "size": 1483,
+        "name": "Tileset Metadata, Status Line & SFX",
+        "category": "METADATA",
+        "color": "#0284C7",
+        "details": "Row offset lookup tables, HUD status line & victory fanfare"
+      },
+      {
+        "start": 12288,
+        "end": 16365,
+        "start_hex": "$3000",
+        "end_hex": "$3FED",
+        "size": 4078,
+        "name": "Gameplay VRAM & DLISTs",
+        "category": "GRAPHICS",
+        "color": "#059669",
+        "details": "Mode D 160x96 ($3000) + dlist_game & dlist_scene_title"
+      },
+      {
+        "start": 16384,
+        "end": 23485,
+        "start_hex": "$4000",
+        "end_hex": "$5BBD",
+        "size": 7102,
+        "name": "Title VScroll VRAM & Text",
+        "category": "GRAPHICS",
+        "color": "#059669",
+        "details": "Vertical scroll VRAM ($4000) + Centered text lines ($4078)"
+      },
+      {
+        "start": 23552,
+        "end": 24559,
+        "start_hex": "$5C00",
+        "end_hex": "$5FEF",
+        "size": 1008,
+        "name": "Game Over / Victory Module",
+        "category": "DATA",
+        "color": "#0284C7",
+        "details": "Game Over & Victory module (display lists, DLI chain, builder)"
+      },
+      {
+        "start": 24576,
+        "end": 24808,
+        "start_hex": "$6000",
+        "end_hex": "$60E8",
+        "size": 233,
+        "name": "Title Display List",
+        "category": "DLIST",
+        "color": "#D97706",
+        "details": "Procedural 2bpp Title Display List with Mode 2 VScroller"
+      },
+      {
+        "start": 24832,
+        "end": 26538,
+        "start_hex": "$6100",
+        "end_hex": "$67AA",
+        "size": 1707,
+        "name": "Unified DLI Engine & Buffers",
+        "category": "CODE",
+        "color": "#2563EB",
+        "details": "Double-buffered DLI tables and 3-phase DLI interrupt handler"
+      },
+      {
+        "start": 26624,
+        "end": 27359,
+        "start_hex": "$6800",
+        "end_hex": "$6ADF",
+        "size": 736,
+        "name": "Render Tables + Intro Handler",
+        "category": "CODE",
+        "color": "#2563EB",
+        "details": "2bpp flip LUT + row offsets (MEM-006) and the relocated Intro screen code"
+      },
+      {
+        "start": 27392,
+        "end": 28671,
+        "start_hex": "$6B00",
+        "end_hex": "$6FFF",
+        "size": 1280,
+        "name": "Player-Missile Active Buffer",
+        "category": "PMG",
+        "color": "#DB2777",
+        "details": "1.25 KB active PMG DMA buffer ($6B00-$6FFF)"
+      },
+      {
+        "start": 28672,
+        "end": 31215,
+        "start_hex": "$7000",
+        "end_hex": "$79EF",
+        "size": 2544,
+        "name": "Audio Player & Music",
+        "category": "AUDIO",
+        "color": "#7C3AED",
+        "details": "POKEY Player engine & Title track ($7000-$79EF)"
+      },
+      {
+        "start": 31232,
+        "end": 32702,
+        "start_hex": "$7A00",
+        "end_hex": "$7FBE",
+        "size": 1471,
+        "name": "Playfield Blitter & Sprites",
+        "category": "CODE",
+        "color": "#2563EB",
+        "details": "Playfield blitter engine & sprite bitmaps"
+      },
+      {
+        "start": 32768,
+        "end": 40443,
+        "start_hex": "$8000",
+        "end_hex": "$9DFB",
+        "size": 7676,
+        "name": "ANTIC Mode E Tilesets",
+        "category": "BITMAPS",
+        "color": "#0D9488",
+        "details": "Bitmapped sheets: Castles, Depths, Hell, Trees (16.2 KB)"
+      },
+      {
+        "start": 40446,
+        "end": 49099,
+        "start_hex": "$9DFE",
+        "end_hex": "$BFCB",
+        "size": 8654,
+        "name": "Scene SoA Tables & DLI Blocks",
+        "category": "METADATA",
+        "color": "#0284C7",
+        "details": "Scene definitions, platforms, objects, pointer tables & per-scene DLI blocks (grows with the scene count)"
+      }
+    ],
+    "free_gaps": [
+      {
+        "start": 9166,
+        "end": 9215,
+        "start_hex": "$23CE",
+        "end_hex": "$23FF",
+        "size": 50,
+        "name": "FREE RAM (50 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Free headroom in $2000 block before Intro Font ($2400) \u2014 vacated by title code"
+      },
+      {
+        "start": 10720,
+        "end": 10751,
+        "start_hex": "$29E0",
+        "end_hex": "$29FF",
+        "size": 32,
+        "name": "FREE RAM (32 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 32 bytes"
+      },
+      {
+        "start": 10786,
+        "end": 10799,
+        "start_hex": "$2A22",
+        "end_hex": "$2A2F",
+        "size": 14,
+        "name": "FREE RAM (14 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 14 bytes"
+      },
+      {
+        "start": 12283,
+        "end": 12287,
+        "start_hex": "$2FFB",
+        "end_hex": "$2FFF",
+        "size": 5,
+        "name": "FREE RAM (5 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Low RAM gap before Gameplay VRAM ($3000) \u2014 vacated by scenes data"
+      },
+      {
+        "start": 16366,
+        "end": 16383,
+        "start_hex": "$3FEE",
+        "end_hex": "$3FFF",
+        "size": 18,
+        "name": "FREE RAM (18 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 18 bytes"
+      },
+      {
+        "start": 23486,
+        "end": 23551,
+        "start_hex": "$5BBE",
+        "end_hex": "$5BFF",
+        "size": 66,
+        "name": "FREE RAM (66 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 66 bytes"
+      },
+      {
+        "start": 24560,
+        "end": 24575,
+        "start_hex": "$5FF0",
+        "end_hex": "$5FFF",
+        "size": 16,
+        "name": "FREE RAM (16 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Free expansion headroom in the $5000 block before Title DLIST ($6000)"
+      },
+      {
+        "start": 24809,
+        "end": 24831,
+        "start_hex": "$60E9",
+        "end_hex": "$60FF",
+        "size": 23,
+        "name": "FREE RAM (23 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Free space after Title DLIST before DLI double buffers ($6100)"
+      },
+      {
+        "start": 26539,
+        "end": 26623,
+        "start_hex": "$67AB",
+        "end_hex": "$67FF",
+        "size": 85,
+        "name": "FREE RAM (85 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 85 bytes"
+      },
+      {
+        "start": 27360,
+        "end": 27391,
+        "start_hex": "$6AE0",
+        "end_hex": "$6AFF",
+        "size": 32,
+        "name": "FREE RAM (32 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Free headroom in PMG block ($6800-$6AFF) before PMG missiles ($6B00)"
+      },
+      {
+        "start": 31216,
+        "end": 31231,
+        "start_hex": "$79F0",
+        "end_hex": "$79FF",
+        "size": 16,
+        "name": "FREE RAM (16 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Unallocated headroom: 16 bytes"
+      },
+      {
+        "start": 32703,
+        "end": 32767,
+        "start_hex": "$7FBF",
+        "end_hex": "$7FFF",
+        "size": 65,
+        "name": "FREE RAM (65 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Free headroom in $7000 block before ANTIC Mode E Tilesets ($8000)"
+      },
+      {
+        "start": 40444,
+        "end": 40445,
+        "start_hex": "$9DFC",
+        "end_hex": "$9DFD",
+        "size": 2,
+        "name": "FREE RAM (2 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Tile headroom before the Scene Data Tables \u2014 keep the tilesets below"
+      },
+      {
+        "start": 49100,
+        "end": 49151,
+        "start_hex": "$BFCC",
+        "end_hex": "$BFFF",
+        "size": 52,
+        "name": "FREE RAM (52 B)",
+        "category": "FREE",
+        "color": "#10B981",
+        "details": "Headroom below OS ROM Kernel boundary ($C000)"
+      }
+    ],
+    "zero_page": {
+      "total_bytes": 256,
+      "os_reserved_bytes": 128,
+      "user_allocated_bytes": 103,
+      "free_bytes": 25,
+      "allocations": [
+        {
+          "range_hex": "$00 - $7F",
+          "start": 0,
+          "end": 127,
+          "size": 128,
+          "label": "SYSTEM (OS)",
+          "color": "#64748B",
+          "description": "Reserved for Atari OS Kernel"
+        },
+        {
+          "range_hex": "$80 - $87",
+          "start": 128,
+          "end": 135,
+          "size": 8,
+          "label": "ENGINE",
+          "color": "#38BDF8",
+          "description": "Registers & temporary pointers (zp_temp, zp_ptr_src/dst)"
+        },
+        {
+          "range_hex": "$88 - $8F",
+          "start": 136,
+          "end": 143,
+          "size": 8,
+          "label": "STATE",
+          "color": "#818CF8",
+          "description": "Game states, title card fade counters, fire debouncing"
+        },
+        {
+          "range_hex": "$90 - $99",
+          "start": 144,
+          "end": 153,
+          "size": 10,
+          "label": "AUDIO",
+          "color": "#A855F7",
+          "description": "POKEY Audio Player base pointers (PLAYER_ZP_BASE)"
+        },
+        {
+          "range_hex": "$9A - $B7",
+          "start": 154,
+          "end": 183,
+          "size": 30,
+          "label": "RENDERER",
+          "color": "#06B6D4",
+          "description": "Scene renderer table pointers & parameters"
+        },
+        {
+          "range_hex": "$B8 - $C0",
+          "start": 184,
+          "end": 192,
+          "size": 9,
+          "label": "DLI ENGINE",
+          "color": "#E879F9",
+          "description": "DLI registers save, pas counters & PMG pattern ptr"
+        },
+        {
+          "range_hex": "$C1 - $E6",
+          "start": 193,
+          "end": 230,
+          "size": 38,
+          "label": "GAMEPLAY",
+          "color": "#F472B6",
+          "description": "Lives, HUD specials, Player 0 physics, platforms, secrets, killer mode"
+        },
+        {
+          "range_hex": "$E7 - $FF",
+          "start": 231,
+          "end": 255,
+          "size": 25,
+          "label": "FREE",
+          "color": "#34D399",
+          "description": "Unallocated Zero Page available for engine expansion"
+        }
+      ]
+    }
+  },
+  "frozen_game_stats": {
+    "scene_count": 7,
+    "total_platforms": 140,
+    "total_static_platforms": 117,
+    "total_moving_platforms": 23,
+    "total_enemies": 23,
+    "total_secrets": 87
+  }
+}
