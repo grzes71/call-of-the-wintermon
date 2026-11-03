@@ -2,6 +2,13 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-03] - Fix Gallery Sprite Categorization for Secrets (Ghost & Phantom)
+
+- **Gallery Page ([website/src/pages/gallery.astro](website/src/pages/gallery.astro))**:
+  - Reclassified "Ghost" and "Phantom" sprites from "enemyNames" to "collectibleNames", matching [scenes/definitions.json](scenes/definitions.json) and [reports/portal/game_stats.json](reports/portal/game_stats.json).
+  - Adjusted grid layout responsiveness: Bestiary updated to 5 columns (`md:grid-cols-5`) and Collectibles updated to 7 columns (`md:grid-cols-7`).
+  - Verified static generation (`astro check` and `astro build`) with 5 enemy classes and 7 collectible types correctly rendered.
+
 ## [2026-11-03] - Add English Localization and Multi-Target Build Pipeline
 
 - **Localization Assets & Translations**:
