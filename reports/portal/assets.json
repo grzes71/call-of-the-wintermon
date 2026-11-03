@@ -83,7 +83,7 @@
         "id": "title_music",
         "path": "music/title.json",
         "format": "json",
-        "channels": "4",
+        "channels": 4,
         "description": "Title screen music score definition",
         "size_bytes": 68558,
         "exists": true
@@ -92,7 +92,7 @@
         "id": "intro_music",
         "path": "music/intro.dsl",
         "format": "dsl",
-        "channels": "4",
+        "channels": 4,
         "description": "Intro narrative sequence theme in Atari Music DSL",
         "size_bytes": 1249,
         "exists": true
@@ -126,9 +126,11 @@
     }
   ],
   "scenes": {
+    "manifest": "scenes/scenes.json",
+    "catalogues": "scenes/definitions.json",
     "levels": [
       {
-        "index": "1",
+        "index": 1,
         "id": "forest",
         "path": "scenes/01-forest.json",
         "name": "The Forest Whispers My Name",
@@ -137,7 +139,7 @@
         "exists": true
       },
       {
-        "index": "2",
+        "index": 2,
         "id": "forest_castle",
         "path": "scenes/02-forest-castle.json",
         "name": "Be Quick or Be Dead",
@@ -145,8 +147,6 @@
         "size_bytes": 7747,
         "exists": true
       }
-    ],
-    "manifest": "scenes/scenes.json",
-    "catalogues": "scenes/definitions.json"
+    ]
   }
 }

@@ -2,6 +2,16 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-03] - Implement GitHub Actions Portal Deployment Workflow (Phase 4)
+
+- **GitHub Pages CI/CD Pipeline ([.github/workflows/portal-deploy.yml](.github/workflows/portal-deploy.yml))**:
+  - Implemented automated multi-trigger workflow listening on `push` to `main`, published releases (`release: [published]`), manual execution (`workflow_dispatch`), and `pull_request` targeting `main`.
+  - Configured minimal workflow permissions (`contents: read`) and deployment concurrency group (`group: pages`, `cancel-in-progress: false`).
+  - Implemented decoupled 2-job pipeline: `build` (test, validate telemetry, compile SSG bundle, upload Pages artifact) and `deploy` (official `actions/deploy-pages@v4`).
+  - Isolated Pull Request validation: PRs trigger full Python data generation, schema validation, pytest tests, `npm run check`, and `npm run build`, but strictly skip artifact upload and deployment via conditional `if: github.event_name != 'pull_request'`.
+  - Configured standard GitHub token (`GITHUB_TOKEN`) with `pages: write` and `id-token: write` on the deployment job targeting the `github-pages` environment.
+
+
 ## [2026-11-03] - Implement Portal Technical Content Pages (Phase 3)
 
 - **Technical Memory Explorer Page ([website/src/pages/memory.astro](website/src/pages/memory.astro))**:
