@@ -55,8 +55,8 @@ const tilesets = [
 ];
 
 // Separate enemies vs collectibles from objectSheet
-const enemyNames = ['Azathoth', 'Nyarlathotep', 'Yol-Sogoth', 'Shub-Niggurath', 'Hastog', 'Ghost', 'Phantom'];
-const collectibleNames = ['CD', 'Skull', 'Key', 'Mjolnir', 'Extra'];
+const enemyNames = ['Azathoth', 'Nyarlathotep', 'Yol-Sogoth', 'Shub-Niggurath', 'Hastog'];
+const collectibleNames = ['CD', 'Skull', 'Key', 'Mjolnir', 'Ghost', 'Phantom', 'Extra'];
 
 const enemySprites = objectSheet.sprites.filter((s) => enemyNames.some((en) => s.description.toLowerCase().includes(en.toLowerCase())));
 const collectibleSprites = objectSheet.sprites.filter((s) => collectibleNames.some((cn) => s.description.toLowerCase().includes(cn.toLowerCase())));
@@ -188,7 +188,7 @@ const collectibleSprites = objectSheet.sprites.filter((s) => collectibleNames.so
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
         {enemySprites.map((s) => {
           const firstFrame = s.frames && s.frames.length > 0 ? s.frames[0].pixels : [];
           return (
@@ -225,7 +225,7 @@ const collectibleSprites = objectSheet.sprites.filter((s) => collectibleNames.so
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
         {collectibleSprites.map((s) => {
           const firstFrame = s.frames && s.frames.length > 0 ? s.frames[0].pixels : [];
           return (
