@@ -17,11 +17,16 @@ MKDIR            := $(PYTHON) -c "import os, sys; os.makedirs(sys.argv[1], exist
 RM               := $(PYTHON) -c "import os, sys, shutil; [shutil.rmtree(a, ignore_errors=True) if os.path.isdir(a) else os.remove(a) for a in sys.argv[1:] if os.path.exists(a)]"
 
 # Build targets and artifacts
-TARGET           := call_of_the_wintermon.xex
+TARGET_PL        := call_of_the_wintermon_pl.xex
+TARGET_EN        := call_of_the_wintermon_en.xex
+TARGETS          := $(TARGET_PL) $(TARGET_EN)
+TARGET           := $(TARGET_PL)
 GEN_DIR          := gen
 
-TITLE_VSCROLL_SRC := scroll/title.txt
-TITLE_VSCROLL_ASM := $(GEN_DIR)/title_vscroll_data.asm
+TITLE_VSCROLL_SRC    := scroll/title.txt
+TITLE_VSCROLL_EN_SRC := scroll/title-en.txt
+TITLE_VSCROLL_ASM    := $(GEN_DIR)/title_vscroll_data.asm
+TITLE_VSCROLL_EN_ASM := $(GEN_DIR)/title_vscroll_data_en.asm
 
 TITLE_TXT_SRC    := texts/title.txt
 TITLE_TXT_ASM    := $(GEN_DIR)/title_text_data.asm
@@ -29,13 +34,19 @@ TITLE_TXT_ASM    := $(GEN_DIR)/title_text_data.asm
 TITLE_LOGO_JSON  := title/title.json
 TITLE_LOGO_INC   := $(GEN_DIR)/title_logo.inc
 
-INTRO_TXT_SRC    := texts/intro.txt
-INTRO_TXT_BIN    := $(GEN_DIR)/intro_text.bin
-INTRO_FONT       := fonts/font.fnt
+INTRO_TXT_SRC        := texts/intro.txt
+INTRO_TXT_BIN        := $(GEN_DIR)/intro_text.bin
+INTRO_TXT_EN_SRC     := texts/intro-en.txt
+INTRO_TXT_EN_BIN     := $(GEN_DIR)/intro_text_en.bin
+INTRO_FONT           := fonts/font.fnt
 
-GAMEOVER_TXT_FAILURE := texts/failure.txt
-GAMEOVER_TXT_SUCCESS := texts/success.txt
-GAMEOVER_TXT_INC     := $(GEN_DIR)/gameover_texts.inc
+GAMEOVER_TXT_FAILURE    := texts/failure.txt
+GAMEOVER_TXT_SUCCESS    := texts/success.txt
+GAMEOVER_TXT_INC        := $(GEN_DIR)/gameover_texts.inc
+
+GAMEOVER_TXT_FAILURE_EN := texts/failure-en.txt
+GAMEOVER_TXT_SUCCESS_EN := texts/success-en.txt
+GAMEOVER_TXT_EN_INC     := $(GEN_DIR)/gameover_texts_en.inc
 
 TILES_DIR        := tiles
 TILES_SRCS       := $(wildcard $(TILES_DIR)/*.png)
@@ -82,11 +93,15 @@ all: assets tiles music data xex tests check_memory
 # ------------------------------------------------------------------------------
 # 1. Assets conversion
 # ------------------------------------------------------------------------------
-assets: $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(INTRO_TXT_BIN) $(GAMEOVER_TXT_INC) $(TILES_ARTIFACTS)
+assets: $(TITLE_VSCROLL_ASM) $(TITLE_VSCROLL_EN_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(INTRO_TXT_BIN) $(INTRO_TXT_EN_BIN) $(GAMEOVER_TXT_INC) $(GAMEOVER_TXT_EN_INC) $(TILES_ARTIFACTS)
 
 $(TITLE_VSCROLL_ASM): $(TITLE_VSCROLL_SRC) scripts/compile_title_vscroll.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/compile_title_vscroll.py -i $(TITLE_VSCROLL_SRC) -o $(TITLE_VSCROLL_ASM)
+
+$(TITLE_VSCROLL_EN_ASM): $(TITLE_VSCROLL_EN_SRC) scripts/compile_title_vscroll.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/compile_title_vscroll.py -i $(TITLE_VSCROLL_EN_SRC) -o $(TITLE_VSCROLL_EN_ASM)
 
 $(TITLE_TXT_ASM): $(TITLE_TXT_SRC) scripts/compile_title_text.py
 	@$(MKDIR) $(GEN_DIR)
@@ -100,9 +115,17 @@ $(INTRO_TXT_BIN): $(INTRO_TXT_SRC) scripts/gen_intro_text.py
 	@$(MKDIR) $(GEN_DIR)
 	$(PYTHON) scripts/gen_intro_text.py -i $(INTRO_TXT_SRC) -o $(INTRO_TXT_BIN)
 
+$(INTRO_TXT_EN_BIN): $(INTRO_TXT_EN_SRC) scripts/gen_intro_text.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/gen_intro_text.py -i $(INTRO_TXT_EN_SRC) -o $(INTRO_TXT_EN_BIN)
+
 $(GAMEOVER_TXT_INC): $(GAMEOVER_TXT_FAILURE) $(GAMEOVER_TXT_SUCCESS) scripts/convert_gameover_texts.py
 	@$(MKDIR) $(GEN_DIR)
-	$(PYTHON) scripts/convert_gameover_texts.py -o $(GAMEOVER_TXT_INC)
+	$(PYTHON) scripts/convert_gameover_texts.py --failure $(GAMEOVER_TXT_FAILURE) --success $(GAMEOVER_TXT_SUCCESS) -o $(GAMEOVER_TXT_INC)
+
+$(GAMEOVER_TXT_EN_INC): $(GAMEOVER_TXT_FAILURE_EN) $(GAMEOVER_TXT_SUCCESS_EN) scripts/convert_gameover_texts.py
+	@$(MKDIR) $(GEN_DIR)
+	$(PYTHON) scripts/convert_gameover_texts.py --failure $(GAMEOVER_TXT_FAILURE_EN) --success $(GAMEOVER_TXT_SUCCESS_EN) -o $(GAMEOVER_TXT_EN_INC)
 
 # ------------------------------------------------------------------------------
 # 2. Tiles conversion (ANTIC Mode E 160x96 2bpp)
@@ -159,11 +182,16 @@ $(SCENES_ASM) $(SCENES_DLI_ASM): $(SCENES_MANIFEST) $(SCENES_SRCS) $(SCENES_DEFI
 # ------------------------------------------------------------------------------
 # 5. Binary assembly (MADS)
 # ------------------------------------------------------------------------------
-xex: $(TARGET)
+xex: $(TARGETS)
 
-$(TARGET): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(GAMEOVER_TXT_INC) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
+$(TARGET_PL): $(ASM_SRCS) $(TITLE_VSCROLL_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_BIN) $(GAMEOVER_TXT_INC) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
 	@$(MKDIR) $(GEN_DIR)
-	$(MADS) -i:lib main.asm -o:$(TARGET) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
+	$(MADS) -i:lib main.asm -o:$(TARGET_PL) -l:$(GEN_DIR)/main.lst -t:$(GEN_DIR)/main.lab
+	@$(PYTHON) -c "import shutil; shutil.copyfile('$(TARGET_PL)', 'call_of_the_wintermon.xex')"
+
+$(TARGET_EN): $(ASM_SRCS) $(TITLE_VSCROLL_EN_ASM) $(TITLE_TXT_ASM) $(TITLE_LOGO_INC) $(MUSIC_TITLE_ASM) $(MUSIC_INTRO_ASM) $(INTRO_TXT_EN_BIN) $(GAMEOVER_TXT_EN_INC) $(INTRO_FONT) $(TILES_ARTIFACTS) $(SPRITES_ASM) $(PLAYER_SPRITE_ASM) $(SCENES_ASM)
+	@$(MKDIR) $(GEN_DIR)
+	$(MADS) -i:lib -d:LANG_EN=1 main.asm -o:$(TARGET_EN) -l:$(GEN_DIR)/main_en.lst -t:$(GEN_DIR)/main_en.lab
 
 
 # ------------------------------------------------------------------------------
@@ -177,8 +205,9 @@ test: tests
 # ------------------------------------------------------------------------------
 # 6. Automated memory map verification and visual report
 # ------------------------------------------------------------------------------
-check_memory: $(TARGET) scripts/check_memory.py
-	$(PYTHON) scripts/check_memory.py $(TARGET)
+check_memory: $(TARGETS) scripts/check_memory.py
+	$(PYTHON) scripts/check_memory.py $(TARGET_PL)
+	$(PYTHON) scripts/check_memory.py $(TARGET_EN)
 
 memory_map: $(TARGET) scripts/generate_memory_map.py
 	$(PYTHON) scripts/generate_memory_map.py $(TARGET) --pdf memory_map.pdf
@@ -214,5 +243,5 @@ portal_serve:
 # Clean build artifacts
 # ------------------------------------------------------------------------------
 clean:
-	@$(RM) $(GEN_DIR) $(TARGET)
+	@$(RM) $(GEN_DIR) $(TARGETS) call_of_the_wintermon.xex
 	@echo "Clean completed."

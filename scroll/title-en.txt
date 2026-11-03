@@ -1,0 +1,5 @@
+CALL OF THE WINTERMON v0.3.0
+ATARI 8-BIT PLATFORM GAME
+github.com/grzes71/call-of-the-wintermon
+PRESS FIRE TO START
+

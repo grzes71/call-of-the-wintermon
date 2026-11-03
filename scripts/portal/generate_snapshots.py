@@ -73,6 +73,19 @@ OFFICIAL_RELEASES = [
             "- Zwiększenie wolnej pamięci RAM poniżej $C000 do 487 bajtów."
         ),
     },
+    {
+        "tag": "v0.3.0",
+        "version": "0.3.0",
+        "commit": "166c337c7f8ffa21d208c11d572ee21b346564e3",
+        "published_at": "2026-11-03T14:23:25Z",
+        "download_url": "https://github.com/grzes71/call-of-the-wintermon/releases/download/v0.3.0/call_of_the_wintermon.xex",
+        "expected_size": 40543,
+        "expected_sha256": "77fc5f794b69538cf586686cdf18d05c99c5b00730df6e621f39b1e95ee01ff0",
+        "changelog": (
+            "## Co nowego w wersji 0.3.0\n\n"
+            "- Wdrożenie statycznego portalu gry (GitHub Pages) z telemetryką pamięci i archiwum wydań."
+        ),
+    },
 ]
 
 

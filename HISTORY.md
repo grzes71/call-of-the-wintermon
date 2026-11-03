@@ -2,6 +2,31 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-03] - Add English Localization and Multi-Target Build Pipeline
+
+- **Localization Assets & Translations**:
+  - Added [texts/intro-en.txt](texts/intro-en.txt): English narrative text for intro crawl adhering to ANTIC Mode 2 constraints (exactly 12 lines, $\le 40$ chars).
+  - Added [texts/failure-en.txt](texts/failure-en.txt): English failure game-over text (7 lines).
+  - Added [texts/success-en.txt](texts/success-en.txt): English victory game-over text (18 lines, localized congratulatory header and metal albums list).
+  - Added [scroll/title-en.txt](scroll/title-en.txt): English title screen scrolling text.
+  - Updated [scroll/title.txt](scroll/title.txt): Polish title screen scrolling text ("GRA PLATFORMOWA ATARI 8-BIT", "NACIŚNIJ FIRE ABY ROZPOCZĄĆ").
+- **MADS Conditional Assembly ([main.asm](main.asm))**:
+  - Added `.ifdef LANG_EN` conditional inclusion for Intro narrative VRAM (`gen/intro_text_en.bin` vs `gen/intro_text.bin`).
+  - Added `.ifdef LANG_EN` conditional inclusion for Title vertical scroller data (`gen/title_vscroll_data_en.asm` vs `gen/title_vscroll_data.asm`).
+  - Added `.ifdef LANG_EN` conditional inclusion for Game Over include texts (`gen/gameover_texts_en.inc` vs `gen/gameover_texts.inc`).
+- **Build Pipeline & Makefile ([Makefile](Makefile))**:
+  - Configured multi-target build: `call_of_the_wintermon_pl.xex` (PL), `call_of_the_wintermon_en.xex` (EN), and backward-compatible alias `call_of_the_wintermon.xex`.
+  - Added build targets for English asset compilation (`gen/intro_text_en.bin`, `gen/gameover_texts_en.inc`, `gen/title_vscroll_data_en.asm`).
+  - Updated `xex` target to build both versions in a single invocation (`make all` / `make xex`).
+  - Updated `check_memory` to validate segment boundaries and headroom on both binaries.
+- **Tooling & Release Workflow**:
+  - Updated [scripts/release_helper.py](scripts/release_helper.py) to automatically propagate version bumps to both `scroll/title.txt` and `scroll/title-en.txt`.
+  - Updated [manifest.yaml](manifest.yaml) to declare both English and Polish narrative and scroll assets.
+  - Updated [.github/workflows/release.yml](.github/workflows/release.yml) to assemble and release both PL and EN binaries as release assets.
+- **Automated Verification**:
+  - Added comprehensive test suite [tests/test_localization.py](tests/test_localization.py) testing ANTIC line constraints, character encodings, existence of both binaries, and py65 emulated VRAM verification.
+  - All 797 automated tests pass. Both binaries verified under memory checker below `$C000`.
+
 ## [2026-11-03] - Implement GitHub Actions Portal Deployment Workflow (Phase 4)
 
 - **GitHub Pages CI/CD Pipeline ([.github/workflows/portal-deploy.yml](.github/workflows/portal-deploy.yml))**:

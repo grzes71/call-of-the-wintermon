@@ -210,6 +210,16 @@ import BaseLayout from '../layouts/BaseLayout.astro';
             enforce segment bounds and verify headroom below $C000 before any binary is released.
           </p>
         </div>
+
+        <div class="space-y-2">
+          <h3 class="font-bold text-atari-green text-xs">DUAL-LANGUAGE LOCALIZATION (EN &amp; PL)</h3>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            Call of the Wintermon releases feature native English (<code class="text-atari-text">call_of_the_wintermon_en.xex</code>)
+            and Polish (<code class="text-atari-text">call_of_the_wintermon_pl.xex</code>) binaries compiled via conditional
+            MADS assembly (<code class="text-atari-text">-d:LANG_EN=1</code>). Both versions share a unified 1 KB Atari character set
+            mapped to full Latin and Polish diacritics with zero runtime RAM overhead.
+          </p>
+        </div>
       </div>
     </section>
 

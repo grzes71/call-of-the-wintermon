@@ -150,7 +150,11 @@ intro_font
 ; ==============================================================================
     org INTRO_VRAM
 intro_text
+.ifdef LANG_EN
+    ins 'gen/intro_text_en.bin'
+.else
     ins 'gen/intro_text.bin'
+.endif
 
 ; ==============================================================================
 ; INTRO DISPLAY LIST SEGMENT ($2A00)
@@ -313,7 +317,11 @@ title_vs_buf
     :TITLE_VS_BUF_LEN .byte 0
 
 ; Compiled vertical scroll text lines (internal screen codes, 40 bytes each)
+.ifdef LANG_EN
+    icl 'gen/title_vscroll_data_en.asm'
+.else
     icl 'gen/title_vscroll_data.asm'
+.endif
 
 ; Title screen state handler & 2bpp text generator
     icl 'scenes/title.asm'
@@ -604,7 +612,11 @@ tiles_data_end
     icl 'engine/platforms.asm'
     icl 'gen/scenes_data.asm'
     icl 'gen/scenes_dli_data.asm'
+.ifdef LANG_EN
+    icl 'gen/gameover_texts_en.inc'
+.else
     icl 'gen/gameover_texts.inc'
+.endif
 .if GAMEOVER_MAX_LINES != GAMEOVER_TEXT_LINES
     .error "gen/gameover_texts.inc allows a different line count than the display list"
 .endif

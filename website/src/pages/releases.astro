@@ -73,15 +73,17 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
           </thead>
           <tbody class="divide-y divide-atari-border/30">
             {releasesData.releases.map((rel) => {
-              const snap = snapshotMap.get(rel.tag_name);
+              const tag = rel.tag || rel.tag_name;
+              const snap = snapshotMap.get(tag);
               const mem = rel.memory_metrics || snap?.memory_report.memory_summary;
               const game = rel.game_metrics || snap?.frozen_game_stats;
               const dateStr = rel.published_at ? rel.published_at.split('T')[0] : 'N/A';
-              const binarySize = rel.xex_asset ? rel.xex_asset.size_bytes : (snap ? snap.binary_size_bytes : 0);
+              const binarySize = rel.binary_size_bytes || (rel.xex_asset ? rel.xex_asset.size_bytes : (snap ? snap.binary_size_bytes : 0));
+              const commitSha = rel.commit_sha || rel.source_commit_sha || snap?.source_commit_sha || '';
 
               return (
                 <tr class="hover:bg-atari-surfaceLight/30 transition-colors">
-                  <td class="py-2.5 px-2 font-bold text-atari-green font-mono">{rel.tag_name}</td>
+                  <td class="py-2.5 px-2 font-bold text-atari-green font-mono">{tag}</td>
                   <td class="py-2.5 px-2 text-atari-muted font-mono text-[11px]">{dateStr}</td>
                   <td class="py-2.5 px-2 font-mono text-right text-atari-text">
                     {binarySize > 0 ? formatBytes(binarySize) : 'N/A'}
@@ -106,12 +108,12 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
                   </td>
                   <td class="py-2.5 px-3 font-mono text-atari-cyan text-[11px]">
                     <a
-                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${rel.source_commit_sha}`}
+                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${commitSha}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       class="hover:underline"
                     >
-                      {rel.source_commit_sha ? rel.source_commit_sha.substring(0, 7) : 'N/A'}
+                      {commitSha ? commitSha.substring(0, 7) : 'N/A'}
                     </a>
                   </td>
                 </tr>
@@ -125,11 +127,18 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
     <!-- Individual Release Cards -->
     <div class="space-y-6">
       {releasesData.releases.map((rel) => {
-        const snap = snapshotMap.get(rel.tag_name);
+        const tag = rel.tag || rel.tag_name;
+        const snap = snapshotMap.get(tag);
         const mem = rel.memory_metrics || snap?.memory_report.memory_summary;
         const game = rel.game_metrics || snap?.frozen_game_stats;
-        const sha256 = snap?.binary_sha256;
+        const sha256 = rel.binary_sha256 || snap?.binary_sha256;
         const dateStr = rel.published_at ? rel.published_at.split('T')[0] : 'N/A';
+        const commitSha = rel.commit_sha || rel.source_commit_sha || snap?.source_commit_sha || '';
+        const xexEnUrl = rel.xex_en_download_url || (rel as any).xex_en_asset?.download_url;
+        const xexPlUrl = rel.xex_pl_download_url || (rel as any).xex_pl_asset?.download_url;
+        const xexDefaultUrl = rel.xex_download_url || rel.xex_asset?.download_url || snap?.xex_download_url;
+        const pdfUrl = rel.pdf_download_url || rel.pdf_asset?.download_url || snap?.pdf_download_url;
+        const binarySize = rel.binary_size_bytes || (rel.xex_asset ? rel.xex_asset.size_bytes : (snap ? snap.binary_size_bytes : 0));
 
         return (
           <article class="border border-atari-border bg-atari-surface/70 rounded-lg p-6 space-y-5 font-mono">
@@ -137,7 +146,7 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-atari-border/70 pb-4">
               <div class="space-y-1">
                 <div class="flex items-center gap-3">
-                  <h2 class="text-xl font-bold text-atari-green font-mono">{rel.tag_name}</h2>
+                  <h2 class="text-xl font-bold text-atari-green font-mono">{tag}</h2>
                   <span class="text-sm font-semibold text-atari-text">{rel.name || 'Release Build'}</span>
                   {rel.prerelease && (
                     <span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -151,12 +160,12 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
                   <span>
                     Commit:{' '}
                     <a
-                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${rel.source_commit_sha}`}
+                      href={`https://github.com/grzes71/call-of-the-wintermon/commit/${commitSha}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       class="text-atari-cyan hover:underline"
                     >
-                      {rel.source_commit_sha ? rel.source_commit_sha.substring(0, 7) : 'N/A'}
+                      {commitSha ? commitSha.substring(0, 7) : 'N/A'}
                     </a>
                   </span>
                 </div>
@@ -164,20 +173,38 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
 
               <!-- Download Buttons -->
               <div class="flex flex-wrap items-center gap-2">
-                {rel.xex_asset && (
+                {/* English localized download */}
+                {xexEnUrl && (
                   <a
-                    href={rel.xex_asset.download_url}
+                    href={xexEnUrl}
                     class="px-4 py-2 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2"
                   >
                     <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                       <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                     </svg>
-                    <span>DOWNLOAD XEX ({formatBytes(rel.xex_asset.size_bytes)})</span>
+                    <span>DOWNLOAD (EN)</span>
                   </a>
                 )}
-                {rel.pdf_asset && (
+
+                {/* Polish localized download / fallback default */}
+                {(xexPlUrl || xexDefaultUrl) && (
                   <a
-                    href={rel.pdf_asset.download_url}
+                    href={xexPlUrl || xexDefaultUrl}
+                    class={xexEnUrl
+                      ? "px-4 py-2 rounded bg-atari-surfaceLight border border-atari-green/60 text-atari-green hover:bg-atari-green hover:text-atari-dark font-bold text-xs tracking-wider uppercase transition-colors flex items-center gap-2"
+                      : "px-4 py-2 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2"}
+                  >
+                    <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                    <span>{xexEnUrl ? 'DOWNLOAD (PL)' : `DOWNLOAD XEX (${binarySize > 0 ? formatBytes(binarySize) : ''})`}</span>
+                  </a>
+                )}
+
+                {/* PDF report */}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
                     class="px-3 py-2 rounded border border-atari-border text-atari-muted hover:text-atari-text text-xs tracking-wider uppercase flex items-center gap-1.5"
                   >
                     <svg class="w-3.5 h-3.5 fill-current text-red-400" viewBox="0 0 24 24">
@@ -186,8 +213,9 @@ const snapshotMap = new Map(snapshots.map((s) => [s.release_tag, s]));
                     <span>PDF REPORT</span>
                   </a>
                 )}
+
                 <a
-                  href={rel.html_url}
+                  href={rel.html_url || `https://github.com/grzes71/call-of-the-wintermon/releases/tag/${tag}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   class="px-3 py-2 rounded border border-atari-border text-atari-muted hover:text-atari-cyan text-xs tracking-wider"
