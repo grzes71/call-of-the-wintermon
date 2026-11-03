@@ -74,15 +74,24 @@ def export_releases_json(
             continue
         processed_tags.add(tag)
 
-        # Find matching XEX download asset
+        # Find matching XEX and PDF assets (including localized PL and EN builds)
         xex_url = None
+        xex_pl_url = None
+        xex_en_url = None
         pdf_url = None
         for a in rel.get("assets", []):
             aname = a.get("name", "")
-            if aname.endswith(".xex"):
+            if aname.endswith("_pl.xex"):
+                xex_pl_url = a.get("browser_download_url")
+            elif aname.endswith("_en.xex"):
+                xex_en_url = a.get("browser_download_url")
+            elif aname.endswith(".xex"):
                 xex_url = a.get("browser_download_url")
             elif aname.endswith(".pdf"):
                 pdf_url = a.get("browser_download_url")
+
+        if not xex_pl_url and xex_url:
+            xex_pl_url = xex_url
 
         # Merge with local snapshot data if available
         snap = local_snapshots.get(tag, {})
@@ -90,12 +99,16 @@ def export_releases_json(
         mem_sum = mem_rep.get("memory_summary", {})
         game_meta = mem_rep.get("game", {})
         frozen_stats = snap.get("frozen_game_stats", {})
+        commit_sha = snap.get("source_commit_sha", "") or rel.get("target_commitish", "")
 
         entry = {
             "tag": tag,
+            "tag_name": tag,
             "version": tag.lstrip("v"),
+            "name": rel.get("name", f"Release {tag}"),
             "published_at": rel.get("published_at", snap.get("published_at", "")),
-            "commit_sha": snap.get("source_commit_sha", ""),
+            "commit_sha": commit_sha,
+            "source_commit_sha": commit_sha,
             "binary_size_bytes": snap.get("binary_size_bytes", game_meta.get("binary_size_bytes", 0)),
             "binary_sha256": snap.get("binary_sha256", game_meta.get("binary_sha256", "")),
             "allocated_user_ram_bytes": mem_sum.get("total_allocated_bytes", 0),
@@ -107,6 +120,8 @@ def export_releases_json(
             "enemy_count": frozen_stats.get("total_enemies", 0),
             "secret_count": frozen_stats.get("total_secrets", 0),
             "xex_download_url": xex_url or snap.get("xex_download_url", ""),
+            "xex_pl_download_url": xex_pl_url or snap.get("xex_pl_download_url") or xex_url or snap.get("xex_download_url", ""),
+            "xex_en_download_url": xex_en_url or snap.get("xex_en_download_url"),
             "pdf_download_url": pdf_url or snap.get("pdf_download_url"),
             "changelog_body": rel.get("body") or snap.get("changelog_body", ""),
         }

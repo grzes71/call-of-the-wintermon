@@ -359,6 +359,13 @@ def update_scroll_version(version: str, scroll_file: Path | None = None) -> bool
             )
 
     scroll_file.write_text(new_content, encoding="utf-8")
+
+    # If an English localized variant exists (e.g. scroll/title-en.txt), update it too
+    if scroll_file.name == "title.txt":
+        en_sibling = scroll_file.parent / "title-en.txt"
+        if en_sibling.is_file():
+            update_scroll_version(version, en_sibling)
+
     return True
 
 

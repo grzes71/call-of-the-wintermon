@@ -37,16 +37,27 @@ export interface ReleaseAssetInfo {
 
 export interface ReleaseSummaryEntry {
   tag_name: string;
+  tag?: string;
   version: string;
   name: string;
   published_at: string;
   source_commit_sha: string;
+  commit_sha?: string;
   prerelease: boolean;
   draft: boolean;
   html_url: string;
   xex_asset: ReleaseAssetInfo | null;
+  xex_pl_asset?: ReleaseAssetInfo | null;
+  xex_en_asset?: ReleaseAssetInfo | null;
   pdf_asset: ReleaseAssetInfo | null;
+  xex_download_url?: string;
+  xex_pl_download_url?: string;
+  xex_en_download_url?: string;
+  pdf_download_url?: string | null;
   body: string;
+  changelog_body?: string;
+  binary_size_bytes?: number;
+  binary_sha256?: string;
   memory_metrics?: {
     total_allocated_bytes: number;
     total_free_bytes: number;

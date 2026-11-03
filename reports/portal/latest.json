@@ -1,17 +1,17 @@
 {
   "schema_version": "3.2.0",
-  "generated_at": "2026-10-30T18:17:25Z",
+  "generated_at": "2026-11-03T14:23:25Z",
   "game": {
     "name": "Call of the Wintermon",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "target": "Atari 8-bit (XL/XE)",
     "executable": "call_of_the_wintermon.xex",
     "binary_size_bytes": 40543,
-    "binary_sha256": "93038ccefb823cc7117e152f8ff607676f047ee12f41df081dcc1a93ae291be4"
+    "binary_sha256": "77fc5f794b69538cf586686cdf18d05c99c5b00730df6e621f39b1e95ee01ff0"
   },
   "build": {
-    "commit_sha": "f36d906d205f91b32e3076e215687d9ec9a9e458",
-    "ref": "refs/tags/v0.2.1",
+    "commit_sha": "166c337c7f8ffa21d208c11d572ee21b346564e3",
+    "ref": "refs/tags/v0.3.0",
     "mads_version": "2.1.6"
   },
   "memory_summary": {

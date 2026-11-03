@@ -48,16 +48,33 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
         <!-- Quick Download & Action CTAs -->
         <div class="pt-4 flex flex-wrap items-center gap-4">
-          {latestRelease?.xex_asset && (
-            <a
-              href={latestRelease.xex_asset.download_url}
-              class="px-5 py-2.5 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2"
-            >
-              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-              </svg>
-              <span>DOWNLOAD XEX ({latestRelease.tag_name})</span>
-            </a>
+          {latestRelease && (
+            <>
+              {(latestRelease.xex_en_download_url || (latestRelease as any).xex_en_asset?.download_url) && (
+                <a
+                  href={latestRelease.xex_en_download_url || (latestRelease as any).xex_en_asset?.download_url}
+                  class="px-5 py-2.5 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2 font-mono"
+                >
+                  <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                  <span>DOWNLOAD EN ({latestRelease.tag || latestRelease.tag_name})</span>
+                </a>
+              )}
+              {(latestRelease.xex_pl_download_url || latestRelease.xex_download_url || latestRelease.xex_asset?.download_url) && (
+                <a
+                  href={latestRelease.xex_pl_download_url || latestRelease.xex_download_url || latestRelease.xex_asset?.download_url}
+                  class={(latestRelease.xex_en_download_url || (latestRelease as any).xex_en_asset?.download_url)
+                    ? "px-5 py-2.5 rounded bg-atari-surfaceLight border border-atari-green/60 text-atari-green hover:bg-atari-green hover:text-atari-dark font-bold text-xs tracking-wider uppercase transition-colors flex items-center gap-2 font-mono"
+                    : "px-5 py-2.5 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2 font-mono"}
+                >
+                  <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                  <span>{(latestRelease.xex_en_download_url || (latestRelease as any).xex_en_asset?.download_url) ? `DOWNLOAD PL (${latestRelease.tag || latestRelease.tag_name})` : `DOWNLOAD XEX (${latestRelease.tag || latestRelease.tag_name})`}</span>
+                </a>
+              )}
+            </>
           )}
 
           <a

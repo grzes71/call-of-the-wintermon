@@ -1,7 +1,7 @@
 {
   "schema_version": "3.2.0",
   "game_name": "Call of the Wintermon",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "target": {
     "platform": "Atari 8-bit (XL/XE)",
     "cpu": "MOS 6502",
@@ -109,19 +109,67 @@
       "exists": true
     },
     {
-      "id": "intro_text",
+      "id": "intro_text_pl",
       "path": "texts/intro.txt",
       "encoding": "utf-8",
-      "description": "Intro story crawl text (converted to ATASCII screen codes)",
+      "description": "Intro story crawl text in Polish (converted to ATASCII screen codes)",
       "size_bytes": 435,
       "exists": true
     },
     {
-      "id": "title_scroll",
+      "id": "intro_text_en",
+      "path": "texts/intro-en.txt",
+      "encoding": "utf-8",
+      "description": "Intro story crawl text in English (converted to ATASCII screen codes)",
+      "size_bytes": 409,
+      "exists": true
+    },
+    {
+      "id": "failure_text_pl",
+      "path": "texts/failure.txt",
+      "encoding": "utf-8",
+      "description": "Game Over failure screen text in Polish",
+      "size_bytes": 111,
+      "exists": true
+    },
+    {
+      "id": "failure_text_en",
+      "path": "texts/failure-en.txt",
+      "encoding": "utf-8",
+      "description": "Game Over failure screen text in English",
+      "size_bytes": 119,
+      "exists": true
+    },
+    {
+      "id": "success_text_pl",
+      "path": "texts/success.txt",
+      "encoding": "utf-8",
+      "description": "Victory success screen text in Polish",
+      "size_bytes": 553,
+      "exists": true
+    },
+    {
+      "id": "success_text_en",
+      "path": "texts/success-en.txt",
+      "encoding": "utf-8",
+      "description": "Victory success screen text in English",
+      "size_bytes": 553,
+      "exists": true
+    },
+    {
+      "id": "title_scroll_pl",
       "path": "scroll/title.txt",
       "encoding": "utf-8",
-      "description": "Title screen bottom vertical scrolling messages (converted to centered 40-byte lines)",
-      "size_bytes": 118,
+      "description": "Title screen bottom vertical scrolling messages in Polish",
+      "size_bytes": 129,
+      "exists": true
+    },
+    {
+      "id": "title_scroll_en",
+      "path": "scroll/title-en.txt",
+      "encoding": "utf-8",
+      "description": "Title screen bottom vertical scrolling messages in English",
+      "size_bytes": 117,
       "exists": true
     }
   ],
