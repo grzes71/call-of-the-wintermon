@@ -1,0 +1,62 @@
+{
+  "schema_version": "3.2.0",
+  "releases": [
+    {
+      "tag": "v0.2.1",
+      "version": "0.2.1",
+      "published_at": "2026-10-30T18:17:25Z",
+      "commit_sha": "f36d906d205f91b32e3076e215687d9ec9a9e458",
+      "binary_size_bytes": 40543,
+      "binary_sha256": "93038ccefb823cc7117e152f8ff607676f047ee12f41df081dcc1a93ae291be4",
+      "allocated_user_ram_bytes": 40473,
+      "free_user_ram_bytes": 487,
+      "utilization_percent": 98.81,
+      "largest_free_block_bytes": 85,
+      "largest_free_block_range": "$67AB - $67FF",
+      "scene_count": 7,
+      "enemy_count": 23,
+      "secret_count": 87,
+      "xex_download_url": "https://github.com/grzes71/call-of-the-wintermon/releases/download/v0.2.1/call_of_the_wintermon.xex",
+      "pdf_download_url": null,
+      "changelog_body": "### 🐛 Poprawki (Bug Fixes)\r\n- **gameover:** prevent immediate skip of failure screen on player death\r\n\r\n\r\n*Pull Request: [#3](https://github.com/grzes71/call-of-the-wintermon/pull/3) przez @grzes71*"
+    },
+    {
+      "tag": "v0.2.0",
+      "version": "0.2.0",
+      "published_at": "2026-10-30T16:20:47Z",
+      "commit_sha": "606da4a660a076977a01d09b4be7362f392de11e",
+      "binary_size_bytes": 40554,
+      "binary_sha256": "3d047b69eeb1f2af7ad9c3e0297bac03dcc02e98957eb6fecd26068a70f0586c",
+      "allocated_user_ram_bytes": 40484,
+      "free_user_ram_bytes": 476,
+      "utilization_percent": 98.84,
+      "largest_free_block_bytes": 85,
+      "largest_free_block_range": "$67AB - $67FF",
+      "scene_count": 7,
+      "enemy_count": 23,
+      "secret_count": 87,
+      "xex_download_url": "https://github.com/grzes71/call-of-the-wintermon/releases/download/v0.2.0/call_of_the_wintermon.xex",
+      "pdf_download_url": null,
+      "changelog_body": "### 🚀 Nowości (Features)\r\n- **release:** automate game version bump in scroll title text during…\r\n- **release:** automate game version bump in scroll title text during release workflow\r\n\r\n\r\n*Pull Request: [#2](https://github.com/grzes71/call-of-the-wintermon/pull/2) przez @grzes71*"
+    },
+    {
+      "tag": "v0.1.0",
+      "version": "0.1.0",
+      "published_at": "2026-10-30T15:59:43Z",
+      "commit_sha": "b680bdb7020d4655a6c49937402fac7ce87dda61",
+      "binary_size_bytes": 40554,
+      "binary_sha256": "865e621907604a7a3d4d41c81efcb6867b6041734d52cbf882bbefb0a2390fe6",
+      "allocated_user_ram_bytes": 40484,
+      "free_user_ram_bytes": 476,
+      "utilization_percent": 98.84,
+      "largest_free_block_bytes": 85,
+      "largest_free_block_range": "$67AB - $67FF",
+      "scene_count": 7,
+      "enemy_count": 23,
+      "secret_count": 87,
+      "xex_download_url": "https://github.com/grzes71/call-of-the-wintermon/releases/download/v0.1.0/call_of_the_wintermon.xex",
+      "pdf_download_url": null,
+      "changelog_body": "### 🚀 Nowości (Features)\r\n- **hud:** refactor in-game HUD to narrow Mode D and fix scene transi…\r\n- **hud:** refactor in-game HUD to narrow Mode D and fix scene transition NMI isolation\r\n\r\n\r\n*Pull Request: [#1](https://github.com/grzes71/call-of-the-wintermon/pull/1) przez @grzes71*"
+    }
+  ]
+}

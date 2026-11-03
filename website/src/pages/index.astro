@@ -1,0 +1,225 @@
+---
+/**
+ * index.astro
+ * Foundation homepage for Call of the Wintermon official game portal.
+ * Consumes real telemetry from reports/portal/ (Phase 0 & 1).
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLatestMemoryReport, getGameStats, getReleases, formatBytes } from '../lib/data';
+
+const memory = getLatestMemoryReport();
+const stats = getGameStats();
+const releases = getReleases();
+
+const latestRelease = releases.releases.length > 0 ? releases.releases[0] : null;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<BaseLayout
+  title="Call of the Wintermon — Atari 8-Bit Official Game Portal"
+  description="Official portal, 64 KB memory analytics, and game telemetry for Call of the Wintermon on Atari 800XL / 65XE."
+>
+  <div class="space-y-10">
+
+    <!-- Hero Section -->
+    <section class="border border-atari-border bg-atari-surface/70 rounded-lg p-6 sm:p-8 relative overflow-hidden">
+      <!-- Background subtle retro grid accent -->
+      <div class="absolute -right-10 -bottom-10 opacity-5 pointer-events-none select-none text-atari-green font-mono text-[140px] leading-none">
+        6502
+      </div>
+
+      <div class="max-w-3xl space-y-4">
+        <!-- Terminal command prompt badge -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded bg-atari-surfaceLight border border-atari-green/40 text-xs text-atari-green">
+          <span class="w-2 h-2 rounded-full bg-atari-green animate-pulse"></span>
+          <span>READY. RUN "D:WINTER.XEX"</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-atari-text font-mono">
+          CALL OF THE <span class="text-atari-green">WINTERMON</span>
+        </h1>
+
+        <p class="text-sm sm:text-base text-atari-muted leading-relaxed">
+          An authentic, unforgiving platformer engine developed natively for 64 KB Atari 800XL / 65XE computers. 
+          Featuring full ANTIC Mode D/E multi-color bitmaps, custom dual-buffered display list interrupts (DLI), 
+          hardware multiplexed sprites, and 4-channel POKEY soundscapes.
+        </p>
+
+        <!-- Quick Download & Action CTAs -->
+        <div class="pt-4 flex flex-wrap items-center gap-4">
+          {latestRelease?.xex_asset && (
+            <a
+              href={latestRelease.xex_asset.download_url}
+              class="px-5 py-2.5 rounded bg-atari-green text-atari-dark font-bold text-xs tracking-wider uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green flex items-center gap-2"
+            >
+              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+              </svg>
+              <span>DOWNLOAD XEX ({latestRelease.tag_name})</span>
+            </a>
+          )}
+
+          <a
+            href={`${base}/memory`}
+            class="px-5 py-2.5 rounded border border-atari-cyan/50 text-atari-cyan hover:bg-atari-cyan/10 transition-colors font-bold text-xs tracking-wider uppercase flex items-center gap-2"
+          >
+            <span>EXPLORE 64 KB MEMORY</span>
+            <span>&rarr;</span>
+          </a>
+
+          <a
+            href={`${base}/releases`}
+            class="px-4 py-2.5 text-xs text-atari-muted hover:text-atari-text transition-colors tracking-wider"
+          >
+            ALL RELEASES ({releases.total_releases})
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Telemetry Cards Grid -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: User RAM Utilization -->
+      <div class="border border-atari-border bg-atari-surface/50 rounded-lg p-5 space-y-2">
+        <div class="text-[11px] text-atari-muted font-semibold tracking-wider uppercase flex items-center justify-between">
+          <span>USER RAM ($2000-$BFFF)</span>
+          <span class="text-atari-green">{memory.memory_summary.utilization_percent.toFixed(2)}%</span>
+        </div>
+        <div class="text-2xl font-bold text-atari-text font-mono">
+          {formatBytes(memory.memory_summary.total_allocated_bytes)}
+        </div>
+        <!-- Progress Bar -->
+        <div class="w-full bg-atari-surfaceLight h-2 rounded-full overflow-hidden">
+          <div
+            class="bg-atari-green h-full rounded-full transition-all"
+            style={`width: ${memory.memory_summary.utilization_percent}%`}
+          ></div>
+        </div>
+        <div class="text-[11px] text-atari-muted flex justify-between pt-1">
+          <span>Headroom:</span>
+          <span class="text-atari-amber font-semibold">{formatBytes(memory.memory_summary.total_free_bytes)} free</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Zero Page Allocation -->
+      <div class="border border-atari-border bg-atari-surface/50 rounded-lg p-5 space-y-2">
+        <div class="text-[11px] text-atari-muted font-semibold tracking-wider uppercase flex items-center justify-between">
+          <span>ZERO PAGE ($80-$FF)</span>
+          <span class="text-atari-cyan">
+            {((memory.zero_page.user_allocated_bytes / (memory.zero_page.user_allocated_bytes + memory.zero_page.free_bytes)) * 100).toFixed(1)}%
+          </span>
+        </div>
+        <div class="text-2xl font-bold text-atari-text font-mono">
+          {memory.zero_page.user_allocated_bytes} B <span class="text-xs text-atari-muted font-normal">/ 128 B</span>
+        </div>
+        <!-- Progress Bar -->
+        <div class="w-full bg-atari-surfaceLight h-2 rounded-full overflow-hidden">
+          <div
+            class="bg-atari-cyan h-full rounded-full transition-all"
+            style={`width: ${(memory.zero_page.user_allocated_bytes / 128) * 100}%`}
+          ></div>
+        </div>
+        <div class="text-[11px] text-atari-muted flex justify-between pt-1">
+          <span>Free User ZP:</span>
+          <span class="text-atari-cyan font-semibold">{memory.zero_page.free_bytes} B unmapped</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Game World Dimensions -->
+      <div class="border border-atari-border bg-atari-surface/50 rounded-lg p-5 space-y-2">
+        <div class="text-[11px] text-atari-muted font-semibold tracking-wider uppercase flex items-center justify-between">
+          <span>GAME SCENES</span>
+          <span class="text-atari-amber">{stats.summary.scene_count} Stages</span>
+        </div>
+        <div class="text-2xl font-bold text-atari-text font-mono">
+          {stats.summary.total_platforms} <span class="text-xs text-atari-muted font-normal">Platforms</span>
+        </div>
+        <div class="text-[11px] text-atari-muted flex justify-between pt-3">
+          <span>Enemies / Secrets:</span>
+          <span class="text-atari-text font-semibold">{stats.summary.total_enemies} / {stats.summary.total_secrets}</span>
+        </div>
+        <div class="text-[11px] text-atari-muted flex justify-between">
+          <span>Moving Platforms:</span>
+          <span class="text-atari-amber font-semibold">{stats.summary.total_moving_platforms}</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Verified Binary Footprint -->
+      <div class="border border-atari-border bg-atari-surface/50 rounded-lg p-5 space-y-2">
+        <div class="text-[11px] text-atari-muted font-semibold tracking-wider uppercase flex items-center justify-between">
+          <span>OFFICIAL BINARY</span>
+          <span class="text-atari-green">{memory.game.version}</span>
+        </div>
+        <div class="text-2xl font-bold text-atari-text font-mono">
+          {formatBytes(memory.game.binary_size_bytes)}
+        </div>
+        <div class="text-[11px] text-atari-muted truncate pt-3" title={memory.game.binary_sha256}>
+          <span>SHA: </span>
+          <code class="text-atari-muted/90">{memory.game.binary_sha256 ? memory.game.binary_sha256.substring(0, 12) : 'N/A'}...</code>
+        </div>
+        <div class="text-[11px] text-atari-muted flex justify-between">
+          <span>Commit:</span>
+          <code class="text-atari-cyan">{memory.build?.commit_sha ? memory.build.commit_sha.substring(0, 7) : 'N/A'}</code>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Portal Navigation Cards -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold tracking-wider text-atari-text uppercase font-mono flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>PORTAL MODULES &amp; TELEMETRY</span>
+        </h2>
+        <span class="text-xs text-atari-muted">PHASE 2 FOUNDATION ACTIVE</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <a
+          href={`${base}/memory`}
+          class="block border border-atari-border bg-atari-surface/40 hover:bg-atari-surfaceLight hover:border-atari-green/50 p-5 rounded-lg transition-all group"
+        >
+          <div class="text-atari-green font-bold text-sm mb-1 group-hover:translate-x-1 transition-transform">
+            64 KB MEMORY ARCHITECTURE &rarr;
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            Interactive breakdown of the Atari address space: OS ROM ($C000+), Hardware I/O ($D000+), 
+            and the 40 KB User RAM ($2000-$BFFF) partition.
+          </p>
+        </a>
+
+        <a
+          href={`${base}/stats`}
+          class="block border border-atari-border bg-atari-surface/40 hover:bg-atari-surfaceLight hover:border-atari-cyan/50 p-5 rounded-lg transition-all group"
+        >
+          <div class="text-atari-cyan font-bold text-sm mb-1 group-hover:translate-x-1 transition-transform">
+            DEVELOPMENT TELEMETRY &rarr;
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            Empirical analytics extracted directly from game scenes: enemy catalogues, platform distributions, 
+            secret items, and historical RAM consumption trends.
+          </p>
+        </a>
+
+        <a
+          href={`${base}/releases`}
+          class="block border border-atari-border bg-atari-surface/40 hover:bg-atari-surfaceLight hover:border-atari-amber/50 p-5 rounded-lg transition-all group"
+        >
+          <div class="text-atari-amber font-bold text-sm mb-1 group-hover:translate-x-1 transition-transform">
+            RELEASES &amp; CHANGELOGS &rarr;
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            Chronological release archive with frozen memory reports, verified binary hashes, 
+            changelog summaries, and direct XEX executable downloads.
+          </p>
+        </a>
+
+      </div>
+    </section>
+
+  </div>
+</BaseLayout>

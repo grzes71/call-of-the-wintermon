@@ -75,7 +75,7 @@ ASM_SRCS         := main.asm hardware.asm zeropage.asm lib/audio.asm lib/player.
                     scenes/title.asm scenes/intro.asm scenes/game.asm scenes/gameover.asm
 
 
-.PHONY: all assets tiles music data tests test xex check_memory run clean stats
+.PHONY: all assets tiles music data tests test xex check_memory run clean stats portal_data portal_build portal_serve
 
 all: assets tiles music data xex tests check_memory
 
@@ -193,6 +193,22 @@ stats: scripts/game_stats.py
 # ------------------------------------------------------------------------------
 run: $(TARGET)
 	cmd /c start "" "$(ALTIRRA)" /run "$(TARGET)"
+
+# ------------------------------------------------------------------------------
+# 8. Web Portal (Astro static site & telemetry)
+# ------------------------------------------------------------------------------
+portal_data:
+	$(PYTHON) scripts/game_stats.py --json --output reports/portal/game_stats.json
+	$(PYTHON) scripts/portal/export_manifest.py --manifest manifest.yaml --output reports/portal/assets.json
+	$(PYTHON) scripts/portal/export_releases.py --repo "grzes71/call-of-the-wintermon" --output reports/portal/releases.json
+	$(PYTHON) scripts/portal/validate_data.py --schema website/src/data/schemas/memory-report.schema.json
+	$(PYTHON) -c "import shutil, os; os.makedirs('website/public/tiles', exist_ok=True); [shutil.copy(os.path.join('tiles', f), os.path.join('website/public/tiles', f)) for f in os.listdir('tiles') if f.endswith('.png')]"
+
+portal_build: portal_data
+	npm --prefix website run build
+
+portal_serve:
+	npm --prefix website run preview
 
 # ------------------------------------------------------------------------------
 # Clean build artifacts

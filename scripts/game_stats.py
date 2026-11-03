@@ -397,17 +397,31 @@ def main() -> int:
         action="store_true",
         help="Wypisz wynik w formacie Markdown",
     )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Sciezka do pliku wyjsciowego (jesli nie podano, wypisuje na stdout)",
+    )
 
     args = parser.parse_args()
 
     try:
         stats = collect_game_stats(args.manifest, args.definitions)
         if args.json:
-            print(format_json_report(stats))
+            result = format_json_report(stats)
         elif args.markdown:
-            print(format_markdown_report(stats))
+            result = format_markdown_report(stats)
         else:
-            print(format_text_report(stats))
+            result = format_text_report(stats)
+
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(result, encoding="utf-8")
+            print(f"Zapisano statystyki do {args.output}")
+        else:
+            print(result)
         return 0
     except Exception as exc:
         print(f"Blad podczas generowania statystyk: {exc}", file=sys.stderr)

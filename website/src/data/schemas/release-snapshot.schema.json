@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grzes71.github.io/call-of-the-wintermon/schemas/release-snapshot.schema.json",
+  "title": "CallOfTheWintermonReleaseSnapshot",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "release_tag",
+    "version",
+    "published_at",
+    "source_commit_sha",
+    "binary_size_bytes",
+    "binary_sha256",
+    "xex_download_url",
+    "changelog_body",
+    "memory_report",
+    "frozen_game_stats"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "3.2.0"
+    },
+    "release_tag": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "published_at": {
+      "type": "string"
+    },
+    "source_commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "binary_size_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "binary_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "xex_download_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "pdf_download_url": {
+      "type": ["string", "null"]
+    },
+    "changelog_body": {
+      "type": "string"
+    },
+    "memory_report": {
+      "type": "object"
+    },
+    "frozen_game_stats": {
+      "type": "object",
+      "required": [
+        "scene_count",
+        "total_platforms",
+        "total_static_platforms",
+        "total_moving_platforms",
+        "total_enemies",
+        "total_secrets"
+      ],
+      "properties": {
+        "scene_count": { "type": "integer", "minimum": 1 },
+        "total_platforms": { "type": "integer", "minimum": 0 },
+        "total_static_platforms": { "type": "integer", "minimum": 0 },
+        "total_moving_platforms": { "type": "integer", "minimum": 0 },
+        "total_enemies": { "type": "integer", "minimum": 0 },
+        "total_secrets": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
+

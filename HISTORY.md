@@ -2,6 +2,88 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-03] - Implement Portal Technical Content Pages (Phase 3)
+
+- **Technical Memory Explorer Page ([website/src/pages/memory.astro](website/src/pages/memory.astro))**:
+  - Implemented interactive 64 KB Atari XL/XE address space overview ($0000–$FFFF) distinguishing OS ROM, hardware registers, and User RAM.
+  - Built high-resolution 40 KB User RAM ($2000–$BFFF) segmented proportional visualizer with category color-coding and balance validation.
+  - Built Zero Page inspector ([website/src/components/ZeroPageInspector.astro](website/src/components/ZeroPageInspector.astro)) detailing OS reserved space ($00–$7F), 8 subsystem allocations ($80–$E6), and unmapped free headroom ($E7–$FF).
+  - Built multi-version historical trend visualizer ([website/src/components/HistoryTrendSvg.astro](website/src/components/HistoryTrendSvg.astro)) comparing User RAM allocated vs free headroom across releases.
+  - Added comprehensive table of all 18 memory regions and free gaps with hex/dec addresses, sizes, and technical functions.
+- **Game Telemetry Dashboard ([website/src/pages/stats.astro](website/src/pages/stats.astro))**:
+  - Built telemetry dashboard extracting empirical data from `game_stats.json`: 7 stages, 140 platforms, 23 enemies, 87 secrets, 4 POKEY channels.
+  - Implemented platform width distribution histogram using native styled bars.
+  - Added complete stages directory detailing static vs moving platforms, enemy counts, and secret quotas per scene.
+  - Created Eldritch enemy bestiary directory and collectible secrets catalogue.
+- **Release Archive & Version Comparison ([website/src/pages/releases.astro](website/src/pages/releases.astro))**:
+  - Built historical comparison matrix comparing `v0.1.0`, `v0.2.0`, and `v0.2.1` side by side (binary size, RAM allocated, headroom, stages, platforms, enemies).
+  - Created version cards with direct XEX binary download buttons, verified SHA-256 checksum boxes, commit links, and changelog bodies.
+- **Graphics & Sprite Gallery ([website/src/pages/gallery.astro](website/src/pages/gallery.astro), [website/src/components/SpriteRenderer.astro](website/src/components/SpriteRenderer.astro))**:
+  - Created vector sprite renderer converting 1-bit Atari Player-Missile bit patterns into crisp SVG pixel art without image blur.
+  - Displayed 4 ANTIC Mode E environment tilesets (`trees.png`, `castles.png`, `depths.png`, `hell.png`, 7,676 B total) with pixelated rendering.
+  - Displayed player hero animation states (Player 0 PMG), 7 enemy classes, and 5 collectible secret artifacts.
+- **Technical Architecture & Specifications ([website/src/pages/about.astro](website/src/pages/about.astro))**:
+  - Documented Atari 8-bit XL/XE hardware architecture (MOS 6502 @ 1.77 MHz PAL, ANTIC, GTIA, POKEY, PIA 6520).
+  - Documented deterministic 50 Hz frame pipeline (Input -> Update -> Collision -> State -> Buffers -> VBLANK).
+  - Detailed modern MADS cross-assembler and Python SSOT toolchain integration.
+- **Build System Integration ([Makefile](Makefile))**:
+  - Updated `portal_data` in `Makefile` to automatically copy source PNG tiles to `website/public/tiles/`.
+- **Validation**:
+  - `npm ci`, `npm run check`, and `npm run build` completed with 0 errors and 0 warnings.
+  - All 6 routes pre-rendered statically to `website/dist/` (0 bytes client JS bundle).
+  - All existing py65 and unit tests pass.
+
+## [2026-11-03] - Implement Portal Static Site Foundation & Retro Layout (Phase 2)
+
+- **Static Site Tooling Setup ([website/package.json](website/package.json), [website/astro.config.mjs](website/astro.config.mjs), [website/tailwind.config.mjs](website/tailwind.config.mjs))**:
+  - Initialized static portal package with Astro 4.16, `@astrojs/tailwind` (Tailwind CSS 3.4), and TypeScript 5.7.
+  - Zero frontend framework runtime overhead: no React, no Chart.js, no external client bundles.
+  - Configured custom Atari 8-bit color tokens (`atari-bg` `#06080e`, `atari-surface` `#0a0f1d`, `atari-green` `#00ff66`, `atari-amber` `#ffb000`, `atari-cyan` `#00e5ff`) and monospace typography.
+  - Configured static base URL handling (`ASTRO_BASE_URL` with `/call-of-the-wintermon` fallback).
+- **Design System & Shell Layout ([website/src/layouts/BaseLayout.astro](website/src/layouts/BaseLayout.astro))**:
+  - Created master layout with dark retro aesthetic, metadata tags, and favicon.
+  - Integrated header, CRT scanline overlay, main slot, and technical hardware footer.
+- **Component Architecture ([website/src/components/](website/src/components/))**:
+  - `Header.astro`: Atari Fuji vector brand mark, desktop and responsive mobile drawer navigation, live CRT toggle control, and repository links.
+  - `Footer.astro`: Atari 800XL/65XE system specs banner (MOS 6502 @ 1.77 MHz, ANTIC/GTIA/POKEY/PIA, PORTB status), project links, and retro `READY.` prompt indicator.
+  - `CrtOverlay.astro`: Toggleable CRT scanline layer using subtle CSS gradients, non-intrusive opacity (0.18), and `localStorage` persistence.
+- **TypeScript Data Pipeline & Models ([website/src/types/](website/src/types/), [website/src/lib/data.ts](website/src/lib/data.ts))**:
+  - Created strict TypeScript interfaces for `MemoryReport`, `GameStats`, `ReleasesData`, and `AssetManifest`.
+  - Created build-time data reader [`website/src/lib/data.ts`](website/src/lib/data.ts) loading generated reports directly from `reports/portal/` with zero runtime API dependency.
+  - Created baseline [`website/src/pages/index.astro`](website/src/pages/index.astro) displaying live telemetry cards (User RAM utilization, Zero Page footprint, stage statistics, official binary checksums).
+- **Makefile Integration ([Makefile](Makefile))**:
+  - Added phony targets `portal_data`, `portal_build`, and `portal_serve`.
+  - Preserved all existing 6502 build, emulation, and testing targets.
+- **Verification & Validation**:
+  - `npm ci` completed cleanly in 58s with 0 errors.
+  - `astro check` passed with 0 errors, 0 warnings, 0 hints.
+  - `npm run build` and `make portal_build` compiled static routes in ~1s (0 bytes client JS bundle).
+  - All existing 792 pytest tests and 8 portal invariant tests pass.
+
+## [2026-11-03] - Implement Portal Telemetry Data Pipeline (Phase 0 & 1)
+
+- **Memory Map Analyzer JSON Export & Splitting ([scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Added CLI options `--json PATH`, `--version STR`, and `--commit STR` to `scripts/generate_memory_map.py`.
+  - Added segment split at boundary `$7000`: partitioned contiguous `$6B00`–`$79EF` block into active Player-Missile Graphics buffer (`$6B00`–`$6FFF`, 1,280 B) and POKEY audio/music buffer (`$7000`–`$79EF`, 2,544 B).
+  - Added identification equate for Victory / Game Over module (`$5C00`–`$5FDD`, 990 B, category `DATA`).
+  - Added `export_json_report(...)` generating full `MemoryReport` JSON matching Draft 2020-12 specification, enforcing conservation of memory ($\sum \text{allocated} + \text{free} = 40,960\text{ B}$).
+  - Updated console text report and vector PDF sidebar to display exact 8-part Zero Page allocations (`$80`–`$E6` allocated, `$E7`–`$FF` free).
+- **Historical Release Memory Snapshots ([scripts/portal/generate_snapshots.py](scripts/portal/generate_snapshots.py))**:
+  - Implemented generator script that downloads exact GitHub release XEX binaries for `v0.1.0`, `v0.2.0`, and `v0.2.1`.
+  - Computed and validated exact SHA-256 checksums (`865e62...`, `3d047b...`, `93038c...`) and binary sizes (40,554 B, 40,554 B, 40,543 B).
+  - Extracted historical game statistics via git archive for each exact tag commit (`b680bdb`, `606da4a`, `f36d906`).
+  - Generated historical snapshot files in `reports/portal/snapshots/v0.1.0.json`, `reports/portal/snapshots/v0.2.0.json`, and `reports/portal/snapshots/v0.2.1.json`.
+  - Generated `reports/portal/latest.json` from the latest official release (`v0.2.1`).
+- **Telemetry Data Exporters & Game Stats ([scripts/game_stats.py](scripts/game_stats.py), [scripts/portal/export_manifest.py](scripts/portal/export_manifest.py), [scripts/portal/export_releases.py](scripts/portal/export_releases.py))**:
+  - Added `-o` / `--output PATH` option to `scripts/game_stats.py` to support programmatic JSON generation.
+  - Created `scripts/portal/export_manifest.py` compiling `manifest.yaml` into `reports/portal/assets.json` with a robust line-based fallback parser for standalone environments.
+  - Created `scripts/portal/export_releases.py` fetching release metadata and aggregating historical snapshot metrics into `reports/portal/releases.json`.
+- **Zero Page Equate Manifest ([scripts/portal/zeropage_manifest.json](scripts/portal/zeropage_manifest.json))**:
+  - Created controlled Zero Page manifest covering all 8 declared regions in `zeropage.asm` (`$80`–`$E6`, 103 B total) and unallocated free space (`$E7`–`$FF`, 25 B).
+- **Validation Suite & Invariant Tests ([scripts/portal/validate_data.py](scripts/portal/validate_data.py), [tests/test_portal_data.py](tests/test_portal_data.py))**:
+  - Created `scripts/portal/validate_data.py` enforcing strict JSON schemas (Draft 2020-12), memory conservation invariants, segment contiguity, zero overlaps, and exact synchronization between `zeropage.asm` and `zeropage_manifest.json`.
+  - Added automated test suite `tests/test_portal_data.py` verifying all snapshots, error detection for corrupt memory ranges or overlaps, manifest exporter, and release exporter.
+
 ## [2026-10-30] - Fix Immediate Skip of Game Over Failure Screen on Player Death
 
 - **Root Cause Analysis ([scenes/gameover.asm](scenes/gameover.asm), [scenes/game.asm](scenes/game.asm))**:

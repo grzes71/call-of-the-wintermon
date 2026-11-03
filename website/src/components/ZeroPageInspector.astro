@@ -1,0 +1,84 @@
+---
+/**
+ * ZeroPageInspector.astro
+ * Visual inspector and breakdown for the MOS 6502 Zero Page ($0000 - $00FF, 256 bytes).
+ */
+
+import type { ZeroPageReport } from '../types/memory';
+
+interface Props {
+  zeroPage: ZeroPageReport;
+}
+
+const { zeroPage } = Astro.props;
+
+const allocations = zeroPage.allocations;
+---
+
+<div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-5 font-mono">
+  <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+    <div>
+      <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+        <span class="text-atari-cyan">&gt;</span>
+        <span>ZERO PAGE ARCHITECTURE ($00 - $FF, 256 BYTES)</span>
+      </h3>
+      <p class="text-xs text-atari-muted mt-0.5">
+        Zero Page addressing saves 1 cycle and 1 byte per memory instruction on MOS 6502.
+      </p>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <span class="text-atari-muted">OS Reserved: <strong class="text-slate-400">128 B</strong></span>
+      <span class="text-atari-muted">Game Used: <strong class="text-atari-green">{zeroPage.user_allocated_bytes} B</strong></span>
+      <span class="text-atari-muted">Free: <strong class="text-atari-cyan">{zeroPage.free_bytes} B</strong></span>
+    </div>
+  </div>
+
+  <!-- Zero Page Memory Strip ($00 - $FF) -->
+  <div class="space-y-1">
+    <div class="w-full h-8 rounded bg-atari-surfaceLight flex overflow-hidden border border-atari-border">
+      {allocations.map((alloc) => {
+        const widthPct = (alloc.size / 256) * 100;
+        const isFree = alloc.label.includes('FREE');
+        return (
+          <div
+            style={`width: ${widthPct}%; background-color: ${alloc.color}; ${isFree ? 'opacity: 0.8;' : ''}`}
+            class={`h-full flex items-center justify-center px-1 text-[9px] font-bold text-white border-r border-atari-bg/80 truncate ${isFree ? 'text-atari-dark' : ''}`}
+            title={`${alloc.label} (${alloc.range_hex}): ${alloc.size} B - ${alloc.description}`}
+          >
+            {widthPct > 5 && <span class="truncate">{alloc.label}</span>}
+          </div>
+        );
+      })}
+    </div>
+    <div class="flex justify-between text-[10px] text-atari-muted px-1">
+      <span>$00 (OS Base)</span>
+      <span>$80 (User Base)</span>
+      <span>$C0 (DLI / Player)</span>
+      <span>$FF (Top)</span>
+    </div>
+  </div>
+
+  <!-- Zero Page Allocations Grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {allocations.map((alloc) => {
+      return (
+        <div class="border border-atari-border/50 bg-atari-surfaceLight/30 rounded p-3 text-xs space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-atari-text flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-sm inline-block" style={`background-color: ${alloc.color}`}></span>
+              <span>{alloc.label}</span>
+            </span>
+            <span class="font-mono text-atari-cyan text-[11px] font-semibold">{alloc.range_hex}</span>
+          </div>
+          <div class="flex justify-between text-[11px] text-atari-muted">
+            <span>Footprint:</span>
+            <span class="font-mono font-bold text-atari-text">{alloc.size} Bytes</span>
+          </div>
+          <p class="text-[11px] text-atari-muted/80 leading-relaxed border-t border-atari-border/30 pt-1.5">
+            {alloc.description}
+          </p>
+        </div>
+      );
+    })}
+  </div>
+</div>

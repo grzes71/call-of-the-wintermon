@@ -1,0 +1,179 @@
+---
+/**
+ * MemoryMapSvg.astro
+ * Native SVG & CSS 64 KB Atari Address Space and 40 KB User RAM visualizer.
+ * No external charting libraries; pure vector and semantic markup.
+ */
+
+import type { MemoryReport } from '../types/memory';
+import { formatBytes } from '../lib/data';
+
+interface Props {
+  report: MemoryReport;
+}
+
+const { report } = Astro.props;
+const summary = report.memory_summary;
+
+// 64 KB System Architecture Layout
+const systemRegions = [
+  { name: 'System RAM (ZP / Stack / OS)', range: '$0000 - $07FF', start: 0x0000, end: 0x07FF, size: 2048, type: 'SYSTEM', color: '#64748b' },
+  { name: 'DOS & Buffer RAM', range: '$0800 - $1FFF', start: 0x0800, end: 0x1FFF, size: 6144, type: 'SYSTEM', color: '#475569' },
+  { name: 'Game User RAM ($2000 - $BFFF)', range: '$2000 - $BFFF', start: 0x2000, end: 0xBFFF, size: 40960, type: 'USER_RAM', color: '#00ff66' },
+  { name: 'Atari OS ROM (Math / Char)', range: '$C000 - $CFFF', start: 0xC000, end: 0xCFFF, size: 4096, type: 'ROM', color: '#ef4444' },
+  { name: 'Hardware Registers (GTIA/POKEY/ANTIC)', range: '$D000 - $D7FF', start: 0xD000, end: 0xD7FF, size: 2048, type: 'HARDWARE', color: '#f59e0b' },
+  { name: 'Atari OS ROM (Kernel & Vectors)', range: '$D800 - $FFFF', start: 0xD800, end: 0xFFFF, size: 10240, type: 'ROM', color: '#ef4444' },
+];
+
+// Combine and sort all regions in User RAM ($2000-$BFFF)
+const allUserRegions = [
+  ...report.allocated_segments,
+  ...report.free_gaps,
+].sort((a, b) => a.start - b.start);
+
+// Category color mappings and badges
+const categoryColors: Record<string, string> = {
+  CODE: '#3b82f6',      // Blue
+  GRAPHICS: '#06b6d4',  // Cyan
+  BITMAPS: '#0284c7',   // Sky
+  DLIST: '#a855f7',     // Purple
+  PMG: '#ec4899',       // Pink
+  AUDIO: '#eab308',     // Yellow
+  METADATA: '#10b981',  // Emerald
+  DATA: '#8b5cf6',      // Violet
+  FREE: '#22c55e',      // Bright Green
+};
+---
+
+<div class="space-y-8 font-mono">
+
+  <!-- 1. Full 64 KB Atari Address Space Overview -->
+  <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+      <div>
+        <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>FULL 64 KB ATARI XL/XE ADDRESS SPACE ($0000 - $FFFF)</span>
+        </h3>
+        <p class="text-xs text-atari-muted mt-0.5">
+          PORTB = $FF (Bit 0 = 1, OS ROM enabled below $D000 and above $D7FF).
+        </p>
+      </div>
+      <div class="text-[11px] text-atari-muted flex items-center gap-3">
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-atari-green inline-block"></span> User RAM (40 KB)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block"></span> Hardware I/O (2 KB)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span> OS ROM (14 KB)</span>
+      </div>
+    </div>
+
+    <!-- 64 KB Proportional Bar -->
+    <div class="space-y-1">
+      <div class="w-full h-10 rounded bg-atari-surfaceLight flex overflow-hidden border border-atari-border/80">
+        {systemRegions.map((region) => {
+          const widthPct = (region.size / 65536) * 100;
+          return (
+            <div
+              style={`width: ${widthPct}%; background-color: ${region.color}20; border-right: 1px solid ${region.color}80;`}
+              class="h-full flex flex-col justify-center px-1 text-[9px] truncate group relative hover:brightness-125 transition-all cursor-default"
+              title={`${region.name} (${region.range}): ${formatBytes(region.size)}`}
+            >
+              <span class="font-bold text-atari-text truncate">{region.range}</span>
+              <span class="text-[8px] text-atari-muted truncate">{formatBytes(region.size)}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div class="flex justify-between text-[10px] text-atari-muted px-1">
+        <span>$0000 (0)</span>
+        <span>$4000 (16 KB)</span>
+        <span>$8000 (32 KB)</span>
+        <span>$C000 (48 KB)</span>
+        <span>$FFFF (64 KB)</span>
+      </div>
+    </div>
+
+    <!-- System Regions Summary Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-2">
+      {systemRegions.map((reg) => (
+        <div class="border border-atari-border/60 bg-atari-surfaceLight/30 rounded p-2 text-xs">
+          <div class="text-[10px] text-atari-muted truncate" title={reg.name}>{reg.name}</div>
+          <div class="font-bold text-atari-text text-xs">{reg.range}</div>
+          <div class="text-[10px] text-atari-cyan font-mono">{formatBytes(reg.size)}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- 2. User RAM ($2000 - $BFFF) High-Resolution Visualizer -->
+  <div class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-atari-border pb-3">
+      <div>
+        <h3 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>GAME USER RAM PARTITION ($2000 - $BFFF)</span>
+        </h3>
+        <p class="text-xs text-atari-muted mt-0.5">
+          Total: 40,960 Bytes · Allocated: {formatBytes(summary.total_allocated_bytes)} ({summary.utilization_percent.toFixed(2)}%) · Free Headroom: {formatBytes(summary.total_free_bytes)}
+        </p>
+      </div>
+      <div class="text-xs font-bold text-atari-green px-2.5 py-1 rounded bg-atari-green/10 border border-atari-green/30">
+        HEADROOM: {formatBytes(summary.total_free_bytes)}
+      </div>
+    </div>
+
+    <!-- Segmented Proportional Memory Strip -->
+    <div class="space-y-1">
+      <div class="w-full h-12 rounded bg-atari-surfaceLight flex overflow-hidden border border-atari-border">
+        {allUserRegions.map((seg) => {
+          const widthPct = (seg.size / 40960) * 100;
+          const isFree = seg.category === 'FREE';
+          const bgCol = categoryColors[seg.category] || '#64748b';
+          return (
+            <div
+              style={`width: ${widthPct}%; background-color: ${bgCol}; ${isFree ? 'background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.3) 4px, rgba(0,0,0,0.3) 8px);' : ''}`}
+              class="h-full relative group cursor-pointer transition-transform hover:scale-y-110 origin-bottom border-r border-atari-bg/60"
+              title={`${seg.name} (${seg.start_hex} - ${seg.end_hex}): ${formatBytes(seg.size)} [${seg.category}]`}
+            >
+              {widthPct > 5 && (
+                <div class="h-full flex flex-col justify-center px-1 text-[9px] text-white font-bold leading-tight truncate">
+                  <span class="truncate">{seg.name}</span>
+                  <span class="text-[8px] opacity-80">{formatBytes(seg.size)}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div class="flex justify-between text-[10px] text-atari-muted px-1">
+        <span>$2000 (8,192)</span>
+        <span>$5000 (20,480)</span>
+        <span>$8000 (32,768)</span>
+        <span>$BFFF (49,151)</span>
+      </div>
+    </div>
+
+    <!-- Category Footprint Breakdown Grid -->
+    {summary.category_totals && (
+      <div class="pt-2">
+        <div class="text-[11px] text-atari-muted uppercase font-bold tracking-wider mb-2">CATEGORY DISTRIBUTION:</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+          {Object.entries(summary.category_totals).map(([cat, size]) => {
+            const col = categoryColors[cat] || '#64748b';
+            const pct = ((size / summary.total_allocated_bytes) * 100).toFixed(1);
+            return (
+              <div class="border border-atari-border/50 bg-atari-surfaceLight/40 rounded p-2 text-xs">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <span class="w-2 h-2 rounded-full" style={`background-color: ${col}`}></span>
+                  <span class="font-bold text-atari-text text-[11px]">{cat}</span>
+                </div>
+                <div class="font-mono text-atari-text text-xs">{formatBytes(size)}</div>
+                <div class="text-[10px] text-atari-muted">{pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+
+</div>

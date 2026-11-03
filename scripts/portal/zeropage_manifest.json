@@ -1,0 +1,162 @@
+{
+  "schema_version": "3.2.0",
+  "total_bytes": 256,
+  "os_reserved": {
+    "start": 0,
+    "end": 127,
+    "size": 128,
+    "label": "SYSTEM (OS)",
+    "description": "Reserved for Atari OS Kernel"
+  },
+  "user_allocated": {
+    "start": 128,
+    "end": 230,
+    "size": 103,
+    "blocks": [
+      {
+        "label": "ENGINE",
+        "start": 128,
+        "end": 135,
+        "size": 8,
+        "range_hex": "$80 - $87",
+        "description": "Registers & temporary pointers (zp_temp, zp_ptr_src/dst)",
+        "symbols": [
+          { "name": "zp_temp_a", "address": 128, "size": 1 },
+          { "name": "zp_temp_x", "address": 129, "size": 1 },
+          { "name": "zp_temp_y", "address": 130, "size": 1 },
+          { "name": "zp_ptr_src", "address": 131, "size": 2 },
+          { "name": "zp_ptr_dst", "address": 133, "size": 2 },
+          { "name": "zp_frame_cnt", "address": 135, "size": 1 }
+        ]
+      },
+      {
+        "label": "STATE",
+        "start": 136,
+        "end": 143,
+        "size": 8,
+        "range_hex": "$88 - $8F",
+        "description": "Game states, title card fade counters, fire debouncing",
+        "symbols": [
+          { "name": "game_state", "address": 136, "size": 1 },
+          { "name": "current_state", "address": 137, "size": 1 },
+          { "name": "title_first_run", "address": 138, "size": 1 },
+          { "name": "fade_frame", "address": 139, "size": 1 },
+          { "name": "fire_released", "address": 140, "size": 1 },
+          { "name": "game_phase", "address": 141, "size": 1 },
+          { "name": "scene_card_step", "address": 142, "size": 1 },
+          { "name": "scene_card_timer", "address": 143, "size": 1 }
+        ]
+      },
+      {
+        "label": "AUDIO",
+        "start": 144,
+        "end": 153,
+        "size": 10,
+        "range_hex": "$90 - $99",
+        "description": "POKEY Audio Player base pointers (PLAYER_ZP_BASE)",
+        "symbols": [
+          { "name": "PLAYER_ZP_BASE", "address": 144, "size": 10 }
+        ]
+      },
+      {
+        "label": "RENDERER",
+        "start": 154,
+        "end": 183,
+        "size": 30,
+        "range_hex": "$9A - $B7",
+        "description": "Scene renderer table pointers & parameters",
+        "symbols": [
+          { "name": "active_scene_id", "address": 154, "size": 1 },
+          { "name": "zp_elem_idx", "address": 155, "size": 1 },
+          { "name": "zp_elem_count", "address": 156, "size": 1 },
+          { "name": "zp_elem_w", "address": 157, "size": 1 },
+          { "name": "zp_elem_h", "address": 158, "size": 1 },
+          { "name": "zp_stride", "address": 159, "size": 1 },
+          { "name": "zp_flags", "address": 160, "size": 1 },
+          { "name": "zp_ptr_row_lo", "address": 161, "size": 2 },
+          { "name": "zp_ptr_row_hi", "address": 163, "size": 2 },
+          { "name": "zp_src_idx", "address": 165, "size": 1 },
+          { "name": "zp_dst_idx", "address": 166, "size": 1 },
+          { "name": "zp_bytes_left", "address": 167, "size": 1 },
+          { "name": "zp_ptr_elem_ts", "address": 168, "size": 2 },
+          { "name": "zp_ptr_elem_sx", "address": 170, "size": 2 },
+          { "name": "zp_ptr_elem_sy", "address": 172, "size": 2 },
+          { "name": "zp_ptr_elem_w", "address": 174, "size": 2 },
+          { "name": "zp_ptr_elem_h", "address": 176, "size": 2 },
+          { "name": "zp_ptr_elem_dx", "address": 178, "size": 2 },
+          { "name": "zp_ptr_elem_dy", "address": 180, "size": 2 },
+          { "name": "zp_ptr_elem_fl", "address": 182, "size": 2 }
+        ]
+      },
+      {
+        "label": "DLI ENGINE",
+        "start": 184,
+        "end": 192,
+        "size": 9,
+        "range_hex": "$B8 - $C0",
+        "description": "DLI registers save, pas counters & PMG pattern ptr",
+        "symbols": [
+          { "name": "dli_save_a", "address": 184, "size": 1 },
+          { "name": "dli_save_x", "address": 185, "size": 1 },
+          { "name": "dli_save_y", "address": 186, "size": 1 },
+          { "name": "dli_pas_idx", "address": 187, "size": 1 },
+          { "name": "dli_active_offset", "address": 188, "size": 1 },
+          { "name": "dli_pending_offset", "address": 189, "size": 1 },
+          { "name": "dli_swap_requested", "address": 190, "size": 1 },
+          { "name": "dli_scene_pmg_ptr", "address": 191, "size": 2 }
+        ]
+      },
+      {
+        "label": "GAMEPLAY",
+        "start": 193,
+        "end": 230,
+        "size": 38,
+        "range_hex": "$C1 - $E6",
+        "description": "Lives, HUD specials, Player 0 physics, platforms, secrets, killer mode",
+        "symbols": [
+          { "name": "player_lives", "address": 193, "size": 1 },
+          { "name": "player_specials", "address": 194, "size": 1 },
+          { "name": "player_x", "address": 195, "size": 1 },
+          { "name": "player_pmg_y", "address": 196, "size": 1 },
+          { "name": "player_dir", "address": 197, "size": 1 },
+          { "name": "player_state", "address": 198, "size": 1 },
+          { "name": "player_frame_idx", "address": 199, "size": 1 },
+          { "name": "player_frame_timer", "address": 200, "size": 1 },
+          { "name": "player_x_sub", "address": 201, "size": 1 },
+          { "name": "player_speed", "address": 202, "size": 1 },
+          { "name": "player_color", "address": 203, "size": 1 },
+          { "name": "player_y", "address": 204, "size": 1 },
+          { "name": "player_plat_idx", "address": 205, "size": 1 },
+          { "name": "player_prev_pmg_y", "address": 206, "size": 1 },
+          { "name": "game_result", "address": 207, "size": 1 },
+          { "name": "zp_plat_ptr_x", "address": 208, "size": 2 },
+          { "name": "zp_plat_ptr_y", "address": 210, "size": 2 },
+          { "name": "zp_plat_ptr_w", "address": 212, "size": 2 },
+          { "name": "zp_plat_count", "address": 214, "size": 1 },
+          { "name": "player_jump_type", "address": 215, "size": 1 },
+          { "name": "player_jump_step", "address": 216, "size": 1 },
+          { "name": "player_jump_len", "address": 217, "size": 1 },
+          { "name": "player_fire_released", "address": 218, "size": 1 },
+          { "name": "player_prev_y", "address": 219, "size": 1 },
+          { "name": "title_gen_charset", "address": 220, "size": 2 },
+          { "name": "title_gen_text", "address": 222, "size": 2 },
+          { "name": "title_gen_dst", "address": 224, "size": 2 },
+          { "name": "title_gen_len", "address": 226, "size": 1 },
+          { "name": "title_gen_x", "address": 227, "size": 1 },
+          { "name": "secrets_blink_lum", "address": 228, "size": 1 },
+          { "name": "secrets_blink_timer", "address": 229, "size": 1 },
+          { "name": "player_killer_timer", "address": 230, "size": 1 }
+        ]
+      }
+    ]
+  },
+  "free_space": {
+    "start": 231,
+    "end": 255,
+    "size": 25,
+    "range_hex": "$E7 - $FF",
+    "label": "FREE",
+    "description": "Unallocated Zero Page available for engine expansion"
+  }
+}
+

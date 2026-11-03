@@ -1,0 +1,66 @@
+---
+/**
+ * SpriteRenderer.astro
+ * Renders authentic Atari MOS 6502 1-bit Player-Missile / Software Sprites as crisp vector pixel art.
+ * Conforms to exact bit patterns defined in sprites/*.sprite.json.
+ */
+
+interface Props {
+  pixels: string[];
+  width?: number;
+  height?: number;
+  pixelColor?: string;
+  scale?: number;
+  label?: string;
+}
+
+const {
+  pixels,
+  width = 8,
+  height = 20,
+  pixelColor = '#00ff66',
+  scale = 4,
+  label = '',
+} = Astro.props;
+
+// Parse pixel matrix into coordinates of active ("1") pixels
+const activePixels: Array<{ x: number; y: number }> = [];
+
+pixels.forEach((rowStr, y) => {
+  for (let x = 0; x < rowStr.length; x++) {
+    if (rowStr[x] === '1') {
+      activePixels.push({ x, y });
+    }
+  }
+});
+---
+
+<div class="flex flex-col items-center justify-center space-y-1.5 font-mono select-none">
+  <!-- Crisp SVG Pixel Grid -->
+  <div class="p-2 rounded bg-atari-dark border border-atari-border/60 flex items-center justify-center">
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width={width * scale}
+      height={height * scale}
+      class="block"
+      style="shape-rendering: crispEdges;"
+      aria-label={label}
+    >
+      <!-- Background / inactive grid dots (optional subtle guide) -->
+      <rect width={width} height={height} fill="#06080e" />
+
+      <!-- Active Sprite Pixels -->
+      {activePixels.map((p) => (
+        <rect
+          x={p.x}
+          y={p.y}
+          width="1"
+          height="1"
+          fill={pixelColor}
+        />
+      ))}
+    </svg>
+  </div>
+  {label && <span class="text-[10px] text-atari-muted truncate max-w-[120px] text-center">{label}</span>}
+</div>
+

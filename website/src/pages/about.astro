@@ -1,0 +1,254 @@
+---
+/**
+ * about.astro
+ * Technical architecture, hardware specifications, and project overview for Call of the Wintermon.
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Technical Architecture & Hardware Specs — Call of the Wintermon"
+  description="Comprehensive technical analysis of the Atari 800XL / 65XE hardware, MOS 6502 engine, ANTIC, GTIA, and POKEY."
+>
+  <div class="space-y-10">
+
+    <!-- Page Header -->
+    <div class="border-b border-atari-border pb-6 space-y-2">
+      <div class="flex items-center gap-2 text-xs font-mono text-atari-green font-bold tracking-wider uppercase">
+        <span>&gt; DOCUMENTATION</span>
+        <span class="text-atari-muted">/</span>
+        <span>ATARI 8-BIT XL/XE HARDWARE ARCHITECTURE</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-atari-text font-mono">
+        ENGINEERING &amp; <span class="text-atari-green">HARDWARE ARCHITECTURE</span>
+      </h1>
+      <p class="text-xs sm:text-sm text-atari-muted leading-relaxed max-w-3xl">
+        Call of the Wintermon is built from the ground up to demonstrate modern software engineering practices
+        applied to historical 8-bit embedded constraints: 100% MOS 6502 assembly language, deterministic frame scheduling,
+        hardware register pipelining, and automated Python asset compilers.
+      </p>
+    </div>
+
+    <!-- 1. The Custom Chips (The Atari Trinity) -->
+    <section class="space-y-4 font-mono">
+      <div class="border-b border-atari-border pb-3">
+        <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>THE ATARI CUSTOM CO-PROCESSORS</span>
+        </h2>
+        <p class="text-xs text-atari-muted mt-0.5">
+          Dedicated silicon co-processors designed by Jay Miner that defined the Atari 8-bit architecture.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- ANTIC -->
+        <div class="border border-atari-border bg-atari-surface/70 rounded-lg p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-atari-border/50 pb-2">
+            <span class="font-bold text-atari-green text-sm">ANTIC (Alpha-Numeric TV Interface Controller)</span>
+            <span class="text-[11px] text-atari-cyan font-mono">$D400 - $D4FF</span>
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            A true graphics microprocessor running its own instruction set concurrently with the 6502. 
+            ANTIC fetches Display Lists via direct memory access (DMA), controlling screen geometry on a line-by-line basis.
+          </p>
+          <ul class="text-xs text-atari-muted/90 space-y-1 list-disc list-inside">
+            <li><strong class="text-atari-text">Display Lists:</strong> Dynamic instruction pipelines driving ANTIC Mode E (160×96 2bpp).</li>
+            <li><strong class="text-atari-text">DLI Support:</strong> Bit 7 interrupts halting the 6502 to reload GTIA color palettes on the fly.</li>
+            <li><strong class="text-atari-text">Fine Scrolling:</strong> Hardware horizontal and vertical pixel fine-scroll registers (<code class="text-atari-green">HSCROL</code>, <code class="text-atari-green">VSCROL</code>).</li>
+          </ul>
+        </div>
+
+        <!-- GTIA -->
+        <div class="border border-atari-border bg-atari-surface/70 rounded-lg p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-atari-border/50 pb-2">
+            <span class="font-bold text-atari-cyan text-sm">GTIA (Graphic Television Interface Adapter)</span>
+            <span class="text-[11px] text-atari-cyan font-mono">$D000 - $D01F</span>
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            Converts ANTIC digital video signals into analog composite video (lum/chroma).
+            Manages the 128/256-color palette, Player-Missile Graphics, and hardware collision detection registers.
+          </p>
+          <ul class="text-xs text-atari-muted/90 space-y-1 list-disc list-inside">
+            <li><strong class="text-atari-text">Player-Missile Graphics:</strong> 4 hardware players and 4 missiles with independent horizontal positions (<code class="text-atari-cyan">HPOSP0-HPOSP3</code>).</li>
+            <li><strong class="text-atari-text">Hardware Collisions:</strong> Instant silicon collision latches (<code class="text-atari-cyan">M0PF</code>, <code class="text-atari-cyan">P0PF</code>, <code class="text-atari-cyan">M0PL</code>).</li>
+            <li><strong class="text-atari-text">Console Keys:</strong> Direct read of START, SELECT, and OPTION buttons (<code class="text-atari-cyan">CONSOL</code>).</li>
+          </ul>
+        </div>
+
+        <!-- POKEY -->
+        <div class="border border-atari-border bg-atari-surface/70 rounded-lg p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-atari-border/50 pb-2">
+            <span class="font-bold text-atari-amber text-sm">POKEY (Potentiometers &amp; Keyboard)</span>
+            <span class="text-[11px] text-atari-cyan font-mono">$D200 - $D2FF</span>
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            The multi-function audio/input chip. Provides 4 independent polyphonic audio channels, 
+            random noise generators, high-speed serial I/O, timers, and matrix keyboard scanning.
+          </p>
+          <ul class="text-xs text-atari-muted/90 space-y-1 list-disc list-inside">
+            <li><strong class="text-atari-text">4 Audio Channels:</strong> Frequency dividers (<code class="text-atari-amber">AUDF1-4</code>) and distortion control (<code class="text-atari-amber">AUDC1-4</code>).</li>
+            <li><strong class="text-atari-text">Timers &amp; Polynomials:</strong> 4-bit, 5-bit, 9-bit, and 17-bit polynomial noise generation.</li>
+            <li><strong class="text-atari-text">Sound Engine:</strong> Custom 50 Hz VBLANK driver executing music scores and priority SFX.</li>
+          </ul>
+        </div>
+
+        <!-- MOS 6502 & PIA 6520 -->
+        <div class="border border-atari-border bg-atari-surface/70 rounded-lg p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-atari-border/50 pb-2">
+            <span class="font-bold text-atari-text text-sm">MOS 6502 CPU &amp; PIA 6520</span>
+            <span class="text-[11px] text-atari-cyan font-mono">1.77 MHz (PAL) / $D300</span>
+          </div>
+          <p class="text-xs text-atari-muted leading-relaxed">
+            The central 8-bit processing unit running at 1.773447 MHz on PAL systems.
+            Communicates with joystick ports and system memory banking via the 6520 PIA.
+          </p>
+          <ul class="text-xs text-atari-muted/90 space-y-1 list-disc list-inside">
+            <li><strong class="text-atari-text">PORTB ($D301):</strong> Memory banking register controlling BASIC ROM and OS ROM visibility.</li>
+            <li><strong class="text-atari-text">Deterministic Timing:</strong> Strict instruction cycle budgets per scanline (114 system cycles per scanline).</li>
+            <li><strong class="text-atari-text">Zero Page ($80-$FF):</strong> Fast 1-cycle-saving addressable scratchpad registers for game physics and rendering pointers.</li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 2. Deterministic Frame Pipeline -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono text-xs">
+      <div class="border-b border-atari-border pb-3">
+        <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>DETERMINISTIC 50 HZ FRAME PIPELINE</span>
+        </h2>
+        <p class="text-xs text-atari-muted mt-0.5">
+          Fixed phase execution scheduled once per PAL frame (every 20 ms).
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-atari-cyan text-[11px]">1. INPUT POLL</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            Sample PIA <code class="text-atari-text">PORTA</code> joystick directions and <code class="text-atari-text">TRIG0</code> fire button with debouncing.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-atari-green text-[11px]">2. ENTITY UPDATE</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            Update player velocity, moving platforms, patrol enemies, and animation frame counters.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-atari-amber text-[11px]">3. COLLISION</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            Evaluate bounding box intersections against platform tiles, enemy hitboxes, and collectible secrets.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-atari-text text-[11px]">4. STATE UPDATE</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            Transition game states (Playing, Game Over, Stage Victory) and update life and score counters.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-purple-400 text-[11px]">5. PREPARE BUFFERS</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            Write PMG player/missile slices into active RAM buffers and build DLI scanline tables.
+          </p>
+        </div>
+
+        <div class="border border-atari-border/40 bg-atari-surfaceLight/30 rounded p-3 space-y-1">
+          <div class="font-bold text-red-400 text-[11px]">6. SWAP &amp; VBLANK</div>
+          <p class="text-[10px] text-atari-muted leading-relaxed">
+            VBLANK NMI commits display list pointers, ticks POKEY music driver, and resets color shadows.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Toolchain & Development Methodology -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono text-xs">
+      <div class="border-b border-atari-border pb-3">
+        <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-cyan">&gt;</span>
+          <span>MODERN TOOLING FOR VINTAGE SILICON</span>
+        </h2>
+        <p class="text-xs text-atari-muted mt-0.5">
+          Integrating modern Python build pipelines with native 6502 cross-assembly.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="space-y-2">
+          <h3 class="font-bold text-atari-green text-xs">MADS (Mad Assembler 2.1.6)</h3>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            Fast 6502/65C02 macro cross-assembler. Compiles modular assembly files into single-pass XEX binaries
+            with automatic label export (<code class="text-atari-text">main.lab</code>) and listing maps (<code class="text-atari-text">main.lst</code>).
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="font-bold text-atari-cyan text-xs">PYTHON SSOT DATA COMPILERS</h3>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            YAML and JSON source-of-truth files (<code class="text-atari-text">manifest.yaml</code>, <code class="text-atari-text">scenes.json</code>)
+            are parsed via Pydantic and compiled directly into Structure-of-Arrays (SoA) assembly tables, 
+            guaranteeing zero runtime overhead for the 6502.
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="font-bold text-atari-amber text-xs">AUTOMATED PY65 &amp; MEMORY VERIFICATION</h3>
+          <p class="text-atari-muted leading-relaxed text-[11px]">
+            Continuous verification via <code class="text-atari-text">py65</code> CPU emulation harnesses.
+            Automated scripts (<code class="text-atari-text">check_memory.py</code>, <code class="text-atari-text">generate_memory_map.py</code>)
+            enforce segment bounds and verify headroom below $C000 before any binary is released.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Project Repository Links & Credits -->
+    <section class="border border-atari-border bg-atari-surface/60 rounded-lg p-5 space-y-4 font-mono text-xs">
+      <div class="border-b border-atari-border pb-3">
+        <h2 class="text-sm font-bold text-atari-text uppercase tracking-wider flex items-center gap-2">
+          <span class="text-atari-green">&gt;</span>
+          <span>PROJECT REPOSITORY &amp; CREDITS</span>
+        </h2>
+      </div>
+
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-bold text-atari-text">CALL OF THE WINTERMON</div>
+          <div class="text-xs text-atari-muted">An open-source Atari 8-bit platform adventure game.</div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <a
+            href="https://github.com/grzes71/call-of-the-wintermon"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="px-4 py-2 rounded bg-atari-green text-atari-dark font-bold text-xs uppercase hover:bg-atari-greenDim transition-colors shadow-atari-green"
+          >
+            VIEW GITHUB REPO
+          </a>
+          <a
+            href="https://github.com/grzes71/call-of-the-wintermon/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="px-4 py-2 rounded border border-atari-border text-atari-muted hover:text-atari-text text-xs uppercase"
+          >
+            REPORT AN ISSUE
+          </a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</BaseLayout>
+
