@@ -2,6 +2,25 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-09] - Reclaim ~1.95 KB User RAM and ~7.0 KB XEX File Size Under MADS
+
+- **Sprite Frame Deduplication ([scripts/compile_sprites.py](scripts/compile_sprites.py))**:
+  - Updated `generate_sprites_asm` to detect identical 16-byte sprite frame bitmaps (e.g., ping-pong animation frames in `sprite_6`, `sprite_8`, `sprite_10`) and emit MADS label aliases (`sprite_N_frame_M = sprite_X_frame_Y`), reclaiming **144 B** in the `$7A00–$7FFF` segment (increasing sprite headroom before `$8000` from 65 B to **209 B**).
+- **Scene Table Compaction & Runtime Derivation ([scripts/compile_scenes.py](scripts/compile_scenes.py), [engine/secrets.asm](engine/secrets.asm), [engine/enemies.asm](engine/enemies.asm))**:
+  - Eliminated 11 redundant per-secret SoA arrays (`active`, `pmg_y`, `height`, `frame_dur`, `frame_count`, `color`, `zone`, `blink`, `special`, `killer`, `extra_life`) and 9 per-enemy SoA arrays (`min_x`, `max_x`, `pmg_y`, `height`, `frame_dur`, `frame_count`, `dir`, `color`, `zone`) plus unused `scene_width_px` and `scene_height_lines` from `gen/scenes_data.asm`.
+  - Added compact 1-based catalogue lookup tables (`secret_def_color`, `secret_def_blink`, `secret_def_special`, `secret_def_killer`, `secret_def_extra_life`, `enemy_def_color`) in `gen/scenes_data.asm`.
+  - Updated `secrets_init` and `enemies_init` to derive sprite metadata from `sprite_height`/`sprite_frame_dur`/`sprite_frame_count`, catalogue properties from `secret_def_*`/`enemy_def_color`, initial `active`/`dir` flags from `dep_id == 0`/`strategy & 1`, and platform-relative geometry (`pmg_y`, `zone`, `min_x`, `max_x`) from `scene_plat_y`/`scene_plat_init_x`/`scene_plat_w`.
+  - Reclaimed **1,482 B** in the critical `$9DFE–$BFFF` (`SCENE_TABLES`) segment (free headroom for additional scenes increased from 52 B PL / 33 B EN to **1,534 B PL / 1,515 B EN**) and **185 B** in the `$5000–$5BFF` (`SCENES_DATA`) runtime segment.
+- **DLI Buffer & Scene Block Trimming ([scripts/compile_scenes.py](scripts/compile_scenes.py), [engine/dli.asm](engine/dli.asm), [engine/secrets.asm](engine/secrets.asm))**:
+  - Removed unused `dli_zone_prior` and `dli_z0_prior` tables and redundant `dli_z0_colpf0..2` buffers (`dli_vblank_update` now reads upper background palette directly from pas 0 of `dli_bg_colpf0..2`), reducing `DLI_TABLE_COUNT` from 34 to 33, shrinking per-scene DLI blocks from 219 B to 209 B, and saving **48 B** in `$6100` (`DLI_BUFFERS`).
+- **Game Over Display List Deduplication & Tileset Metadata Cleanup ([scenes/gameover.asm](scenes/gameover.asm), [scripts/convert_tiles.py](scripts/convert_tiles.py))**:
+  - Aliased `dlist_gameover_success = dlist_gameover_failure` and removed `gameover_dlist_ptrs_lo/hi`, saving **81 B** in `$5C00` (`GAMEOVER_CODE`).
+  - Removed unused `tileset_w_px_hi`, `tileset_size_lo`, and `tileset_size_hi` tables from `gen/tiles_data.asm`, saving **12 B** in `$2A30` (`TILES_META`).
+- **XEX BSS Zero-Block Omission ([main.asm](main.asm), [scripts/check_memory.py](scripts/check_memory.py), [scripts/generate_memory_map.py](scripts/generate_memory_map.py))**:
+  - Replaced zero-filled `:GAME_VRAM_SIZE .byte 0` (`$3000`, 3,936 B) and `:PMG_ACTIVE_SIZE .byte 0` (`$6B00`, 1,280 B) blocks with uninitialized symbol reservations while preserving full RAM region accounting in `check_memory.py` and `generate_memory_map.py`, reducing `.xex` binary size by **7,168 B** total (`33,375 B` PL / `33,394 B` EN).
+- **Tests ([tests/test_compile_scenes.py](tests/test_compile_scenes.py), [tests/test_killer_mode.py](tests/test_killer_mode.py))**:
+  - Updated ROM symbol assertions for `secret_def_special` and `secret_def_extra_life`; all 797 tests pass.
+
 ## [2026-11-03] - Fix Gallery Sprite Categorization for Secrets (Ghost & Phantom)
 
 - **Gallery Page ([website/src/pages/gallery.astro](website/src/pages/gallery.astro))**:

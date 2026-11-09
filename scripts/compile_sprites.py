@@ -338,7 +338,8 @@ def generate_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
     lines.append(f"MAX_SPRITE_ID = {max_id}")
     lines.append("")
 
-    # Output each sprite's frame data
+    # Output each sprite's frame data (deduplicating identical byte sequences)
+    seen_frames: dict[tuple[int, ...], str] = {}
     for sid in sorted(sprites.keys()):
         spr = sprites[sid]
         lines.extend([
@@ -348,9 +349,15 @@ def generate_sprites_asm(sprites: dict[int, SpriteDefinition]) -> str:
         ])
 
         for f_idx, frame in enumerate(spr.frames):
-            lines.append(f"sprite_{sid}_frame_{f_idx}")
-            bytes_str = ", ".join(f"${b:02X}" for b in frame.rows)
-            lines.append(f"    .byte {bytes_str}")
+            frame_label = f"sprite_{sid}_frame_{f_idx}"
+            frame_key = tuple(frame.rows)
+            if frame_key in seen_frames:
+                lines.append(f"{frame_label} = {seen_frames[frame_key]}")
+            else:
+                seen_frames[frame_key] = frame_label
+                lines.append(frame_label)
+                bytes_str = ", ".join(f"${b:02X}" for b in frame.rows)
+                lines.append(f"    .byte {bytes_str}")
 
         lines.append(f"sprite_{sid}_frames")
         lines.append("    .word " + ", ".join(f"sprite_{sid}_frame_{f_idx}" for f_idx in range(len(spr.frames))))

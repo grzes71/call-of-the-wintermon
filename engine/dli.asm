@@ -59,7 +59,6 @@ dli_zone_hpos_m1    :16 .byte 0
 dli_zone_hpos_m2    :16 .byte 0
 dli_zone_hpos_m3    :16 .byte 0
 dli_zone_secret_col :16 .byte 0
-dli_zone_prior      :16 .byte 0
 
 ; Zone 0 Initial Values (2 buffers: index 0 and 1)
 dli_z0_hpos_p1      :2 .byte 0
@@ -73,13 +72,9 @@ dli_z0_hpos_m1      :2 .byte 0
 dli_z0_hpos_m2      :2 .byte 0
 dli_z0_hpos_m3      :2 .byte 0
 dli_z0_secret_col   :2 .byte 0
-dli_z0_prior        :2 .byte 0
-dli_z0_colpf0       :2 .byte 0
-dli_z0_colpf1       :2 .byte 0
-dli_z0_colpf2       :2 .byte 0
 
-; Table base pointers for 34 tables (used by dli_stage_scene)
-DLI_TABLE_COUNT = 34
+; Table base pointers for 33 tables (used by dli_stage_scene)
+DLI_TABLE_COUNT = 33
 dli_table_ptrs_lo
     .byte <dli_hpos_p1, <dli_hpos_p2, <dli_hpos_p3
     .byte <dli_hpos_m0, <dli_hpos_m1, <dli_hpos_m2, <dli_hpos_m3
@@ -91,7 +86,7 @@ dli_table_ptrs_lo
     .byte <dli_zone_hpos_p2, <dli_zone_col_p2
     .byte <dli_zone_hpos_p3, <dli_zone_col_p3
     .byte <dli_zone_hpos_m0, <dli_zone_hpos_m1, <dli_zone_hpos_m2, <dli_zone_hpos_m3
-    .byte <dli_zone_secret_col, <dli_zone_prior
+    .byte <dli_zone_secret_col
 
 dli_table_ptrs_hi
     .byte >dli_hpos_p1, >dli_hpos_p2, >dli_hpos_p3
@@ -104,7 +99,7 @@ dli_table_ptrs_hi
     .byte >dli_zone_hpos_p2, >dli_zone_col_p2
     .byte >dli_zone_hpos_p3, >dli_zone_col_p3
     .byte >dli_zone_hpos_m0, >dli_zone_hpos_m1, >dli_zone_hpos_m2, >dli_zone_hpos_m3
-    .byte >dli_zone_secret_col, >dli_zone_prior
+    .byte >dli_zone_secret_col
 
 ; ==============================================================================
 ; DLI INIT
@@ -312,18 +307,6 @@ dli_table_ptrs_hi
     iny
     lda (zp_ptr_src),y      ; z0_secret_col
     sta dli_z0_secret_col,x
-    iny
-    lda (zp_ptr_src),y      ; z0_prior
-    sta dli_z0_prior,x
-    iny
-    lda (zp_ptr_src),y      ; z0_colpf0
-    sta dli_z0_colpf0,x
-    iny
-    lda (zp_ptr_src),y      ; z0_colpf1
-    sta dli_z0_colpf1,x
-    iny
-    lda (zp_ptr_src),y      ; z0_colpf2
-    sta dli_z0_colpf2,x
 
     ; Set mailbox flag: atomic buffer swap will occur in VBLANK
     lda #1
@@ -423,16 +406,17 @@ dli_table_ptrs_hi
     sta PRIOR
     sta GPRIOR
 
-    ; 4. Apply upper background palette to hardware and shadow registers
-    lda dli_z0_colpf0,x
+    ; 4. Apply upper background palette to hardware and shadow registers (from pas 0 of active buffer)
+    ldy dli_active_offset
+    lda dli_bg_colpf0,y
     sta COLPF0
     sta COLOR0
 
-    lda dli_z0_colpf1,x
+    lda dli_bg_colpf1,y
     sta COLPF1
     sta COLOR1
 
-    lda dli_z0_colpf2,x
+    lda dli_bg_colpf2,y
     sta COLPF2
     sta COLOR2
 

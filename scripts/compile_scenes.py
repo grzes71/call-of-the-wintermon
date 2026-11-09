@@ -1860,13 +1860,29 @@ def parse_scene_json(
 
 
 
-def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
+def generate_scenes_asm(
+    scenes: list[SceneCompiledData],
+    enemies: dict[int, CatalogueItem] | None = None,
+    secrets: dict[int, CatalogueItem] | None = None,
+) -> str:
     """Generate MADS 6502 assembly defining Structure-of-Arrays (SoA) scene structures."""
     special_total = status_special_total(scenes)
     if special_total > STATUS_LINE_WIDTH - 3:
         raise ValueError(
             f"Status line: {special_total} special secrets exceed available columns (max {STATUS_LINE_WIDTH - 3})."
         )
+
+    if enemies is None or secrets is None:
+        cat_path = Path("scenes/definitions.json")
+        if cat_path.is_file():
+            loaded_enemies, loaded_secrets = load_catalogues(cat_path, cat_path)
+            if enemies is None:
+                enemies = loaded_enemies
+            if secrets is None:
+                secrets = loaded_secrets
+        else:
+            enemies = enemies or {}
+            secrets = secrets or {}
 
     lines: list[str] = [
         "; ==============================================================================",
@@ -1920,6 +1936,50 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         lines.append(f"{prefix}_PLAYER_START_Y = {sc.player_start_y}")
         lines.append(f"{prefix}_PLAYER_COLOR   = ${sc.player_color:02X}")
     lines.append("")
+
+    # Build 1-based catalogue definition lookup tables (indexed by def_id)
+    sec_def_attrs: dict[int, tuple[int, int, int, int, int]] = {}
+    for did, item in secrets.items():
+        sec_def_attrs[did] = (
+            item.atari_color,
+            1 if item.blink else 0,
+            1 if getattr(item, "special", False) else 0,
+            1 if getattr(item, "killer", False) else 0,
+            1 if getattr(item, "extra_life", False) else 0,
+        )
+    for sc in scenes:
+        for s in sc.secrets:
+            sec_def_attrs[s.def_id] = (
+                s.atari_color,
+                1 if s.blink else 0,
+                1 if s.special else 0,
+                1 if s.killer else 0,
+                1 if s.extra_life else 0,
+            )
+    max_sec_def = max([0] + list(sec_def_attrs.keys()))
+
+    en_def_colors: dict[int, int] = {did: item.atari_color for did, item in enemies.items()}
+    for sc in scenes:
+        for e in sc.enemies:
+            en_def_colors[e.def_id] = e.atari_color
+    max_en_def = max([0] + list(en_def_colors.keys()))
+
+    lines.extend([
+        "; --- Catalogue Definition Lookup Tables (1-based index by def_id) ---",
+        "secret_def_color",
+        "    .byte $00" + ("".join(f", ${sec_def_attrs.get(i, (0, 0, 0, 0, 0))[0]:02X}" for i in range(1, max_sec_def + 1))),
+        "secret_def_blink",
+        "    .byte 0" + ("".join(f", {sec_def_attrs.get(i, (0, 0, 0, 0, 0))[1]}" for i in range(1, max_sec_def + 1))),
+        "secret_def_special",
+        "    .byte 0" + ("".join(f", {sec_def_attrs.get(i, (0, 0, 0, 0, 0))[2]}" for i in range(1, max_sec_def + 1))),
+        "secret_def_killer",
+        "    .byte 0" + ("".join(f", {sec_def_attrs.get(i, (0, 0, 0, 0, 0))[3]}" for i in range(1, max_sec_def + 1))),
+        "secret_def_extra_life",
+        "    .byte 0" + ("".join(f", {sec_def_attrs.get(i, (0, 0, 0, 0, 0))[4]}" for i in range(1, max_sec_def + 1))),
+        "enemy_def_color",
+        "    .byte $00" + ("".join(f", ${en_def_colors.get(i, 0):02X}" for i in range(1, max_en_def + 1))),
+        "",
+    ])
 
 
     # Per-scene data blocks
@@ -2003,8 +2063,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         # Scene secrets
         lines.append(f"; --- Secrets ({len(sc.secrets)}) ---")
         if sc.secrets:
-            lines.append(f"scene_{sym}_secret_active")
-            lines.append("    .byte " + ", ".join(str(1 if s.active else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_dep_id")
             lines.append("    .byte " + ", ".join(str(s.dep_id) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_def_id")
@@ -2013,26 +2071,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(s.sprite_id) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_x")
             lines.append("    .byte " + ", ".join(str(s.x) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_pmg_y")
-            lines.append("    .byte " + ", ".join(str(s.pmg_y) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_height")
-            lines.append("    .byte " + ", ".join(str(s.height) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_frame_dur")
-            lines.append("    .byte " + ", ".join(str(s.frame_dur) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_frame_count")
-            lines.append("    .byte " + ", ".join(str(s.frame_count) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_color")
-            lines.append("    .byte " + ", ".join(f"${s.atari_color:02X}" for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_zone")
-            lines.append("    .byte " + ", ".join(str(s.zone_idx) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_blink")
-            lines.append("    .byte " + ", ".join(str(1 if s.blink else 0) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_special")
-            lines.append("    .byte " + ", ".join(str(1 if s.special else 0) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_killer")
-            lines.append("    .byte " + ", ".join(str(1 if s.killer else 0) for s in sc.secrets))
-            lines.append(f"scene_{sym}_secret_extra_life")
-            lines.append("    .byte " + ", ".join(str(1 if s.extra_life else 0) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_channel")
             lines.append("    .byte " + ", ".join(str(s.channel) for s in sc.secrets))
             lines.append(f"scene_{sym}_secret_plat_idx")
@@ -2043,21 +2081,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             )
         else:
             lines.extend([
-                f"scene_{sym}_secret_active      .byte 0",
                 f"scene_{sym}_secret_dep_id     .byte 0",
                 f"scene_{sym}_secret_def_id     .byte 0",
                 f"scene_{sym}_secret_sprite_id  .byte 0",
                 f"scene_{sym}_secret_x          .byte 0",
-                f"scene_{sym}_secret_pmg_y      .byte 0",
-                f"scene_{sym}_secret_height     .byte 0",
-                f"scene_{sym}_secret_frame_dur  .byte 0",
-                f"scene_{sym}_secret_frame_count .byte 0",
-                f"scene_{sym}_secret_color      .byte 0",
-                f"scene_{sym}_secret_zone       .byte 0",
-                f"scene_{sym}_secret_blink      .byte 0",
-                f"scene_{sym}_secret_special    .byte 0",
-                f"scene_{sym}_secret_killer     .byte 0",
-                f"scene_{sym}_secret_extra_life .byte 0",
                 f"scene_{sym}_secret_channel    .byte 0",
                 f"scene_{sym}_secret_plat_idx   .byte 0",
                 f"scene_{sym}_plat_scroll       .byte 0",
@@ -2068,51 +2095,24 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(str(e.def_id) for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_sprite_id")
             lines.append("    .byte " + ", ".join(str(e.sprite_id) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_min_x")
-            lines.append("    .byte " + ", ".join(str(e.min_x) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_max_x")
-            lines.append("    .byte " + ", ".join(str(e.max_x) for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_x")
             lines.append("    .byte " + ", ".join(str(e.x) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_pmg_y")
-            lines.append("    .byte " + ", ".join(str(e.pmg_y) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_height")
-            lines.append("    .byte " + ", ".join(str(e.height) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_frame_dur")
-            lines.append("    .byte " + ", ".join(str(e.frame_dur) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_frame_count")
-            lines.append("    .byte " + ", ".join(str(e.frame_count) for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_speed")
             lines.append("    .byte " + ", ".join(str(e.speed) for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_strategy")
             lines.append("    .byte " + ", ".join(str(e.strategy) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_dir")
-            lines.append("    .byte " + ", ".join(str(e.direction) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_color")
-            lines.append("    .byte " + ", ".join(f"${e.atari_color:02X}" for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_channel")
             lines.append("    .byte " + ", ".join(str(e.channel) for e in sc.enemies))
-            lines.append(f"scene_{sym}_enemy_zone")
-            lines.append("    .byte " + ", ".join(str(e.zone_idx) for e in sc.enemies))
             lines.append(f"scene_{sym}_enemy_plat_idx")
             lines.append("    .byte " + ", ".join(str(e.platform_idx) for e in sc.enemies))
         else:
             lines.extend([
                 f"scene_{sym}_enemy_def_id       .byte 0",
                 f"scene_{sym}_enemy_sprite_id    .byte 0",
-                f"scene_{sym}_enemy_min_x        .byte 0",
-                f"scene_{sym}_enemy_max_x        .byte 0",
                 f"scene_{sym}_enemy_x            .byte 0",
-                f"scene_{sym}_enemy_pmg_y        .byte 0",
-                f"scene_{sym}_enemy_height       .byte 0",
-                f"scene_{sym}_enemy_frame_dur    .byte 0",
-                f"scene_{sym}_enemy_frame_count  .byte 0",
                 f"scene_{sym}_enemy_speed        .byte 0",
                 f"scene_{sym}_enemy_strategy     .byte 0",
-                f"scene_{sym}_enemy_dir          .byte 0",
-                f"scene_{sym}_enemy_color        .byte 0",
                 f"scene_{sym}_enemy_channel      .byte 0",
-                f"scene_{sym}_enemy_zone         .byte 0",
                 f"scene_{sym}_enemy_plat_idx     .byte 0",
             ])
         lines.append("")
@@ -2127,10 +2127,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "scene_name_line_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_name_line" for sc in scenes),
         "",
-        "scene_width_px",
-        "    .byte " + ", ".join(str(sc.width) for sc in scenes),
-        "scene_height_lines",
-        "    .byte " + ", ".join(str(sc.height) for sc in scenes),
         "scene_primary_tileset",
         "    .byte " + ", ".join(TILESET_ID_TO_EQUATE[sc.primary_tileset_id] for sc in scenes),
         "scene_player_start_x",
@@ -2217,10 +2213,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_plat_speed" for sc in scenes),
         "",
         "; --- Secret Pointer Tables ---",
-        "scene_secret_active_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_active" for sc in scenes),
-        "scene_secret_active_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_active" for sc in scenes),
         "scene_secret_dep_id_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_dep_id" for sc in scenes),
         "scene_secret_dep_id_hi",
@@ -2237,46 +2229,6 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_x" for sc in scenes),
         "scene_secret_x_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_x" for sc in scenes),
-        "scene_secret_pmg_y_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_pmg_y" for sc in scenes),
-        "scene_secret_pmg_y_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_pmg_y" for sc in scenes),
-        "scene_secret_height_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_height" for sc in scenes),
-        "scene_secret_height_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_height" for sc in scenes),
-        "scene_secret_frame_dur_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_frame_dur" for sc in scenes),
-        "scene_secret_frame_dur_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_frame_dur" for sc in scenes),
-        "scene_secret_frame_count_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_frame_count" for sc in scenes),
-        "scene_secret_frame_count_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_frame_count" for sc in scenes),
-        "scene_secret_color_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_color" for sc in scenes),
-        "scene_secret_color_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_color" for sc in scenes),
-        "scene_secret_zone_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_zone" for sc in scenes),
-        "scene_secret_zone_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_zone" for sc in scenes),
-        "scene_secret_blink_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_blink" for sc in scenes),
-        "scene_secret_blink_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_blink" for sc in scenes),
-        "scene_secret_special_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_special" for sc in scenes),
-        "scene_secret_special_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_special" for sc in scenes),
-        "scene_secret_killer_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_killer" for sc in scenes),
-        "scene_secret_killer_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_killer" for sc in scenes),
-        "scene_secret_extra_life_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_extra_life" for sc in scenes),
-        "scene_secret_extra_life_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_secret_extra_life" for sc in scenes),
         "scene_secret_channel_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_secret_channel" for sc in scenes),
         "scene_secret_channel_hi",
@@ -2299,34 +2251,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_sprite_id" for sc in scenes),
         "scene_enemy_sprite_id_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_sprite_id" for sc in scenes),
-        "scene_enemy_min_x_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_min_x" for sc in scenes),
-        "scene_enemy_min_x_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_min_x" for sc in scenes),
-        "scene_enemy_max_x_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_max_x" for sc in scenes),
-        "scene_enemy_max_x_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_max_x" for sc in scenes),
         "scene_enemy_x_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_x" for sc in scenes),
         "scene_enemy_x_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_x" for sc in scenes),
-        "scene_enemy_pmg_y_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_pmg_y" for sc in scenes),
-        "scene_enemy_pmg_y_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_pmg_y" for sc in scenes),
-        "scene_enemy_height_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_height" for sc in scenes),
-        "scene_enemy_height_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_height" for sc in scenes),
-        "scene_enemy_frame_dur_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_frame_dur" for sc in scenes),
-        "scene_enemy_frame_dur_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_frame_dur" for sc in scenes),
-        "scene_enemy_frame_count_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_frame_count" for sc in scenes),
-        "scene_enemy_frame_count_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_frame_count" for sc in scenes),
         "scene_enemy_speed_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_speed" for sc in scenes),
         "scene_enemy_speed_hi",
@@ -2335,22 +2263,10 @@ def generate_scenes_asm(scenes: list[SceneCompiledData]) -> str:
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_strategy" for sc in scenes),
         "scene_enemy_strategy_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_strategy" for sc in scenes),
-        "scene_enemy_dir_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_dir" for sc in scenes),
-        "scene_enemy_dir_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_dir" for sc in scenes),
-        "scene_enemy_color_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_color" for sc in scenes),
-        "scene_enemy_color_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_color" for sc in scenes),
         "scene_enemy_channel_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_channel" for sc in scenes),
         "scene_enemy_channel_hi",
         "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_channel" for sc in scenes),
-        "scene_enemy_zone_lo",
-        "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_zone" for sc in scenes),
-        "scene_enemy_zone_hi",
-        "    .byte " + ", ".join(f">scene_{sc.symbol_name}_enemy_zone" for sc in scenes),
         "scene_enemy_plat_idx_lo",
         "    .byte " + ", ".join(f"<scene_{sc.symbol_name}_enemy_plat_idx" for sc in scenes),
         "scene_enemy_plat_idx_hi",
@@ -2367,8 +2283,8 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
         "; ==============================================================================",
         "; SCENES DLI DATA — CALL OF THE WINTERMON (Auto-generated by compile_scenes.py)",
         "; Target: Atari 800XL / 65XE (MOS 6502, ANTIC Mode D 160x96 2bpp)",
-        "; Format: 219 bytes per scene (34 tables x 6 bytes + 15 bytes Zone 0)",
-        "; Segment: Loaded under SCENES_DATA segment ($5000)",
+        "; Format: 209 bytes per scene (33 tables x 6 bytes + 11 bytes Zone 0)",
+        "; Segment: Loaded under SCENE_TABLES segment",
         "; ==============================================================================",
         "",
     ]
@@ -2376,7 +2292,7 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
     for sc in scenes:
         sym = sc.symbol_name
         dli = sc.dli_data
-        lines.append(f"; --- DLI Data for {sc.name} (219 bytes) ---")
+        lines.append(f"; --- DLI Data for {sc.name} (209 bytes) ---")
         lines.append(f"scene_{sym}_dli_data")
         if dli:
             lines.append("    ; 1..7: Platform HPOSP1..3 and HPOSM0..3 (6 bytes each)")
@@ -2411,23 +2327,21 @@ def generate_scenes_dli_asm(scenes: list[SceneCompiledData]) -> str:
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_p3))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_col_p3))
 
-            lines.append("    ; 29..34: Zone Secrets HPOS (M0..M3), Color, and PRIOR (6 bytes each)")
+            lines.append("    ; 29..33: Zone Secrets HPOS (M0..M3) and Color (6 bytes each)")
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m0))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m1))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m2))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_hpos_m3))
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_secret_col))
-            lines.append("    .byte " + ", ".join(f"${v:02X}" for v in dli.zone_prior))
 
-            lines.append("    ; Zone 0 Initial Values (15 bytes)")
+            lines.append("    ; Zone 0 Initial Values (11 bytes)")
             z0_vals = [
                 dli.z0_hpos_p1, dli.z0_col_p1, dli.z0_hpos_p2, dli.z0_col_p2, dli.z0_hpos_p3, dli.z0_col_p3,
-                dli.z0_hpos_m0, dli.z0_hpos_m1, dli.z0_hpos_m2, dli.z0_hpos_m3, dli.z0_secret_col, dli.z0_prior,
-                dli.z0_colpf0, dli.z0_colpf1, dli.z0_colpf2,
+                dli.z0_hpos_m0, dli.z0_hpos_m1, dli.z0_hpos_m2, dli.z0_hpos_m3, dli.z0_secret_col,
             ]
             lines.append("    .byte " + ", ".join(f"${v:02X}" for v in z0_vals))
         else:
-            lines.append("    :219 .byte 0")
+            lines.append("    :209 .byte 0")
         lines.append("")
 
         if dli and dli.pmg_patterns:
@@ -2566,7 +2480,7 @@ def compile_scenes(
             print(f"Error compiling scene '{scene_file}': {exc}", file=sys.stderr)
             return 1
 
-    asm_content = generate_scenes_asm(compiled_scenes)
+    asm_content = generate_scenes_asm(compiled_scenes, enemies=enemies, secrets=secrets)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(asm_content, encoding="utf-8")
     print(f"Generated ASM scene structures: {output_path} ({len(asm_content)} chars)")

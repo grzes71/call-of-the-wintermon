@@ -257,7 +257,7 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 
 @has_enemies
     ; 3. Copy SoA tables from ROM master pointers into RAM
-    ; def_id
+    ; def_id & color (from enemy_def_color)
     lda scene_enemy_def_id_lo,x
     sta zp_ptr_src
     lda scene_enemy_def_id_hi,x
@@ -267,10 +267,14 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 @cp_def
     lda (zp_ptr_src),y
     sta enemies_def_id,y
+    tax
+    lda enemy_def_color,x
+    sta enemies_color,y
     dey
     bpl @cp_def
+    ldx active_scene_id
 
-    ; sprite_id
+    ; sprite_id & sprite metadata (height, frame_dur, frame_count)
     lda scene_enemy_sprite_id_lo,x
     sta zp_ptr_src
     lda scene_enemy_sprite_id_hi,x
@@ -280,34 +284,16 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 @cp_spr
     lda (zp_ptr_src),y
     sta enemies_sprite_id,y
+    tax
+    lda sprite_height,x
+    sta enemies_height,y
+    lda sprite_frame_dur,x
+    sta enemies_frame_dur,y
+    lda sprite_frame_count,x
+    sta enemies_frame_count,y
     dey
     bpl @cp_spr
-
-    ; min_x
-    lda scene_enemy_min_x_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_min_x_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_min_x
-    lda (zp_ptr_src),y
-    sta enemies_min_x,y
-    dey
-    bpl @cp_min_x
-
-    ; max_x
-    lda scene_enemy_max_x_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_max_x_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_max_x
-    lda (zp_ptr_src),y
-    sta enemies_max_x,y
-    dey
-    bpl @cp_max_x
+    ldx active_scene_id
 
     ; x
     lda scene_enemy_x_lo,x
@@ -322,58 +308,6 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     dey
     bpl @cp_x
 
-    ; pmg_y
-    lda scene_enemy_pmg_y_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_pmg_y_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_pmg_y
-    lda (zp_ptr_src),y
-    sta enemies_pmg_y,y
-    dey
-    bpl @cp_pmg_y
-
-    ; height
-    lda scene_enemy_height_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_height_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_h
-    lda (zp_ptr_src),y
-    sta enemies_height,y
-    dey
-    bpl @cp_h
-
-    ; frame_dur
-    lda scene_enemy_frame_dur_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_frame_dur_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_dur
-    lda (zp_ptr_src),y
-    sta enemies_frame_dur,y
-    dey
-    bpl @cp_dur
-
-    ; frame_count
-    lda scene_enemy_frame_count_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_frame_count_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_cnt
-    lda (zp_ptr_src),y
-    sta enemies_frame_count,y
-    dey
-    bpl @cp_cnt
-
     ; speed
     lda scene_enemy_speed_lo,x
     sta zp_ptr_src
@@ -387,7 +321,7 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     dey
     bpl @cp_spd
 
-    ; strategy
+    ; strategy & initial dir (strategy & 1)
     lda scene_enemy_strategy_lo,x
     sta zp_ptr_src
     lda scene_enemy_strategy_hi,x
@@ -397,34 +331,10 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
 @cp_strat
     lda (zp_ptr_src),y
     sta enemies_strategy,y
-    dey
-    bpl @cp_strat
-
-    ; dir
-    lda scene_enemy_dir_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_dir_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_dir
-    lda (zp_ptr_src),y
+    and #$01
     sta enemies_dir,y
     dey
-    bpl @cp_dir
-
-    ; color
-    lda scene_enemy_color_lo,x
-    sta zp_ptr_src
-    lda scene_enemy_color_hi,x
-    sta zp_ptr_src+1
-    ldy enemies_count
-    dey
-@cp_col
-    lda (zp_ptr_src),y
-    sta enemies_color,y
-    dey
-    bpl @cp_col
+    bpl @cp_strat
 
     ; channel
     lda scene_enemy_channel_lo,x
@@ -439,21 +349,69 @@ enemies_pause_timer  :MAX_ENEMIES .byte 0  ; 50-frame pause countdown
     dey
     bpl @cp_ch
 
-    ; zone
-    lda scene_enemy_zone_lo,x
+    ; plat_idx
+    jsr enemies_copy_plat_idx
+
+    ; Derive min_x, max_x, pmg_y, and zone from platform geometry
+    lda scene_plat_init_x_lo,x
     sta zp_ptr_src
-    lda scene_enemy_zone_hi,x
+    lda scene_plat_init_x_hi,x
+    sta zp_ptr_src+1
+    lda scene_plat_w_lo,x
+    sta zp_ptr_dst
+    lda scene_plat_w_hi,x
+    sta zp_ptr_dst+1
+    ldy enemies_count
+    dey
+@derive_en_x
+    sty plat_cur_idx
+    lda enemies_plat_idx,y
+    tay
+    lda (zp_ptr_src),y          ; A = plat_init_x
+    sta zp_temp_a
+    clc
+    adc (zp_ptr_dst),y          ; A = plat_init_x + plat_w
+    sec
+    sbc #8                      ; A = plat_init_x + plat_w - 8
+    ldy plat_cur_idx
+    sta enemies_max_x,y
+    lda zp_temp_a
+    sta enemies_min_x,y
+    dey
+    bpl @derive_en_x
+
+    lda scene_plat_y_lo,x
+    sta zp_ptr_src
+    lda scene_plat_y_hi,x
     sta zp_ptr_src+1
     ldy enemies_count
     dey
-@cp_zone
-    lda (zp_ptr_src),y
+@derive_en_y
+    sty plat_cur_idx
+    lda enemies_plat_idx,y
+    tay
+    lda (zp_ptr_src),y          ; A = plat_y
+    sta zp_temp_a
+    ldy plat_cur_idx
+    asl
+    clc
+    adc #31
+    sec
+    sbc enemies_height,y
+    sta enemies_pmg_y,y
+    lda zp_temp_a
+    sec
+    sbc #8
+    bcs @en_zone_ok
+    lda #0
+@en_zone_ok
+    lsr
+    lsr
+    lsr
+    lsr
     sta enemies_zone,y
     dey
-    bpl @cp_zone
-
-    ; plat_idx
-    jsr enemies_copy_plat_idx
+    bpl @derive_en_y
 
     ; 4. Initialize runtime state for each enemy
     ldx #0
