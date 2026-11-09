@@ -2,6 +2,15 @@
 
 <!-- AGENT INSTRUCTIONS: Add new entries below this comment. Use format: ## [YYYY-MM-DD] - [Brief Title] -->
 
+## [2026-11-09] - Add Cthulhu Enemy and Update Scene Definitions
+
+- **Sprites & Enemies ([sprites/objects.sprite.json](sprites/objects.sprite.json), [scenes/definitions.json](scenes/definitions.json))**:
+  - Added new sprite definition `sprite_13` ("Cthulhu", 8x20, 2 frames) and enemy definition `id: 6` ("Cthulhu", sprite 13, Atari color 74).
+  - Updated sprite 11 frame bitmaps and adjusted RGB / Atari color assignments for existing enemy definitions (Nyarlathotep, Yog-Sothoth, Azathoth).
+  - Enabled blink flag for secret definitions `Mjolnir` (id: 4) and `Extra` (id: 7).
+- **Scene Placement ([scenes/07-depths.json](scenes/07-depths.json))**:
+  - Assigned enemy `id: 18` on `platform-020` in Scene 07 (Depths) to Cthulhu (`definition_id: 6`).
+
 ## [2026-11-09] - Reclaim ~1.95 KB User RAM and ~7.0 KB XEX File Size Under MADS
 
 - **Sprite Frame Deduplication ([scripts/compile_sprites.py](scripts/compile_sprites.py))**:

@@ -7,8 +7,8 @@
       "blink": false,
       "rgb_color": [
         255,
-        85,
-        127
+        170,
+        0
       ],
       "atari_color": 74,
       "sprite_id": 1
@@ -18,8 +18,8 @@
       "name": "Nyarlathotep",
       "blink": false,
       "rgb_color": [
-        0,
-        0,
+        170,
+        170,
         255
       ],
       "atari_color": 140,
@@ -30,8 +30,8 @@
       "name": "Yog-Sothoth",
       "blink": false,
       "rgb_color": [
-        0,
-        170,
+        255,
+        85,
         0
       ],
       "atari_color": 204,
@@ -60,6 +60,18 @@
       ],
       "atari_color": 28,
       "sprite_id": 5
+    },
+    {
+      "id": 6,
+      "name": "Cthulhu",
+      "blink": false,
+      "rgb_color": [
+        0,
+        170,
+        127
+      ],
+      "atari_color": 74,
+      "sprite_id": 13
     }
   ],
   "secrets": [
@@ -103,7 +115,7 @@
     {
       "id": 4,
       "name": "Mjolnir",
-      "blink": false,
+      "blink": true,
       "rgb_color": [
         249,
         100,
@@ -140,7 +152,7 @@
     {
       "id": 7,
       "name": "Extra",
-      "blink": false,
+      "blink": true,
       "rgb_color": [
         255,
         115,

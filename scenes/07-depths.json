@@ -547,7 +547,7 @@
     {
       "id": 18,
       "type": "enemy",
-      "definition_id": 5,
+      "definition_id": 6,
       "platform_id": "platform-020",
       "x": 74,
       "speed": "fast",
