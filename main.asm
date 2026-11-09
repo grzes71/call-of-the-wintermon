@@ -237,10 +237,9 @@ dlist_intro
 ; GAME PLAYFIELD VRAM SEGMENT ($3000)
 ; ANTIC Mode D ($0D, 160x92 scene = 3680 B + 128x8 narrow HUD = 256 B, total 3,936 bytes)
 ; 4 KB aligned: strictly within $3000-$3FFF (never crosses 4 KB boundary)
+; Uninitialized BSS buffer (cleared at runtime; omitted from XEX file to save 3,936 B)
 ; ==============================================================================
-    org GAME_VRAM
-game_vram_buf
-    :GAME_VRAM_SIZE .byte 0
+game_vram_buf = GAME_VRAM
 
 ; ==============================================================================
 ; GAME DISPLAY LIST SEGMENT ($3F60)
@@ -541,10 +540,9 @@ enemies_plat_idx    :MAX_ENEMIES .byte 0
 ; - Player 1: $6D00
 ; - Player 2: $6E00
 ; - Player 3: $6F00
+; Uninitialized BSS buffer (cleared at runtime; omitted from XEX file to save 1,280 B)
 ; ==============================================================================
-    org PMG_MISSILES
-pmg_memory
-    :PMG_ACTIVE_SIZE .byte 0
+pmg_memory = PMG_MISSILES
 
 ; ==============================================================================
 ; AUDIO SYSTEM SEGMENT ($7000)

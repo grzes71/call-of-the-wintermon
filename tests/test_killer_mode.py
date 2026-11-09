@@ -223,13 +223,12 @@ def test_secret_collect_awards_extra_life():
 
 
 def test_scene_secret_extra_life_rom_tables_compiled_and_loaded():
-    """Verify scene_secret_extra_life tables are compiled and loaded in secrets_init."""
+    """Verify secret_def_extra_life table is compiled and loaded into secrets_extra_life in secrets_init."""
     mem, labels = load_xex_and_symbols()
     mpu = MPU(memory=mem)
     mpu.sp = 0xFD
 
-    assert "SCENE_SECRET_EXTRA_LIFE_LO" in labels
-    assert "SCENE_SECRET_EXTRA_LIFE_HI" in labels
+    assert "SECRET_DEF_EXTRA_LIFE" in labels
     assert "SECRETS_EXTRA_LIFE" in labels
 
     # Run secrets_init for scene 0

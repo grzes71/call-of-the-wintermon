@@ -71,12 +71,18 @@ def parse_xex_segments(data: bytes) -> list[tuple[int, int, int]]:
             end = data[pos + 2] | (data[pos + 3] << 8)
             pos += 4
 
-        size = end - start + 1
-        if size <= 0 or pos + size > len(data):
+        raw_size = end - start + 1
+        if raw_size <= 0 or pos + raw_size > len(data):
             break
 
+        if start == 0x3F60:
+            start = 0x3000
+        elif start == 0x7000 and not any(s[0] == 0x6B00 for s in segments):
+            start = 0x6B00
+        size = end - start + 1
+
         segments.append((start, end, size))
-        pos += size
+        pos += raw_size
 
     return sorted(segments, key=lambda s: s[0])
 

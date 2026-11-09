@@ -677,7 +677,7 @@ def test_compiled_secret_special_flag_matches_catalogue():
 
 
 def test_generated_asm_contains_secret_special_tables():
-    """Every scene emits the secret_special SoA table plus the shared pointer pair."""
+    """Generated ASM emits the catalogue secret_def_special lookup table and status-line total."""
     asm_path = Path("gen/scenes_data.asm")
     if not asm_path.is_file():
         pytest.skip("gen/scenes_data.asm not found, run 'make data' first")
@@ -686,8 +686,7 @@ def test_generated_asm_contains_secret_special_tables():
     enemies, secrets = load_catalogues(Path("scenes/definitions.json"), Path("scenes/definitions.json"))
     asm_text = asm_path.read_text(encoding="utf-8")
 
-    assert "scene_secret_special_lo" in asm_text
-    assert "scene_secret_special_hi" in asm_text
+    assert "secret_def_special" in asm_text
     assert "scene_hud_line_lo" not in asm_text
     assert "scene_hud_line_hi" not in asm_text
     assert f"SCENE_SPECIAL_TOTAL = {special_secret_total()}" in asm_text, (
@@ -695,9 +694,7 @@ def test_generated_asm_contains_secret_special_tables():
     )
     for scene_file_name in manifest["scenes"]:
         scene_data = parse_scene_json(Path("scenes") / scene_file_name, enemies, secrets)
-        assert f"scene_{scene_data.symbol_name}_secret_special" in asm_text, (
-            f"{scene_file_name}: compiled secret_special table missing from the generated ASM"
-        )
+        assert f"scene_{scene_data.symbol_name}_secret_def_id" in asm_text
         assert f"scene_{scene_data.symbol_name}_hud_line" not in asm_text
 
 

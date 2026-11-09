@@ -177,9 +177,6 @@ secrets_blink       :MAX_SECRETS .byte 0
     lda zp_temp_x
     sta dli_zone_secret_col,y
     sta dli_zone_secret_col+8,y
-    lda #$11
-    sta dli_zone_prior,y
-    sta dli_zone_prior+8,y
     rts
 
 @m_zone_0
@@ -202,9 +199,6 @@ secrets_blink       :MAX_SECRETS .byte 0
     sta dli_z0_secret_col
     sta dli_z0_secret_col+1
     sta COLPF3
-    lda #$11
-    sta dli_z0_prior
-    sta dli_z0_prior+1
     rts
 .endp
 
@@ -301,20 +295,7 @@ secrets_blink       :MAX_SECRETS .byte 0
     sta secrets_count
 @count_ok
 
-    ; 1. Copy active flags
-    lda scene_secret_active_lo,x
-    sta zp_ptr_src
-    lda scene_secret_active_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_active
-    lda (zp_ptr_src),y
-    sta secrets_active,y
-    dey
-    bpl @copy_active
-
-    ; 2. Copy sprite IDs
+    ; 1. Copy sprite IDs and lookup sprite metadata (height, frame_dur, frame_count)
     lda scene_secret_sprite_id_lo,x
     sta zp_ptr_src
     lda scene_secret_sprite_id_hi,x
@@ -324,65 +305,21 @@ secrets_blink       :MAX_SECRETS .byte 0
 @copy_spr
     lda (zp_ptr_src),y
     sta secrets_sprite_id,y
-    dey
-    bpl @copy_spr
-
-    ; 3. Copy PMG Y scanline offsets
-    lda scene_secret_pmg_y_lo,x
-    sta zp_ptr_src
-    lda scene_secret_pmg_y_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_y
-    lda (zp_ptr_src),y
-    sta secrets_pmg_y,y
-    dey
-    bpl @copy_y
-
-    ; 4. Copy heights
-    lda scene_secret_height_lo,x
-    sta zp_ptr_src
-    lda scene_secret_height_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_h
-    lda (zp_ptr_src),y
+    tax
+    lda sprite_height,x
     sta secrets_height,y
-    dey
-    bpl @copy_h
-
-    ; 5. Copy frame durations & initialize timer
-    lda scene_secret_frame_dur_lo,x
-    sta zp_ptr_src
-    lda scene_secret_frame_dur_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_dur
-    lda (zp_ptr_src),y
+    lda sprite_frame_dur,x
     sta secrets_frame_dur,y
     sta secrets_timer,y     ; Timer starts at frame_dur
-    dey
-    bpl @copy_dur
-
-    ; 6. Copy frame counts & reset frame_idx = 0
-    lda scene_secret_frame_count_lo,x
-    sta zp_ptr_src
-    lda scene_secret_frame_count_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_cnt
-    lda (zp_ptr_src),y
+    lda sprite_frame_count,x
     sta secrets_frame_count,y
     lda #0
     sta secrets_frame_idx,y
     dey
-    bpl @copy_cnt
+    bpl @copy_spr
+    ldx active_scene_id
 
-    ; 7. Copy def_ids
+    ; 2. Copy def_ids and lookup catalogue attributes (color, blink, special, killer, extra_life)
     lda scene_secret_def_id_lo,x
     sta zp_ptr_src
     lda scene_secret_def_id_hi,x
@@ -392,10 +329,22 @@ secrets_blink       :MAX_SECRETS .byte 0
 @copy_def
     lda (zp_ptr_src),y
     sta secrets_def_id,y
+    tax
+    lda secret_def_color,x
+    sta secrets_color,y
+    lda secret_def_blink,x
+    sta secrets_blink,y
+    lda secret_def_special,x
+    sta secrets_special,y
+    lda secret_def_killer,x
+    sta secrets_killer,y
+    lda secret_def_extra_life,x
+    sta secrets_extra_life,y
     dey
     bpl @copy_def
+    ldx active_scene_id
 
-    ; 8. Copy dep_ids
+    ; 3. Copy dep_ids and derive initial active flag (1 if dep_id == 0 else 0)
     lda scene_secret_dep_id_lo,x
     sta zp_ptr_src
     lda scene_secret_dep_id_hi,x
@@ -405,10 +354,17 @@ secrets_blink       :MAX_SECRETS .byte 0
 @copy_dep
     lda (zp_ptr_src),y
     sta secrets_dep_id,y
+    beq @dep_zero
+    lda #0
+    beq @store_act
+@dep_zero
+    lda #1
+@store_act
+    sta secrets_active,y
     dey
     bpl @copy_dep
 
-    ; 9. Copy X coordinates
+    ; 4. Copy X coordinates
     lda scene_secret_x_lo,x
     sta zp_ptr_src
     lda scene_secret_x_hi,x
@@ -421,86 +377,42 @@ secrets_blink       :MAX_SECRETS .byte 0
     dey
     bpl @copy_x
 
-    ; 10. Copy colors
-    lda scene_secret_color_lo,x
-    sta zp_ptr_src
-    lda scene_secret_color_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_col
-    lda (zp_ptr_src),y
-    sta secrets_color,y
-    dey
-    bpl @copy_col
+    ; 5. Copy sprite channels and platform indices / relative X
+    jsr secrets_copy_channels
 
-    ; 11. Copy zones
-    lda scene_secret_zone_lo,x
+    ; 6. Derive secrets_pmg_y and secrets_zone from platform Y (scene_plat_y)
+    lda scene_plat_y_lo,x
     sta zp_ptr_src
-    lda scene_secret_zone_hi,x
+    lda scene_plat_y_hi,x
     sta zp_ptr_src+1
     ldy secrets_count
     dey
-@copy_zone
-    lda (zp_ptr_src),y
+@derive_geom
+    sty plat_cur_idx
+    lda secrets_plat_idx,y
+    tay
+    lda (zp_ptr_src),y          ; A = plat_y
+    sta zp_temp_a
+    ldy plat_cur_idx
+    asl                         ; A = 2 * plat_y
+    clc
+    adc #31                     ; A = 32 + 2 * plat_y - 1
+    sec
+    sbc secrets_height,y
+    sta secrets_pmg_y,y
+    lda zp_temp_a               ; A = plat_y
+    sec
+    sbc #8
+    bcs @sec_zone_ok
+    lda #0
+@sec_zone_ok
+    lsr
+    lsr
+    lsr
+    lsr
     sta secrets_zone,y
     dey
-    bpl @copy_zone
-
-    ; 12. Copy blink flags
-    lda scene_secret_blink_lo,x
-    sta zp_ptr_src
-    lda scene_secret_blink_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_blk
-    lda (zp_ptr_src),y
-    sta secrets_blink,y
-    dey
-    bpl @copy_blk
-
-    ; 13. Copy special flags ("special": true -> distinct collect sound, scenes/game.asm)
-    lda scene_secret_special_lo,x
-    sta zp_ptr_src
-    lda scene_secret_special_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_spc
-    lda (zp_ptr_src),y
-    sta secrets_special,y
-    dey
-    bpl @copy_spc
-
-    ; 13b. Copy killer flags ("killer": true -> activates killer mode when collected)
-    lda scene_secret_killer_lo,x
-    sta zp_ptr_src
-    lda scene_secret_killer_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_klr
-    lda (zp_ptr_src),y
-    sta secrets_killer,y
-    dey
-    bpl @copy_klr
-
-    ; 13c. Copy extra life flags ("extra_life": true -> awards extra life when collected)
-    lda scene_secret_extra_life_lo,x
-    sta zp_ptr_src
-    lda scene_secret_extra_life_hi,x
-    sta zp_ptr_src+1
-    ldy secrets_count
-    dey
-@copy_xlf
-    lda (zp_ptr_src),y
-    sta secrets_extra_life,y
-    dey
-    bpl @copy_xlf
-
-    ; 14. Copy sprite channels (0..2 = Players 1..3, 3 = 5th player / missiles)
-    jsr secrets_copy_channels
+    bpl @derive_geom
 
     ; 15. Clear secrets_collected array
     ldy secrets_count

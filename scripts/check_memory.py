@@ -35,12 +35,20 @@ def parse_xex_segments(data: bytes) -> list[tuple[int, int, int]]:
             end = data[pos + 2] | (data[pos + 3] << 8)
             pos += 4
 
-        size = end - start + 1
-        if size <= 0 or pos + size > len(data):
+        raw_size = end - start + 1
+        if raw_size <= 0 or pos + raw_size > len(data):
             break
 
+        # Merge uninitialized BSS buffers ($3000-$3F5F GAME_VRAM and $6B00-$6FFF PMG)
+        # with their immediately following XEX segments so RAM accounting remains exact.
+        if start == 0x3F60:
+            start = 0x3000
+        elif start == 0x7000 and not any(s[0] == 0x6B00 for s in segments):
+            start = 0x6B00
+        size = end - start + 1
+
         segments.append((start, end, size))
-        pos += size
+        pos += raw_size
 
     return segments
 
@@ -172,6 +180,7 @@ def check_memory(xex_path: Path) -> int:
             )
 
     print("-" * 60)
+    print(f"XEX Binary File Size:     {len(data):,} bytes")
     print(f"Total User RAM Allocated: {total_user_bytes:,} bytes")
     # Base user RAM available: $2000 to $BFFF = $A000 (40,960 bytes)
     headroom = 40960 - total_user_bytes

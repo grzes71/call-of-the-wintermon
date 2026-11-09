@@ -96,10 +96,6 @@ gameover_color_ptrs_lo:
     .byte <gameover_colors_failure, <gameover_colors_success
 gameover_color_ptrs_hi:
     .byte >gameover_colors_failure, >gameover_colors_success
-gameover_dlist_ptrs_lo:
-    .byte <dlist_gameover_failure, <dlist_gameover_success
-gameover_dlist_ptrs_hi:
-    .byte >dlist_gameover_failure, >dlist_gameover_success
 
 gameover_colors_failure:
     .byte GAMEOVER_FAIL_HDR_PF0, GAMEOVER_FAIL_HDR_PF1, GAMEOVER_FAIL_HDR_PF2
@@ -195,63 +191,7 @@ dlist_gameover_failure:
     .byte DL_JVB
     .word dlist_gameover_failure
 
-dlist_gameover_success:
-    .byte DL_BLANK8, DL_BLANK8
-    .byte DL_BLANK8 | DL_DLI
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 0
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 0
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 1
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 1
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 2
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 2
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 3
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 3
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 4
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 4
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 5
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 5
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 6
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 6
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 7
-    .byte DL_MODE_D | DL_LMS
-    .word gameover_header_buf + 40 * 7
-    .byte DL_BLANK8 | DL_DLI
-    .byte DL_MODE_2 | DL_LMS
-    .word gameover_text_buf
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_MODE_2
-    .byte DL_JVB
-    .word dlist_gameover_success
+dlist_gameover_success = dlist_gameover_failure
 
 
 ; ==============================================================================
@@ -301,10 +241,10 @@ dlist_gameover_success:
     stx gameover_result
 
     ; 6. Repoint Display List early to prevent ANTIC from executing orphaned gameplay lines
-    lda gameover_dlist_ptrs_lo,x
+    lda #<dlist_gameover_failure
     sta SDLSTL
     sta DLISTL
-    lda gameover_dlist_ptrs_hi,x
+    lda #>dlist_gameover_failure
     sta SDLSTH
     sta DLISTH
 
